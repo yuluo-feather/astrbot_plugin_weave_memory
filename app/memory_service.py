@@ -17,6 +17,7 @@ from ..core.model import (
 from ..core.normalization import normalize_content
 from ..core.ports import Clock, IdGenerator, MemoryStore
 from .consent_service import ConsentService, PersonalConsentType
+from .export import build_export
 from .lifecycle_service import LifecycleService
 from .write_coordinator import WriteCoordinator, WriteReceipt
 
@@ -167,3 +168,7 @@ class MemoryApplicationService:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
         return self._store.list_active(scope_id=scope.id,
                                        subject_id=scope.identity.subject_id)
+
+    def export_personal(self, scope: Scope) -> dict:
+        """Export only this Personal scope; consent is re-checked by list_active."""
+        return build_export(scope, self.list_active(scope), exported_at=self._clock.now())

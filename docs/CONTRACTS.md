@@ -279,3 +279,11 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - 写入 `MemoryApplicationService.save_agent`：`source_type=AGENT`、`operator_type=AGENT`、`status=ACTIVE`；沿用去重、Revision、Source、WriteCoordinator 与 Consent guard。
 - 工具拒绝群聊、撤销/关闭、空内容、非法 memory_type；返回字符串给 Agent Loop，不直发用户消息。
 - 后台自动提取不在本版实现；V1.5 仍只产 `INFERRED` 候选。
+
+### 导出与审计
+
+- `MemoryApplicationService.export_personal(scope)`：经 `list_active` 重新校验 consent，只导出该 Personal scope 的 ACTIVE 记忆；不包含其他用户。
+- `GroupMemoryService.export_group(scope, decision)`：要求管理员 `decision.allowed`，再经 `list_group` 校验 enabled + group consent；只导当前群。
+- `app/export.py` 提供 `build_export`、`to_json`、`to_markdown`；导出不等于备份，完整备份恢复在 V1.8；命令 UX 在 V1.3。
+- `memory_operations.metadata_json` 默认包含 `result=SUCCESS`，不记录正文；失败以类型化异常/日志呈现，ledger 级 result 留到 V1.8。
+- 注入无缓存；删除/清空/关闭后下一次注入重新检索，不得出现旧记忆。

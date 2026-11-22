@@ -703,12 +703,14 @@ class SQLiteMemoryStore:
                           metadata: Mapping[str, Any]) -> None:
         if not operation_id.strip() or not operator_id.strip():
             raise ValidationError("operation_id and operator_id must be non-empty")
+        record = dict(metadata)
+        record.setdefault("result", "SUCCESS")
         conn.execute(
             """INSERT INTO memory_operations
             (id, scope_id, memory_id, operation_type, operator_type, operator_id,
              occurred_at, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (operation_id, scope_id, memory_id, operation_type, operator_type.value,
-             operator_id, _time_dump(occurred_at), _json_dump(metadata)),
+             operator_id, _time_dump(occurred_at), _json_dump(record)),
         )
 
     @staticmethod

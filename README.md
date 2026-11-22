@@ -188,7 +188,8 @@ python scripts/build_astrbot_plugin.py
 - **删除与物理擦除**：删除/清空在同一权威事务内写不含正文的最小墓碑审计、标记 FTS dirty 并物理删除正文关联数据；所有应用连接启用 `PRAGMA secure_delete = ON`；索引恢复健康后执行 `wal_checkpoint(TRUNCATE)` → `VACUUM` → `wal_checkpoint(TRUNCATE)`。checkpoint busy 时保留 pending，下次启动重试。该保证以应用自身连接、无其他读快照、checkpoint 成功为条件，不承诺 SSD、操作系统缓存、文件系统空闲块或备份层面的取证级擦除，也不等同于数据库加密。
 - **SQLite schema v5**：V1.0 为 v4（`memory_relations` 预留表），V1.1 升到 v5（群 Scope/admin 字段）。从 v1–v4 升级到 v5 前，插件会自动在数据目录的 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移。升级前仍建议自行备份整个插件数据目录。有群数据时拒绝回滚到 V1.0，降级前对每个群执行 `群关闭 → 群销毁`（想保留群记忆就不要先做 `群清空`，否则备份只是清空后的快照），或按 `群关闭 → 群清空 → 群销毁` 处理。
 - **群生命周期**：群开启/关闭/清空/销毁均写操作审计；群关闭可逆，个人关闭永久；群销毁必须已经关闭，服务内自动备份并写 sidecar manifest，删除顺序为记忆/关联 → consent 历史 → operations 审计 → scope，提交后先恢复 FTS 再 secure purge。
-- **测试与 CI**：2026-11-23 口径下 `153 passed`（Python 3.12.10），`ruff`、`mypy`、`compileall` 与插件包构建通过。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
+- **按作用域导出与审计**：`export_personal` / `export_group` 只导当前 scope 的 ACTIVE 记忆；个人导出需 consent，群导出需管理员，序列化在 `app/export.py`（命令 UX 留到 V1.3）。`memory_operations` 写入 `result=SUCCESS` 与操作元数据，不含正文；注入无缓存，删除/清空/关闭后下一次请求重新检索。
+- **测试与 CI**：2026-11-23 口径下 `157 passed`（Python 3.12.10），`ruff`、`mypy`、`compileall` 与插件包构建通过。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
 
 ## 📜 版本与验收
 
@@ -196,8 +197,8 @@ python scripts/build_astrbot_plugin.py
 |------|--------------------|
 | V0「起针」 | 已完成：领域核心、SQLite + FTS5、写协调、生命周期、私聊闭环 |
 | V1.0「初织」 | 代码、私聊宿主烟测与专用 Scope 清空证据已完成；**正式验收待签署** |
-| V1.1「引线」 | M1/M2 群共享记忆已实现（153 passed）；**真实宿主群聊烟测待补** |
-| V1.2「锁边」 | Personal 默认登记 + opt-out、模型工具写入已实现（153 passed）；真实宿主首次告知/工具写入烟测待补 |
+| V1.1「引线」 | M1/M2 群共享记忆已实现（157 passed）；**真实宿主群聊烟测待补** |
+| V1.2「锁边」 | Personal 默认登记 + opt-out、模型工具写入已实现（157 passed）；真实宿主首次告知/工具写入烟测待补 |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 
 已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响。

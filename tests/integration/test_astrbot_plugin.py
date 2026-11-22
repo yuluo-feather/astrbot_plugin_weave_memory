@@ -563,6 +563,37 @@ def test_plugin_agent_tool_failure_does_not_escape(monkeypatch, tmp_path):
     asyncio.run(plugin.terminate())
 
 
+def test_plugin_delete_and_clear_invalidate_injection(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    saved = asyncio.run(collect(plugin.memory_save(
+        FakeEvent(message="/织忆 保存 删除前记忆"),
+    )))[0]
+    memory_id = saved.split("\n", 1)[0].split("：", 1)[1]
+    asyncio.run(collect(plugin.memory_delete(
+        FakeEvent(message=f"/织忆 删除 {memory_id}"),
+    )))
+    request = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(
+        FakeEvent(message="删除前记忆"), request,
+    ))
+    assert request.extra_user_content_parts == []
+
+    asyncio.run(collect(plugin.memory_save(
+        FakeEvent(message="/织忆 保存 清空前记忆"),
+    )))
+    asyncio.run(collect(plugin.memory_clear(
+        FakeEvent(message="/织忆 清空 确认"),
+    )))
+    request2 = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(
+        FakeEvent(message="清空前记忆"), request2,
+    ))
+    assert request2.extra_user_content_parts == []
+    asyncio.run(plugin.terminate())
+
+
 def test_plugin_persistence_survives_reload(monkeypatch, tmp_path):
     import asyncio
 

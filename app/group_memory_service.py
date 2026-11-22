@@ -18,6 +18,7 @@ from ..core.model import (
 from ..core.normalization import normalize_content
 from ..core.ports import Clock, IdGenerator, MemoryStore, ScopeStore
 from .consent_service import ConsentService, GroupConsentType
+from .export import build_export
 from .write_coordinator import WriteCoordinator, WriteReceipt
 
 _GROUP_TYPES: dict[str, MemoryType] = {
@@ -109,6 +110,11 @@ class GroupMemoryService:
         return self._store.list_active(
             scope_id=scope.id, subject_id=scope.identity.subject_id,
         )
+
+    def export_group(self, scope: Scope, decision: AdminDecision) -> dict:
+        if not decision.allowed:
+            raise AuthorizationDenied("group export requires an administrator")
+        return build_export(scope, self.list_group(scope), exported_at=self._clock.now())
 
     def needs_cleanup(self, scope: Scope) -> bool:
         return len(self._store.list_active(

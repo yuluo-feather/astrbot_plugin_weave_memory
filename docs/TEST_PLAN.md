@@ -173,7 +173,7 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - COMMIT 后立即异常退出：已提交数据保留。
 - v3→v4 DDL 与 marker 写入中途强制终止：DDL/marker 一起回滚，重启后可重试迁移。
 - 已提交 FTS dirty marker 与索引差异后进程退出：启动恢复从权威表重建 FTS。
-- 当前全量测试：153 passed（V1.0 P3 补测后 132；V1.1 M1/M2 实现后 143；迁移备份补测后 146；V1.2 默认登记/agent 工具后 153）。
+- 当前全量测试：157 passed（V1.0 P3 补测后 132；V1.1 M1/M2 实现后 143；迁移备份补测后 146；V1.2 默认登记/agent 工具后 153；导出/审计补测后 157）。
 - 限制：不代表物理断电、存储介质损坏或多进程并发恢复已验证。详见 `V1.0_M3_CRASH_RECOVERY_REPORT_20261123.md`。
 
 ### V1.2 Personal 默认登记与 agent 工具（2026-11-23）
@@ -182,6 +182,9 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - `auto_enroll=false` 时注入不创建 consent；显式 `/织忆 授权` 后恢复保存/检索/注入。
 - 已有 `REVOKED` 时 auto_enroll 不改写；撤销后注入与 agent 工具均拒绝。
 - agent 工具写入 `source_type=AGENT`；撤销/关闭后拒绝，群聊拒绝，`agent_write_enabled=false` 时拒绝。
+- 个人导出只含当前 scope 的 ACTIVE 记忆；删除后不出现；撤销后拒绝。
+- 群导出需管理员；disabled/跨群拒绝；只导当前群。
+- `memory_operations` 记录 `result=SUCCESS` 且不含正文；删除/清空/关闭后注入不复活。
 - 群共享记忆的开启/写入/读取语义不变；个人与群双向隔离保持不变。
 
 ### 迁移备份（2026-11-23）
