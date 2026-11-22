@@ -317,6 +317,9 @@ class WeaveMemoryPlugin(Star):
             return "未保存：个人记忆只在私聊生效。"
         except _COMMAND_ERRORS as exc:
             return f"未保存：{type(exc).__name__}。"
+        except Exception as exc:
+            logger.warning(f"织忆模型工具写入失败：{type(exc).__name__}")
+            return "未保存：记忆服务暂不可用。"
 
     @memory.command("群帮助")
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)

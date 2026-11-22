@@ -547,6 +547,22 @@ def test_plugin_close_works_after_revoke(monkeypatch, tmp_path):
     asyncio.run(plugin.terminate())
 
 
+def test_plugin_agent_tool_failure_does_not_escape(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    plugin._commands.remember = boom
+    result = asyncio.run(plugin.memory_remember_tool(
+        FakeEvent(message="记住我喜欢跑步"), "我喜欢跑步",
+    ))
+    assert "未保存" in result
+    asyncio.run(plugin.terminate())
+
+
 def test_plugin_persistence_survives_reload(monkeypatch, tmp_path):
     import asyncio
 
