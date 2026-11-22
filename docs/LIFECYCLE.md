@@ -70,3 +70,17 @@ V0 计划的清理顺序：墓碑 → 正文 → FTS/标签 → 缓存。V0.4 �
 - `LifecycleService.disable_scope` 先通过 WriteCoordinator 永久关闭 Scope；Scope disabled 是首要 fail-closed 边界，立即阻断普通读写/检索/注入。
 - 随后追加 `personal_memory=REVOKED` Consent 事件。若 Consent 追加失败，Scope 仍保持关闭；使用同一 operation ID 重试时，关闭操作幂等返回，再补写撤销事件。
 - V1.0 无重新启用 Scope 的命令；不会因 Consent 撤销失败而重新开放已关闭 Scope。
+
+## 8. V1.1 Group shared 生命周期（M0 契约）
+
+- 群管理员操作：`群开启`、`群关闭`、`群清空 确认`、`群销毁 确认`、`群状态`；普通成员只能读 `群状态`，`群列表/查询` 仅在 enabled + granted 时允许。
+- `群开启`：授予 `group_memory` + `is_enabled=1`；写 `GROUP_ENABLE` 审计；无管理员 fail-closed。
+- `群关闭`：`is_enabled=0` + 撤销 `group_memory`；写 `GROUP_DISABLE` 审计；停止群写入/检索/注入；数据保留；**可逆**，`群开启` 重新启用并复用同一群 Scope。
+- `群清空`：只清当前群；写 `CLEAR_MEMORY`/`CLEAR_SCOPE` 审计；物理擦除沿用 ADR-0008；不清 consent、不改变 enabled；enabled/disabled 状态都可执行。
+- `群销毁 确认`：仅管理员；必须先 `群关闭`（enabled 直接拒绝）、必须 `确认`；服务内自动生成并校验备份 + sidecar manifest；删除顺序（单事务）为群记忆/关联 → 群 consent 历史 → 群 operations 审计 → 群 Scope；事务内标记 FTS dirty 与 `secure_purge_pending`，提交后先重建 FTS 再 secure purge；不可恢复；事务提交后 Scope 不存在即已销毁。
+- 读取：`群列表/查询` 仅当 `is_enabled=1` 且 `group_memory=GRANTED`；否则 `AuthorizationDenied`。`群状态` 成员始终可读，但只返回 `created/enabled/count/admin_source/admin_available`，`count` 只统计 ACTIVE，不返回正文或管理员列表；无 Scope 时 `created=false`。
+- 群开启/关闭/清空的 operation ID 幂等；关闭的 consent 撤销失败返回 `GroupConsentRevocationPending`，Scope 保持 disabled，可重试补齐。
+- 群解散/退群：若 Adapter 提供事件，置 disabled + 撤销 `group_memory`，保留数据，不自动删除；没有事件时由管理员关闭/清空。
+- 群关闭/清空不影响个人；个人关闭/清空不影响群。
+- V1.1 无导出；导出/完整保留期/自动清理在 V1.2。群增长以 ACTIVE 计数与 `group_max_active=200` 告警，管理员清理。
+- 群关闭的可逆性是 V1.1 明确差异；个人关闭仍永久、无重新开启命令。

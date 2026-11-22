@@ -71,3 +71,15 @@ V0 目标为单进程、单实例、SQLite。写操作由应用层统一协调�
 - V0.5 已存在的核心、SQLite/FTS 与宿主入口继续演进，不重写目录结构。
 - V1.0 分 M0 契约冻结、M1 核心/SQLite、M2 AstrBot Adapter、M3 可靠性验收。
 - Group、Agent 工具、导出、自动提取、向量/混合检索、DSH、WebUI 均不实现。
+
+## 8. V1.1 Group shared 边界（M0 契约）
+
+- V1.1 在 Personal 之外启用 `ScopeType.GROUP`；V1.0 的 Personal 写入/检索/注入语义不变。
+- 组件边界：
+  - `adapters/astrbot`：群事件身份解析、群管理员角色解析、群命令入口、群注入 Hook；
+  - `app`：`GroupScopeService`（Scope/管理员/状态）、`GroupMemoryService`（管理员写入/成员读取）、`GroupLifecycleService`（enable/disable/clear/destroy/consent）、群上下文 Composer；
+  - `core`：Group Scope 身份/管理员/生命周期策略与端口，不依赖 AstrBot/SQLite。
+- 群入口只在群聊事件生效；个人命令仍只在私聊事件生效；群注入只在群 LLM 请求生效。
+- V1.1 不注册群级 Agent 工具；不实现导出；不做 Group personal/Project/Session。
+- 群身份/管理员/consent 的冻结决策见 ADR-0009/0010；v5 迁移与回滚见 ADR-0011。
+- 本段是 M0 契约，不包含实现；代码层仍只有 V1.0 Personal 路径。

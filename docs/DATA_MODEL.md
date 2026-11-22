@@ -149,3 +149,22 @@ V1.0 该表没有 `scope_id` 列，也没有应用层写入/查询 API；跨 Sco
 - 群管理员授权来源规则随 Group shared 在 V1.1 实现。
 - `REJECTED` 的正文保留/清除策略随候选管理在 V1.6 实现。
 - `memory_operations.result` 与 `memory_relations.scope_id` 留到 V1.8/V2 的审计与关系检索。
+
+## 13. V1.1 Group shared 数据模型（M0 契约）
+
+- 群身份使用六元组：`platform + tenant_id + GROUP + group_id + GROUP + group_id`；`scope_external_id` 与 `subject_id` 都是 group_id，不是字面量 `group`。
+- `scope_id` 用完整六元组的 UUID5，序列化格式与 Personal `stable_scope_id` 一致；不做 `platform:group_id` 拼接。
+- v5 `memory_scopes` 新增：
+  - `scope_type CHECK IN ('PERSONAL','GROUP')`；
+  - `subject_type CHECK IN ('USER','GROUP')`；
+  - `admin_ids_json TEXT NOT NULL DEFAULT '[]'`；
+  - `admin_source TEXT NOT NULL DEFAULT 'NONE' CHECK IN ('PLATFORM_ROLE','EXPLICIT_CONFIG','NONE')`；
+  - 保留 `is_enabled/disabled_at` 与现有个人行。
+- 群记忆仍写 `memories`：`scope_id` 为群 Scope；`memory_scopes.subject_type=GROUP`，`memories.subject_id=group_id`；`memories` 本身没有 `subject_type` 列，不写成员个人 subject。
+- 类型映射：群话题 `FACT`；群约定/群氛围 `PREFERENCE`；共同经历 `EVENT`；metadata 固定键 `group_label`（`topic/agreement/atmosphere/experience`）、`group_id`、`admin_source`。
+- 群操作审计使用 `GROUP_ENABLE`、`GROUP_DISABLE`、`GROUP_DESTROY`；`GROUP_DESTROY` 后群 Scope/群 consent/群审计删除，tombstone 保留在销毁前备份。
+- 唯一索引沿用 `(scope_id, subject_id, memory_type, normalized_content)`，群/个人不互相覆盖。
+- `group_memory` 复用 `memory_consents`，默认无记录拒绝；与 `personal_memory` 分离。
+- FTS/读取除 `scope_id/subject_id` 外再做 `scope_type=GROUP` 防御过滤。
+- 群解散/退群不自动删个人记忆；成员个人删除/退群在 V2.4。
+- v5 迁移与 v4 回滚见 ADR-0011；有群数据时拒绝回滚，无群数据可回退并再次迁移。

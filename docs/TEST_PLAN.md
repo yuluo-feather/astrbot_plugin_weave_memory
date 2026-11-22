@@ -173,7 +173,7 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - COMMIT 后立即异常退出：已提交数据保留。
 - v3→v4 DDL 与 marker 写入中途强制终止：DDL/marker 一起回滚，重启后可重试迁移。
 - 已提交 FTS dirty marker 与索引差异后进程退出：启动恢复从权威表重建 FTS。
-- 当前全量测试：132 passed（Python 3.13 当时基线为 100；2026-11-23 P3 补测后 132）。
+- 当前全量测试：143 passed（V1.0 P3 补测后 132；V1.1 M1/M2 实现后 143）。
 - 限制：不代表物理断电、存储介质损坏或多进程并发恢复已验证。详见 `V1.0_M3_CRASH_RECOVERY_REPORT_20261123.md`。
 
 ### V1.0 删除/清空物理擦除（ADR-0008）
@@ -218,4 +218,58 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - 真实宿主 `/织忆 帮助/授权/保存/列表` 已验证（2026-11-23，见 `HOST_SMOKE_ZHUYI_PREFIX_20261123.md`）；旧 `/记忆 帮助` 未返回插件帮助，进入普通聊天。
 
 ## 13. V1.0 独立验收状态
-当前结论为条件通过（开发验收），正式发布签署未完成。真实 AstrBot 清空命令验证与 Provider 持久历史/token 级证据仍待补。详见 `V1.0_INDEPENDENT_ACCEPTANCE_REVIEW_20261123.md`。
+当前结论为条件通过（开发验收）。专用测试 Scope 的真实宿主 `/织忆 清空 确认` 已通过，主测试 Scope 未受影响；临时 TextPart 已补对象级 dump 与目标版本源码契约证据；具体 Provider token 级抓包未执行。正式发布签署与最终确认待主人完成。详见 `V1.0_ACCEPTANCE_EVIDENCE_20261123.md` 与 `V1.0_INDEPENDENT_ACCEPTANCE_REVIEW_20261123.md`。
+
+## 14. V1.1 Group shared 测试矩阵（M0 契约，未实现）
+
+### 身份与隔离
+
+- 群 A/B 隔离；平台实例 A/B 同 group_id 不共享 Scope；同 platform 名不同实例隔离。
+- `scope_external_id=subject_id=group_id`；`scope_id` 与 Personal UUID5 序列化一致。
+- 个人/群双向隔离：个人记忆不进群；群记忆不出现在私聊。
+
+### 管理员与 Consent
+
+- PLATFORM_ROLE、EXPLICIT_CONFIG、NONE 三种来源；无来源 fail-closed；首次开启必须有管理员。
+- 多管理员、角色变化、配置变更、下一命令生效；不接受 `admin_id` 参数。
+- 普通成员不能 `群保存/群开启/群关闭/群清空/群销毁`；`群状态` 允许；`群列表/查询` 仅在 enabled + GRANTED 时允许。
+- `group_memory` 默认拒绝；开启授予；关闭撤销且可逆重开；清空不改 consent；个人关闭仍永久。
+- `群列表/查询` 在 disabled 或 consent 撤销后拒绝；`群状态` 可读但不含正文；无 Scope 的 `群状态` 返回 `created=false`。
+- `群销毁`：未关闭/未确认/备份生成或校验失败拒绝；删除顺序满足 FK（记忆/关联 → consent → operations → scope）；事务回滚不留部分删除；销毁事务标记 FTS dirty，提交后重建再 purge，群 canary 不在 FTS/主库/WAL；`群关闭→群销毁` 备份含群记忆，`群清空→群销毁` 备份不含已清空记忆；关闭+清空+销毁后无群 Scope/群 consent/群审计；两种关闭后销毁路径都能执行 `rollback_to_v10`。
+- `experience→EVENT` 与 `topic/agreement/atmosphere` 映射测试。
+
+### 生命周期与擦除
+
+- enable/disable/re-enable/clear/status 全路径；群关闭后读写/检索/注入停止；重开恢复。
+- 群清空只清当前群；个人/其他群不受影响；`CLEAR_SCOPE` 审计；物理擦除沿用 ADR-0008。
+- 群解散 fake event：disable + revoke + 数据保留。
+- `group_max_active=200` 告警按 ACTIVE 计数；群状态不泄漏管理员列表；`count` 只统计 ACTIVE。
+
+### Schema/回滚
+
+- v4→v5 幂等；个人行/索引保留；迁移前备份。
+- 仅 GROUP Scope、仅有群记忆、仅有 `group_memory` consent 三种情况都拒绝 `rollback_to_v10`。
+- `群开启→群关闭→群销毁→rollback_to_v10` 成功；`群开启→群关闭→群清空→群销毁→rollback_to_v10` 成功；`群开启→群清空→群销毁` 因未关闭被拒绝；未确认/备份失败的销毁拒绝。
+- 无群数据回滚到 v4 后再次迁移到 v5；V1.0 不能直接打开 v5。
+- 迁移中断回滚不留下半迁移状态。
+
+### 入口与注入
+
+- 群命令只在群聊；个人命令只在私聊；群注入只在当前群；独立预算 `192/2/8`。
+- FTS/读取 `scope_type=GROUP` 防御过滤；注入失败不阻塞聊天。
+- 群级 Agent 工具写入不在 V1.1；导出不在 V1.1。
+
+### 退出条件
+
+1. Group shared 读写/注入跑通，成员只读、管理员管理；
+2. 群/个人双向隔离通过；
+3. enable/disable/clear/status 与可逆群关闭通过；
+4. 管理员来源 fail-closed、角色变化/多管理员通过；
+5. v5 迁移与 v4 回滚通过；
+6. 未提前实现 Group personal/Project/Session/导出/自动提取；
+7. 文档、ADR、测试与实现一致，羽忆审查通过。
+
+### M0 状态
+
+- 本测试矩阵是 M0 契约；V1.1 代码尚未实现，不能把本清单记为已通过。
+- 个人事实口径：主人 2026-11-23 确认管理员责任、不做 NLP 检测；V2.4 再做敏感过滤。

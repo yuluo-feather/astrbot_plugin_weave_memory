@@ -22,10 +22,13 @@
 - [x] V1.0 M1：显式保存幂等、并发查重、revision 乐观锁更新、排序/访问时间、SQLite v3→v4、生命周期与 Consent 关闭联动
 - [x] V1.0 M2 代码：更新命令、身份/Scope、异步注入、访问时间写入、关闭命令
 - [x] V1.0 M2：AstrBot v4.29.4 真实宿主复测（2026-11-23，见 `docs/HOST_SMOKE_V1_20261123.md`）
-- [x] V1.0 M3 自动化可靠性与进程终止恢复：132 项测试通过（含 WAL 事务、迁移中断、FTS 启动恢复）
+- [x] V1.0 M3 自动化可靠性与进程终止恢复：143 项测试通过（含 WAL 事务、迁移中断、FTS 启动恢复）
 - [x] V1.0 M3 复审 P1：删除/清空启用 `secure_delete` + checkpoint/VACUUM，checkpoint busy 保留待处理标记，存量库启动基线擦除（ADR-0008；羽忆已确认 P0/P1/P2 闭环，P3 补测完成）
 - [x] `/织忆` 命令前缀真实宿主烟测：帮助/授权/保存/列表通过（2026-11-23，见 `docs/HOST_SMOKE_ZHUYI_PREFIX_20261123.md`）
-- [ ] V1.0 宿主层最终验收：真实宿主清空命令验证、token 级 Provider 持久历史证据及用户最终签署
+- [x] V1.0 宿主验收证据：专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响；临时 TextPart 对象级 dump 与目标版本源码契约已补（见 `docs/V1.0_ACCEPTANCE_EVIDENCE_20261123.md`）
+- [x] V1.1 M0 契约：群身份/管理员/group consent/写入/入口/v5 迁移与回滚/测试矩阵已落盘并由羽忆复审关闭（见 `docs/V1.1_M0_PROGRESS_20261123.md`）
+- [x] V1.1 M1/M2 实现：群 Scope/admin、SQLite v5、群服务、群命令/群注入、配置与群/个人隔离（143 passed；真实宿主群聊烟测待补）
+- [ ] V1.0 正式验收签署：待主人确认
 
 - [x] 建立全新仓库目录与分层骨架
 - [x] 保存 13 份原始计划书
@@ -38,7 +41,7 @@
 - [x] V0.4 总测试：44 passed（Python 3.13 本地环境）
 - [x] V0.5 AstrBot 私聊命令、Consent、检索与临时注入
 - [x] V0.5 自动化测试：69 passed（原 V0.5 基线报告）
-- [x] V1.0 当前自动化测试：132 passed（Python 3.12.10 复核；源工作区 Python 3.13.5）
+- [x] V1.0 当前自动化测试：143 passed（Python 3.12.10 复核；源工作区 Python 3.13.5）
 - [x] 真实 AstrBot v4.29.4 宿主加载与核心烟测（2026-11-23）
 - [ ] 用户最终验收签署
 
@@ -77,7 +80,7 @@ python -m ruff check .
 python -m mypy
 ```
 
-V0.5 基线保留；V1.0 仍为开发预览。当前 132 项测试不替代真实宿主最终验收。详见 `docs/V1.0_M3_CRASH_RECOVERY_REPORT_20261123.md` 与 `docs/V1.0_INDEPENDENT_ACCEPTANCE_REVIEW_20261123.md`。
+V0.5 基线保留；V1.0 仍为开发预览。当前 143 项测试不替代真实宿主最终验收。详见 `docs/V1.0_M3_CRASH_RECOVERY_REPORT_20261123.md` 与 `docs/V1.0_INDEPENDENT_ACCEPTANCE_REVIEW_20261123.md`。
 
 安装提示：若 AstrBot 的 `plugin_set` 是手工白名单，必须把 `astrbot_plugin_weave_memory` 加进去；否则插件能加载，但命令会被静默过滤。
 
@@ -111,12 +114,25 @@ python tools/build_astrbot_plugin.py
 - `/织忆 清空 确认`：不可恢复地清空个人记忆。
 - `/织忆 关闭 确认`：永久关闭个人记忆空间；停止普通读写/检索，保留数据，V1.0 不提供重新开启。
 
-V1.0 只处理私聊，不做群聊、自动提取、外部模型调用或向量检索。
+### 群共享记忆（V1.1）
+
+群命令只在群聊生效，个人命令仍只在私聊生效。群成员只能读取当前群；开启/关闭/清空/销毁/保存仅群管理员。
+
+- `/织忆 群开启`：管理员开启当前群共享记忆。
+- `/织忆 群关闭`：管理员关闭当前群记忆；可重新开启，数据保留。
+- `/织忆 群保存 <topic|agreement|atmosphere|experience> <内容>`：管理员写入群级内容。
+- `/织忆 群列表` / `/织忆 群查询 <问题>`：成员读取当前群记忆（需已开启）。
+- `/织忆 群状态`：成员查看当前群状态，不返回正文或管理员列表。
+- `/织忆 群清空 确认`：管理员清空当前群记忆，不影响个人/其他群。
+- `/织忆 群销毁 确认`：管理员彻底移除当前群数据；必须先关闭，服务会自动备份并写 sidecar manifest。
+- `/织忆 群帮助`：群命令帮助。
+
+管理员来源优先平台群主/管理员角色；平台无法解析时回退 `group_admin_ids` 配置（键为 `platform|tenant_id|group_id`）。群上下文默认最多 2 条、192 estimated tokens，可通过 `group_max_tokens` / `group_max_memories` / `group_candidate_limit` 配置。V1.1 不做 Group personal、导出、Agent 工具写入或自动提取。
 
 ## 数据位置
 
-数据库位于 AstrBot 为插件分配的 `data/plugin_data/astrbot_plugin_weave_memory/weave_memory.sqlite3`。
+数据库位于 AstrBot 为插件分配的 `data/plugin_data/astrbot_plugin_weave_memory/weave_memory.sqlite3`。V1.1 schema 为 v5；有群数据时拒绝回滚到 V1.0，需先 `群关闭 → 群清空 → 群销毁`。群销毁备份写入插件数据目录的 `group_backups/`。
 
 ## 注入策略
 
-使用 `on_llm_request` 将少量相关记忆追加到 `extra_user_content_parts`，并通过 `mark_as_temp()` 保证只作用于当前请求，不进入持久会话历史。默认最多 4 条、384 estimated tokens；token 数是 provider-neutral 估算值，不是特定模型 tokenizer 的精确值。
+使用 `on_llm_request` 将少量相关记忆追加到 `extra_user_content_parts`，并通过 `mark_as_temp()` 保证只作用于当前请求，不进入持久会话历史。个人默认最多 4 条、384 estimated tokens；群默认最多 2 条、192 estimated tokens。token 数是 provider-neutral 估算值，不是特定模型 tokenizer 的精确值。

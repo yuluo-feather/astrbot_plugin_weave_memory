@@ -191,3 +191,70 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - 命令层在擦除未完成时提示「将在下次插件启动时自动重试」，不得把逻辑删除误报为失败。
 - 有条件保证：应用自身连接、`secure_delete=ON`、无其他连接持有 WAL 读快照、checkpoint 成功时，SQLite 主库与 WAL 不保留可恢复正文；只读连接/备份快照/backup API 会令 checkpoint busy，此时状态为 pending。
 - 不承诺 SSD、OS 缓存、文件系统空闲块或备份层面的取证级擦除。
+
+## 11. V1.1 Group shared 契约（M0 冻结）
+
+### Core 端口与返回类型
+
+- `GroupScopeStore`：在 V1.0 `ScopeStore` 基础上提供 `get_group_scope`、`set_enabled`、`set_admin_metadata`、`delete_group_scope`；不暴露 SQL。
+- `AdminResolver`：`resolve(identity, sender_id) -> AdminDecision`；`AdminDecision = {source: PLATFORM_ROLE|EXPLICIT_CONFIG|NONE, admin_ids: tuple[str,...], allowed: bool, admin_available: bool}`。
+- `GroupScopeStore`/`AdminResolver` 只处理平台无关的 Identity/Scope；AstrBot 角色 API 在 Adapter 实现。
+- `GroupMemoryService` 复用 V1.0 `MemoryStore`、`WriteCoordinator`、`SearchIndex`；不新增群专用正文表。
+
+### GroupScopeService
+
+- `resolve_group(identity)`：只接受 `scope_type=GROUP`；`scope_external_id=subject_id=group_id`；`scope_id` 使用完整六元组 UUID5，格式与 Personal `stable_scope_id` 一致。
+- `admin_decision(identity, sender_id)`：每次命令重新解析管理员；返回 `AdminDecision`，不接受调用方传入 `admin_id`。
+- `status(scope)`：成员只读；返回 `created/enabled/count/admin_source/admin_available`，不返回记忆正文或管理员列表；无 Scope 时返回 `created=false, enabled=false, count=0, admin_source=NONE, admin_available=false`。
+- 只负责 Scope 解析/管理员/状态；enable/disable/clear/destroy 属于 `GroupLifecycleService`。
+
+### GroupLifecycleService
+
+- `enable(scope, operation_id)`：解析管理员 → 追加 `group_memory=GRANTED` → `is_enabled=1` + `GROUP_ENABLE` 审计；GRANT 失败则不 enable；审计/enable 失败时保留 GRANT 但 disabled，可同 operation ID 重试补齐；同一 operation ID 重放幂等。
+- `disable(scope, operation_id)`：`is_enabled=0` + `GROUP_DISABLE` 审计 → 追加 `group_memory=REVOKED`；保留数据；撤销追加失败返回 `GroupConsentRevocationPending`，Scope 保持 disabled；同一 operation ID 重试补齐。
+- `clear(scope, operation_id)`：只清当前群；要求 `确认`；enabled/disabled 都可执行；写 `CLEAR_MEMORY`/`CLEAR_SCOPE` 审计；物理擦除沿用 ADR-0008；不改变 consent/enabled。
+- `destroy(scope, operation_id) -> DestroyReceipt`：仅管理员、必须先 `群关闭`、必须 `确认`；服务内调用 SQLite backup API 生成唯一备份并校验目标群 Scope/记忆/consent，写 sidecar manifest（operation ID/scope ID/路径/sha256/行数/时间）；备份或校验失败立即中止。
+- `destroy` 使用专用 `destroy_group_scope` 事务，不调用会自行提交的 `clear_scope`；单事务删除：群记忆及关联 → consent 历史 → operations 审计 → scope，并同时标记 FTS dirty 与 `secure_purge_pending`。
+- 提交后先重建/清理群 FTS（或由启动恢复重建），再 secure purge；FTS 未恢复时不得清 pending；purge 失败保留 pending，不回滚 Scope 删除；已有 pending 不阻止销毁。
+- 备份语义：`群关闭→群销毁` 备份包含群记忆；`群清空→群销毁` 备份是清空后快照；要保留群记忆必须先关闭直接销毁。
+- `DestroyReceipt = {operation_id, scope_id, backup_path, backup_sha256, affected_count, purged}`；`affected_count` 是删除的群记忆数；sidecar 另记各子表行数。
+- sidecar 写在插件数据目录下的备份同级文件，temp+fsync+rename 原子落盘；权限继承数据目录；备份/sidecar 不在 V1.1 自动清理。
+- 幂等：事务提交后 Scope 不存在视为已销毁；事务前/中崩溃整体回滚；重试不覆盖已有备份；`GROUP_DESTROY` tombstone 写 sidecar，不修改备份。
+- `DestroyReceipt = {operation_id, scope_id, backup_path, backup_sha256, affected_count, purged}`。
+- 群关闭可逆；个人关闭仍永久。`destroy` 只用于彻底移除群数据/回滚前置。
+
+### AdminResolver / 管理员来源
+
+- 来源优先级：`PLATFORM_ROLE` > `EXPLICIT_CONFIG` > `NONE`；无来源 fail-closed（不能 enable/写入/管理）。
+- `group_admin_ids` 配置：对象映射，键为 `platform|tenant_id|group_id`，值为管理员 ID 数组；运行时也接受同字段对象数组；按三元组精确匹配，不允许全局列表跨群/跨实例复用。
+- `admin_ids_json` 在 `PLATFORM_ROLE` 下是审计快照，不用于授权；`EXPLICIT_CONFIG` 下镜像配置；授权每次都重新解析。
+- 角色/配置变化在下一命令生效；多管理员取并集；普通成员不得管理/写入。
+- 来源丢失时：管理/写入 fail-closed；已启用群的成员读取/注入保留（需 enabled + group_memory GRANTED）；`群状态` 显示 `admin_source=NONE, admin_available=false`；保留 `EXPLICIT_CONFIG` 恢复路径。
+
+### GroupMemoryService
+
+- `save_group`：仅管理员；来源 `MANUAL + ADMIN`；`EXPLICIT` 仍只允许 USER；成员写入 `AuthorizationDenied`。
+- 类型映射：`topic -> FACT`；`agreement/atmosphere -> PREFERENCE`；`experience -> EVENT`；metadata 键 `group_label/group_id/admin_source`。
+- 去重、revision、source、WriteCoordinator 与 V1.0 一致。
+- `list/query`：仅当前群、`scope_type=GROUP`，且 `is_enabled=1` 与 `group_memory=GRANTED` 同时满足；否则 `AuthorizationDenied`。
+- `群状态` 的 `count` 只统计 ACTIVE；`group_max_active=200` 也按 ACTIVE 计数；不返回正文；不查个人；不在私聊查群；不在群查个人。
+- `GroupContextComposer.compose(query, scope) -> GroupContext | None`：只接受当前群 GROUP Scope；必须 `is_enabled=1` + `group_memory=GRANTED`；使用群独立预算 `group_max_tokens/group_max_memories/group_candidate_limit`；FTS/读取加 `scope_type=GROUP`；失败按无记忆处理，不阻塞聊天。
+- 个人事实口径（主人 2026-11-23 确认）：V1.1 不做 NLP 检测，采用管理员输入责任；成员不能写、个人记忆不提升；V2.4 再做敏感过滤/Group personal。
+
+### 命令/角色矩阵
+
+| 命令 | 群成员 | 群管理员 | 私聊 |
+|---|---|---|---|
+| `群保存` | 拒绝 | 允许（enabled + group_memory granted） | 不适用 |
+| `群列表/查询` | 允许（当前群、enabled + granted） | 允许（同左） | 不适用 |
+| `群状态` | 允许（可 disabled；不含正文/管理员列表） | 允许 | 不适用 |
+| `群开启/群关闭/群清空/群销毁` | 拒绝 | 允许（群销毁需先关闭 + 备份 + 确认） | 不适用 |
+| 个人命令 | 不适用 | 不适用 | 仅本人 |
+
+### 错误与配置
+
+- 非管理员/成员写入：`AuthorizationDenied`；disabled/consent 未授予时的 `群列表/查询`：`AuthorizationDenied`；跨群/不可见：`NotFound`；revision/去重：`Conflict`；索引：`IndexUnavailable`；关闭：`ServiceClosed`。
+- 配置键：`group_admin_ids`（对象数组，按 platform+tenant_id+group_id 隔离）、`group_max_tokens=192`、`group_max_memories=2`、`group_candidate_limit=8`、`group_max_active=200`；默认不自动开启群 Scope。
+- 群注入只走当前群 Scope；FTS/读取加 `scope_type=GROUP` 防御过滤；注入失败不阻塞聊天。
+- V1.1 不实现导出；V1.2 再做导出与完整保留策略。
+- v5 迁移/回滚见 ADR-0011；群销毁是回滚前置，见 ADR-0010/0011。
