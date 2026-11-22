@@ -13,7 +13,7 @@
 本轮修复了两处导致插件无法加载的 P0：
 
 1. `from astrbot.api.agents import TextPart` 改为 `from astrbot.core.agent.message import TextPart`。
-2. 插件内 `weavemem` 绝对导入改为相对导入（`.weavemem...`），并在测试中按真实插件包布局加载。
+2. 插件内包绝对导入改为相对导入（`.core...`），并在测试中按真实插件包布局加载。
 
 同时修复了 Consent append-only 的排序问题：按 SQLite append 顺序取最后一条事件，避免同一微秒内“撤销后重新授权”仍被判为 REVOKED。
 

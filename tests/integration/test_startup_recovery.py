@@ -1,10 +1,16 @@
 from datetime import UTC, datetime
 
-from weavemem.adapters.sqlite.database import SQLiteDatabase
-from weavemem.adapters.sqlite.fts import SQLiteFTSIndex
-from weavemem.adapters.sqlite.store import SQLiteMemoryStore
-from weavemem.app.startup_recovery import StartupRecoveryService
-from weavemem.core.model import (
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
+    SQLiteDatabase,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.fts import SQLiteFTSIndex
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
+    SQLiteMemoryStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.app.startup_recovery import (
+    StartupRecoveryService,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.model import (
     Identity,
     MemoryEntity,
     MemoryRevision,
@@ -17,7 +23,9 @@ from weavemem.core.model import (
     SourceType,
     SubjectType,
 )
-from weavemem.core.normalization import normalize_content
+from data.plugins.astrbot_plugin_weave_memory.core.normalization import (
+    normalize_content,
+)
 
 NOW = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
 

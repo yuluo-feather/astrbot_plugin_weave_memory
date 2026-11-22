@@ -8,21 +8,21 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.agent.message import TextPart
 
-from .weavemem.adapters.astrbot.commands import AstrBotMemoryCommands
-from .weavemem.adapters.astrbot.injection import AstrBotMemoryInjector
-from .weavemem.adapters.sqlite.consents import SQLiteConsentStore
-from .weavemem.adapters.sqlite.database import SQLiteDatabase
-from .weavemem.adapters.sqlite.fts import SQLiteFTSIndex
-from .weavemem.adapters.sqlite.store import SQLiteMemoryStore
-from .weavemem.adapters.system import SystemClock, UUID4IdGenerator
-from .weavemem.app.consent_service import ConsentService
-from .weavemem.app.lifecycle_service import LifecycleService
-from .weavemem.app.memory_service import MemoryApplicationService
-from .weavemem.app.recall_service import MemoryContextComposer, RecallService
-from .weavemem.app.scope_service import PersonalScopeService
-from .weavemem.app.startup_recovery import StartupRecoveryService
-from .weavemem.app.write_coordinator import WriteCoordinator
-from .weavemem.core.errors import (
+from .adapters.astrbot.commands import AstrBotMemoryCommands
+from .adapters.astrbot.injection import AstrBotMemoryInjector
+from .adapters.sqlite.consents import SQLiteConsentStore
+from .adapters.sqlite.database import SQLiteDatabase
+from .adapters.sqlite.fts import SQLiteFTSIndex
+from .adapters.sqlite.store import SQLiteMemoryStore
+from .adapters.system import SystemClock, UUID4IdGenerator
+from .app.consent_service import ConsentService
+from .app.lifecycle_service import LifecycleService
+from .app.memory_service import MemoryApplicationService
+from .app.recall_service import MemoryContextComposer, RecallService
+from .app.scope_service import PersonalScopeService
+from .app.startup_recovery import StartupRecoveryService
+from .app.write_coordinator import WriteCoordinator
+from .core.errors import (
     AuthorizationDenied,
     Conflict,
     ConsentRevocationPending,

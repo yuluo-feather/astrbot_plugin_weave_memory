@@ -7,8 +7,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_SOURCE = ROOT / "plugin" / "astrbot_plugin_weave_memory"
-PACKAGE_SOURCE = ROOT / "weavemem"
+PACKAGE_SOURCES = ("core", "app", "adapters")
 DIST = ROOT / "dist"
 PLUGIN_NAME = "astrbot_plugin_weave_memory"
 
@@ -21,12 +20,12 @@ def main() -> None:
     output_dir.mkdir()
 
     for filename in ("main.py", "metadata.yaml", "requirements.txt"):
-        shutil.copy2(PLUGIN_SOURCE / filename, output_dir / filename)
-    shutil.copytree(
-        PACKAGE_SOURCE,
-        output_dir / "weavemem",
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-    )
+        shutil.copy2(ROOT / filename, output_dir / filename)
+    for package in PACKAGE_SOURCES:
+        shutil.copytree(
+            ROOT / package, output_dir / package,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
 
     archive = DIST / f"{PLUGIN_NAME}.zip"
     if archive.exists():

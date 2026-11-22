@@ -3,23 +3,33 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
-from weavemem.adapters.sqlite.consents import SQLiteConsentStore
-from weavemem.adapters.sqlite.database import SQLiteDatabase
-from weavemem.adapters.sqlite.fts import SQLiteFTSIndex
-from weavemem.adapters.sqlite.store import SQLiteMemoryStore
-from weavemem.adapters.system import UUID4IdGenerator
-from weavemem.app.consent_service import ConsentService
-from weavemem.app.lifecycle_service import LifecycleService
-from weavemem.app.write_coordinator import IndexState, WriteCoordinator
-from weavemem.core.errors import (
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.consents import (
+    SQLiteConsentStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
+    SQLiteDatabase,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.fts import SQLiteFTSIndex
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
+    SQLiteMemoryStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.system import UUID4IdGenerator
+from data.plugins.astrbot_plugin_weave_memory.app.consent_service import ConsentService
+from data.plugins.astrbot_plugin_weave_memory.app.lifecycle_service import (
+    LifecycleService,
+)
+from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
+    IndexState,
+    WriteCoordinator,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     Conflict,
     IndexUnavailable,
     InvalidTransition,
     NotFound,
     ServiceClosed,
 )
-from weavemem.core.model import (
+from data.plugins.astrbot_plugin_weave_memory.core.model import (
     Identity,
     MemoryEntity,
     MemoryRevision,
@@ -32,7 +42,9 @@ from weavemem.core.model import (
     SourceType,
     SubjectType,
 )
-from weavemem.core.normalization import normalize_content
+from data.plugins.astrbot_plugin_weave_memory.core.normalization import (
+    normalize_content,
+)
 
 NOW = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
 
@@ -197,7 +209,7 @@ def test_coordinator_disable_scope_blocks_recall_and_write(stack):
         with pytest.raises(AuthorizationDenied):
             await coordinator.create(blocked, blocked_revision, blocked_source)
 
-    from weavemem.core.errors import AuthorizationDenied
+    from data.plugins.astrbot_plugin_weave_memory.core.errors import AuthorizationDenied
     asyncio.run(run())
     assert store.list_active(scope_id=scope.id, subject_id="u1") == ()
     assert index.search("黑咖啡", scope_id=scope.id, subject_id="u1") == ()
@@ -223,7 +235,9 @@ def test_delete_commits_even_when_index_sync_is_pending(stack):
 
 
 def test_clear_pending_index_is_recovered_on_startup(stack):
-    from weavemem.app.startup_recovery import StartupRecoveryService
+    from data.plugins.astrbot_plugin_weave_memory.app.startup_recovery import (
+        StartupRecoveryService,
+    )
 
     db, _store, index, scope, coordinator = stack
     memory, revision, source = build(scope)
@@ -245,7 +259,9 @@ def test_clear_pending_index_is_recovered_on_startup(stack):
 
 
 def test_status_changes_must_use_lifecycle_service_and_deleted_uses_purge_path(stack):
-    from weavemem.core.policy.lifecycle import transition
+    from data.plugins.astrbot_plugin_weave_memory.core.policy.lifecycle import (
+        transition,
+    )
 
     _db, store, _, scope, coordinator = stack
     memory, revision, source = build(scope)
@@ -272,10 +288,20 @@ def test_status_changes_must_use_lifecycle_service_and_deleted_uses_purge_path(s
 
 
 def test_delete_and_recall_interleaving_never_returns_deleted_memory_after_delete(stack):
-    from weavemem.adapters.sqlite.consents import SQLiteConsentStore
-    from weavemem.adapters.system import UUID4IdGenerator
-    from weavemem.app.consent_service import ConsentService, PersonalConsentType
-    from weavemem.app.recall_service import MemoryContextComposer, RecallService
+    from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.consents import (
+        SQLiteConsentStore,
+    )
+    from data.plugins.astrbot_plugin_weave_memory.adapters.system import (
+        UUID4IdGenerator,
+    )
+    from data.plugins.astrbot_plugin_weave_memory.app.consent_service import (
+        ConsentService,
+        PersonalConsentType,
+    )
+    from data.plugins.astrbot_plugin_weave_memory.app.recall_service import (
+        MemoryContextComposer,
+        RecallService,
+    )
 
     db, store, index, scope, coordinator = stack
     memory, revision, source = build(scope)
@@ -302,10 +328,19 @@ def test_delete_and_recall_interleaving_never_returns_deleted_memory_after_delet
 
 
 def test_delete_linearizing_between_fts_candidates_and_authoritative_fetch(stack):
-    from weavemem.adapters.sqlite.consents import SQLiteConsentStore
-    from weavemem.adapters.system import UUID4IdGenerator
-    from weavemem.app.consent_service import ConsentService, PersonalConsentType
-    from weavemem.app.recall_service import RecallService
+    from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.consents import (
+        SQLiteConsentStore,
+    )
+    from data.plugins.astrbot_plugin_weave_memory.adapters.system import (
+        UUID4IdGenerator,
+    )
+    from data.plugins.astrbot_plugin_weave_memory.app.consent_service import (
+        ConsentService,
+        PersonalConsentType,
+    )
+    from data.plugins.astrbot_plugin_weave_memory.app.recall_service import (
+        RecallService,
+    )
 
     db, store, index, scope, _ = stack
     memory, revision, source = build(scope)
@@ -335,7 +370,9 @@ def test_delete_linearizing_between_fts_candidates_and_authoritative_fetch(stack
 
 
 def test_update_commits_authority_when_fts_is_missing_and_startup_rebuilds(stack):
-    from weavemem.app.startup_recovery import StartupRecoveryService
+    from data.plugins.astrbot_plugin_weave_memory.app.startup_recovery import (
+        StartupRecoveryService,
+    )
 
     db, store, index, scope, coordinator = stack
     memory, revision, source = build(scope)

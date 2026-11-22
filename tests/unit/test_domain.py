@@ -2,10 +2,12 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
-
-from tests.conftest import NOW
-from weavemem.core.errors import AuthorizationDenied, InvalidTransition, ValidationError
-from weavemem.core.model import (
+from data.plugins.astrbot_plugin_weave_memory.core.errors import (
+    AuthorizationDenied,
+    InvalidTransition,
+    ValidationError,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.model import (
     ConsentState,
     Identity,
     MemoryConsent,
@@ -15,14 +17,21 @@ from weavemem.core.model import (
     ScopeType,
     SubjectType,
 )
-from weavemem.core.normalization import normalize_content
-from weavemem.core.policy.consent import ConsentPolicy
-from weavemem.core.policy.dedup import DedupKey, classify_duplicate
-from weavemem.core.policy.lifecycle import (
+from data.plugins.astrbot_plugin_weave_memory.core.normalization import (
+    normalize_content,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.policy.consent import ConsentPolicy
+from data.plugins.astrbot_plugin_weave_memory.core.policy.dedup import (
+    DedupKey,
+    classify_duplicate,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.policy.lifecycle import (
     archive_expired_candidate,
     expire_if_due,
     transition,
 )
+
+from tests.conftest import NOW
 
 
 def test_normalization_nfkc_whitespace_case_and_terminal_punctuation():

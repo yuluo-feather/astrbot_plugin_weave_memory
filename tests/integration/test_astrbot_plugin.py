@@ -119,15 +119,16 @@ def install_astrbot_stubs(monkeypatch, data_dir):
 def load_plugin(monkeypatch, tmp_path):
     star_module = install_astrbot_stubs(monkeypatch, tmp_path)
     root = Path(__file__).parents[2]
-    source_main = root / "plugin" / "astrbot_plugin_weave_memory" / "main.py"
+    source_main = root / "main.py"
     package_dir = tmp_path / "plugin_package"
     package_dir.mkdir(exist_ok=True)
     shutil.copy2(source_main, package_dir / "main.py")
-    if not (package_dir / "weavemem").exists():
-        shutil.copytree(
-            root / "weavemem", package_dir / "weavemem",
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-        )
+    for package in ("core", "app", "adapters"):
+        if not (package_dir / package).exists():
+            shutil.copytree(
+                root / package, package_dir / package,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+            )
     package_name = f"weave_plugin_test_{id(tmp_path)}"
     package = types.ModuleType(package_name)
     package.__path__ = [str(package_dir)]
@@ -338,7 +339,7 @@ def test_plugin_reports_closed_scope_when_consent_revoke_needs_retry(monkeypatch
             fail_once = False
             import importlib
             package_name = plugin._commands._consent.__class__.__module__.split(".", 1)[0]
-            errors = importlib.import_module(f"{package_name}.weavemem.core.errors")
+            errors = importlib.import_module(f"{package_name}.core.errors")
             raise errors.StorageError("simulated consent write failure")
         original_record(consent_event)
 

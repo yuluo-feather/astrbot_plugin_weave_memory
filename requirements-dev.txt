@@ -1,0 +1,4 @@
+# 开发与 CI 工具链；运行时依赖见 requirements.txt。
+pytest>=8.0
+ruff>=0.9
+mypy>=1.10

@@ -19,7 +19,7 @@
 
 ```bash
 python -m pytest -q
-python -m compileall -q weavemem plugin tests tools
+python -m compileall -q core app adapters main.py tests tools
 ```
 
 结果：`69 passed`；编译检查通过。

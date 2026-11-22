@@ -1,0 +1,6 @@
+# 织忆开发配置；AstrBot 运行时不读此文件。
+# 对齐星羽塔罗：只保留核心检查与 import 排序，避免把刻意的降级 except 当作错误。
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I"]

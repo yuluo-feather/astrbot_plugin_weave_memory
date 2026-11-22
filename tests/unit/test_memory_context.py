@@ -1,4 +1,4 @@
-from weavemem.app.recall_service import estimate_tokens
+from data.plugins.astrbot_plugin_weave_memory.app.recall_service import estimate_tokens
 
 
 def test_token_estimate_counts_cjk_and_punctuation_conservatively():

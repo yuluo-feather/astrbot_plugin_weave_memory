@@ -1,0 +1,1 @@
+# 织忆运行时不依赖第三方 Python 包；AstrBot 与 SQLite FTS5 由宿主提供。

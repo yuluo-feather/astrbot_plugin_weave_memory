@@ -1,10 +1,11 @@
 import types
 
 import pytest
-
-from weavemem.adapters.astrbot.identity import AstrBotIdentityAdapter
-from weavemem.core.errors import AuthorizationDenied
-from weavemem.core.model import ScopeType, SubjectType
+from data.plugins.astrbot_plugin_weave_memory.adapters.astrbot.identity import (
+    AstrBotIdentityAdapter,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.errors import AuthorizationDenied
+from data.plugins.astrbot_plugin_weave_memory.core.model import ScopeType, SubjectType
 
 
 class Event:

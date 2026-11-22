@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 def test_core_has_no_platform_or_database_imports():
-    root = Path(__file__).parents[2] / "weavemem" / "core"
+    root = Path(__file__).parents[2] / "core"
     forbidden = {"astrbot", "sqlite3"}
     for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -18,7 +18,7 @@ def test_core_has_no_platform_or_database_imports():
 
 
 def test_app_has_no_concrete_adapter_or_sqlite_imports():
-    root = Path(__file__).parents[2] / "weavemem" / "app"
+    root = Path(__file__).parents[2] / "app"
     forbidden = {"sqlite3", "astrbot", "adapters"}
     for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

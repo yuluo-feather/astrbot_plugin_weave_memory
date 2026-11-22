@@ -2,19 +2,44 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
-
-from weavemem.adapters.sqlite.consents import SQLiteConsentStore
-from weavemem.adapters.sqlite.database import SQLiteDatabase
-from weavemem.adapters.sqlite.fts import SQLiteFTSIndex
-from weavemem.adapters.sqlite.store import SQLiteMemoryStore
-from weavemem.adapters.system import UUID4IdGenerator
-from weavemem.app.consent_service import ConsentService, PersonalConsentType
-from weavemem.app.memory_service import MemoryApplicationService
-from weavemem.app.recall_service import MemoryContextComposer, RecallService
-from weavemem.app.scope_service import PersonalScopeService
-from weavemem.app.write_coordinator import WriteCoordinator
-from weavemem.core.errors import AuthorizationDenied, Conflict
-from weavemem.core.model import Identity, MemoryType, ScopeType, SubjectType
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.consents import (
+    SQLiteConsentStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
+    SQLiteDatabase,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.fts import SQLiteFTSIndex
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
+    SQLiteMemoryStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.system import UUID4IdGenerator
+from data.plugins.astrbot_plugin_weave_memory.app.consent_service import (
+    ConsentService,
+    PersonalConsentType,
+)
+from data.plugins.astrbot_plugin_weave_memory.app.memory_service import (
+    MemoryApplicationService,
+)
+from data.plugins.astrbot_plugin_weave_memory.app.recall_service import (
+    MemoryContextComposer,
+    RecallService,
+)
+from data.plugins.astrbot_plugin_weave_memory.app.scope_service import (
+    PersonalScopeService,
+)
+from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
+    WriteCoordinator,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.errors import (
+    AuthorizationDenied,
+    Conflict,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.model import (
+    Identity,
+    MemoryType,
+    ScopeType,
+    SubjectType,
+)
 
 NOW = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
 
@@ -318,10 +343,14 @@ def test_recall_ranking_uses_recency_then_explicit_type_tiebreak(app_stack):
 
 
 def test_scope_disable_revokes_consent_and_retry_repairs_failed_consent_append(app_stack, monkeypatch):
-    from weavemem.adapters.sqlite.consents import SQLiteConsentStore
-    from weavemem.app.lifecycle_service import LifecycleService
-    from weavemem.core.errors import StorageError
-    from weavemem.core.model import OperatorType
+    from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.consents import (
+        SQLiteConsentStore,
+    )
+    from data.plugins.astrbot_plugin_weave_memory.app.lifecycle_service import (
+        LifecycleService,
+    )
+    from data.plugins.astrbot_plugin_weave_memory.core.errors import StorageError
+    from data.plugins.astrbot_plugin_weave_memory.core.model import OperatorType
 
     db, store, index, scopes, consent, memories, recall, coordinator = app_stack
     scope = scopes.resolve(identity())
@@ -457,7 +486,7 @@ def test_recall_does_not_inject_or_record_access_if_consent_revoked_after_search
 
 
 def test_recall_does_not_inject_if_scope_disabled_after_search(app_stack, monkeypatch):
-    from weavemem.core.model import OperatorType
+    from data.plugins.astrbot_plugin_weave_memory.core.model import OperatorType
 
     _, store, _, scopes, consent, memories, recall, coordinator = app_stack
     scope = scopes.resolve(identity())

@@ -8,11 +8,18 @@ import subprocess
 import sys
 from pathlib import Path
 
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
+    SQLiteDatabase,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.fts import SQLiteFTSIndex
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
+    SQLiteMemoryStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.app.startup_recovery import (
+    StartupRecoveryService,
+)
+
 from tests.integration.test_startup_recovery import add, make_stack
-from weavemem.adapters.sqlite.database import SQLiteDatabase
-from weavemem.adapters.sqlite.fts import SQLiteFTSIndex
-from weavemem.adapters.sqlite.store import SQLiteMemoryStore
-from weavemem.app.startup_recovery import StartupRecoveryService
 
 
 def _kill_child_after_ready(script: str, database_path: Path) -> None:

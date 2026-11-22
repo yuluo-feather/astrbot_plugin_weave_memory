@@ -8,7 +8,7 @@
 
 1. SQLite 是 V0 唯一权威持久化存储；FTS5 是派生索引，不得成为正文权威来源。
 2. 使用单进程、单连接、线程亲和模型；启用外键、WAL（文件数据库）、`synchronous=FULL` 与 5 秒 busy timeout。V0 不承诺多实例或跨线程并发写入。
-3. Schema migration 采用递增版本号；V0.3 初始 schema 为版本 1，SQL 文件位于 `weavemem/adapters/sqlite/migrations/001_initial.sql`。DDL 与 migration marker 在同一事务执行；开发/测试可显式 rollback 到空 schema。
+3. Schema migration 采用递增版本号；V0.3 初始 schema 为版本 1，SQL 文件位于 `adapters/sqlite/migrations/001_initial.sql`。DDL 与 migration marker 在同一事务执行；开发/测试可显式 rollback 到空 schema。
 4. `memories`、`memory_revisions`、`memory_sources` 的初次创建必须在同一 SQLite 事务中完成；任一失败全部回滚。
 5. 活动/候选去重使用计划书规定的 partial unique index，仅覆盖 `ACTIVE` 与 `CANDIDATE`。
 6. 完全相同的创建请求（包括实体、初始 Revision、Source 的稳定 ID 与字段）重放视为幂等成功；同一 memory ID 对应不同内容则 Conflict；自然去重键冲突但 memory ID 不同也返回 Conflict。

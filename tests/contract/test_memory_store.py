@@ -1,18 +1,20 @@
 from datetime import timedelta
 
 import pytest
-
-from tests.conftest import NOW
-from weavemem.adapters.memory.store import InMemoryMemoryStore
-from weavemem.core.errors import Conflict, NotFound
-from weavemem.core.model import (
+from data.plugins.astrbot_plugin_weave_memory.adapters.memory.store import (
+    InMemoryMemoryStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.errors import Conflict, NotFound
+from data.plugins.astrbot_plugin_weave_memory.core.model import (
     MemoryRevision,
     MemorySource,
     MemoryStatus,
     OperatorType,
     SourceType,
 )
-from weavemem.core.policy.lifecycle import transition
+from data.plugins.astrbot_plugin_weave_memory.core.policy.lifecycle import transition
+
+from tests.conftest import NOW
 
 
 def source(memory_id):

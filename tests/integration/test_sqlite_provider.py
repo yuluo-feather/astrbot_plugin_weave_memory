@@ -1,12 +1,19 @@
 from datetime import UTC, datetime
 
 import pytest
-
-from weavemem.adapters.sqlite.database import SQLiteDatabase
-from weavemem.adapters.sqlite.fts import SQLiteFTSIndex
-from weavemem.adapters.sqlite.store import SQLiteMemoryStore
-from weavemem.core.errors import Conflict, IndexUnavailable, NotFound
-from weavemem.core.model import (
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
+    SQLiteDatabase,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.fts import SQLiteFTSIndex
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
+    SQLiteMemoryStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.errors import (
+    Conflict,
+    IndexUnavailable,
+    NotFound,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.model import (
     Identity,
     MemoryEntity,
     MemoryRevision,
@@ -19,7 +26,9 @@ from weavemem.core.model import (
     SourceType,
     SubjectType,
 )
-from weavemem.core.normalization import normalize_content
+from data.plugins.astrbot_plugin_weave_memory.core.normalization import (
+    normalize_content,
+)
 
 NOW = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
 
@@ -97,7 +106,9 @@ def test_create_rolls_back_all_authoritative_rows_on_association_failure(sqlite_
 
 
 def test_partial_unique_index_only_blocks_active_and_candidate(sqlite_stack):
-    from weavemem.core.policy.lifecycle import transition
+    from data.plugins.astrbot_plugin_weave_memory.core.policy.lifecycle import (
+        transition,
+    )
 
     _, store, _, scope = sqlite_stack
     active = add_memory(store, scope, memory_id="active-1", status=MemoryStatus.ACTIVE)
@@ -156,13 +167,15 @@ def test_close_is_idempotent_and_operations_after_close_fail(tmp_path):
     db.migrate()
     db.close()
     db.close()
-    from weavemem.core.errors import ServiceClosed
+    from data.plugins.astrbot_plugin_weave_memory.core.errors import ServiceClosed
     with pytest.raises(ServiceClosed):
         db.schema_version()
 
 
 def test_optimistic_update_and_index_removal(sqlite_stack):
-    from weavemem.core.policy.lifecycle import transition
+    from data.plugins.astrbot_plugin_weave_memory.core.policy.lifecycle import (
+        transition,
+    )
 
     db, store, index, scope = sqlite_stack
     memory = add_memory(store, scope)
@@ -220,7 +233,7 @@ def test_fts_query_matches_relevant_cjk_bigrams_in_natural_question(sqlite_stack
 
 
 def test_fts_rejects_out_of_range_limit_and_oversized_query(sqlite_stack):
-    from weavemem.core.errors import ValidationError
+    from data.plugins.astrbot_plugin_weave_memory.core.errors import ValidationError
 
     _, _, index, scope = sqlite_stack
     with pytest.raises(ValidationError):
@@ -232,7 +245,7 @@ def test_fts_rejects_out_of_range_limit_and_oversized_query(sqlite_stack):
 def test_v4_migration_failure_rolls_back_ddl_and_version_marker(tmp_path, monkeypatch):
     from pathlib import Path
 
-    from weavemem.core.errors import StorageError
+    from data.plugins.astrbot_plugin_weave_memory.core.errors import StorageError
 
     db = SQLiteDatabase(tmp_path / "failed-v4-migration.db")
     db.migrate()
@@ -275,7 +288,7 @@ def test_v3_database_upgrades_to_v4_reserved_relations_table(tmp_path):
 
 
 def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path):
-    from weavemem.core.errors import StorageError
+    from data.plugins.astrbot_plugin_weave_memory.core.errors import StorageError
 
     db = SQLiteDatabase(tmp_path / "rollback-v05.db")
     db.migrate()

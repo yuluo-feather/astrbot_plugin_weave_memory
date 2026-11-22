@@ -1,12 +1,20 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
-from weavemem.adapters.sqlite.consents import SQLiteConsentStore
-from weavemem.adapters.sqlite.database import SQLiteDatabase
-from weavemem.adapters.sqlite.store import SQLiteMemoryStore
-from weavemem.core.errors import AuthorizationDenied, Conflict
-from weavemem.core.model import (
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.consents import (
+    SQLiteConsentStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
+    SQLiteDatabase,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
+    SQLiteMemoryStore,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.errors import (
+    AuthorizationDenied,
+    Conflict,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.model import (
     ConsentState,
     Identity,
     MemoryConsent,

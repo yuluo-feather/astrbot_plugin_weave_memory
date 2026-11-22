@@ -43,15 +43,18 @@
 ## 目录
 
 ```text
-weavemem/core/          纯领域核心与端口
-weavemem/app/           应用服务
-weavemem/adapters/      存储与平台适配
-plugin/                 AstrBot 插件入口与元数据
+main.py                 AstrBot 插件入口
+metadata.yaml           插件元数据
+core/                   纯领域核心与端口
+app/                    应用服务
+adapters/               存储与平台适配
 tools/                  自包含插件包构建工具
 tests/                  unit / contract / integration
 
 docs/                   契约、测试与阶段报告
 decisions/              ADR
+pytest.ini / ruff.toml / mypy.ini
+requirements.txt / requirements-dev.txt
 ```
 
 ## 开发纪律
@@ -66,10 +69,10 @@ decisions/              ADR
 ## 本地验证
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
-python -m ruff check weavemem plugin tests tools
-python -m mypy weavemem plugin
+python -m ruff check .
+python -m mypy
 ```
 
 V0.5 基线保留；V1.0 仍为开发预览。当前 100 项测试不替代真实宿主最终验收。详见 `docs/V1.0_M3_CRASH_RECOVERY_REPORT_20261123.md` 与 `docs/V1.0_INDEPENDENT_ACCEPTANCE_REVIEW_20261123.md`。
@@ -83,3 +86,33 @@ python tools/build_astrbot_plugin.py
 ```
 
 产物：`dist/astrbot_plugin_weave_memory.zip`。请安装整个 ZIP，不要只复制 `main.py`。
+
+
+## 运行要求
+
+- AstrBot：`>=4.29.4,<4.30`
+- Python：`>=3.12`
+- SQLite：必须启用 FTS5
+- 插件本身不依赖第三方 Python 包
+
+## 命令
+
+- `/记忆 授权`：授权个人记忆；授权前默认拒绝存储、检索和注入。
+- `/记忆 撤销授权`：停止存储、检索和注入，但保留已有数据。
+- `/记忆 保存 <内容>`：显式保存一条事实；相同规范化内容重复保存沿用原 ID。
+- `/记忆 更新 <记忆ID> <当前revision> <新内容>`：显式更新指定记忆；revision 不匹配时拒绝覆盖。
+- `/记忆 列表`：查看记忆。
+- `/记忆 查询 <问题>`：主动检索。
+- `/记忆 删除 <记忆ID>`：不可恢复地删除一条记忆。
+- `/记忆 清空 确认`：不可恢复地清空个人记忆。
+- `/记忆 关闭 确认`：永久关闭个人记忆空间；停止普通读写/检索，保留数据，V1.0 不提供重新开启。
+
+V1.0 只处理私聊，不做群聊、自动提取、外部模型调用或向量检索。
+
+## 数据位置
+
+数据库位于 AstrBot 为插件分配的 `data/plugin_data/astrbot_plugin_weave_memory/weave_memory.sqlite3`。
+
+## 注入策略
+
+使用 `on_llm_request` 将少量相关记忆追加到 `extra_user_content_parts`，并通过 `mark_as_temp()` 保证只作用于当前请求，不进入持久会话历史。默认最多 4 条、384 estimated tokens；token 数是 provider-neutral 估算值，不是特定模型 tokenizer 的精确值。
