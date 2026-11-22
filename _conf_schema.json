@@ -1,4 +1,16 @@
 {
+  "auto_enroll": {
+    "description": "Personal 记忆默认登记（opt-out 模式）",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后，新用户或没有授权记录的私聊用户首次对话会自动登记个人记忆，并收到一次告知；用户可用 /织忆 关闭 停止。关闭后回到逐用户 /织忆 授权。"
+  },
+  "agent_write_enabled": {
+    "description": "允许模型工具写入个人记忆",
+    "type": "bool",
+    "default": true,
+    "hint": "仅在用户明确提到长期偏好、背景或目标时，模型工具才会保存一条记忆；不保存完整聊天原文。"
+  },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",
     "type": "object",

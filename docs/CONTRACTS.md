@@ -116,7 +116,7 @@ V0.5 使用 provider-neutral estimate：CJK 字符和标点各计 1，ASCII 字�
 
 ## 9. V0.5 Consent 与宿主注入契约（ADR-0005）
 
-- `personal_memory` Consent 无记录默认拒绝；授权后显式保存、主动检索、自动注入可用；撤销后停止三者但不删除历史。
+- V1.2 起 `personal_memory` 默认登记（`auto_enroll=true`）：首次符合条件的私聊事件自动 GRANTED 并发送一次告知；`auto_enroll=false` 时回到无记录默认拒绝。任何已存在的 GRANTED/REVOKED 事件优先，auto_enroll 不改写。
 - AstrBot 身份由 platform name + platform instance ID + sender ID 构成；仅私聊映射 Personal。
 - 注入追加临时 TextPart，不修改 system prompt 或持久会话历史。
 - 记忆内容作为不可信文本转义；注入失败按无记忆处理，不阻断宿主聊天。
@@ -259,3 +259,23 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - V1.1 不实现导出；V1.2 再做导出与完整保留策略。
 - v5 迁移/回滚见 ADR-0011；群销毁是回滚前置，见 ADR-0010/0011。
 - v1–v4 升级到 v5 前，`SQLiteDatabase.migrate()` 自动在数据目录 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移，原 schema 与数据不变。
+
+## 12. V1.2 Personal 默认登记与 agent 工具（ADR-0012）
+
+### Consent
+
+- `ConsentService.ensure_auto_enrolled(scope, personal_memory, operator_id)` 只在 scope 已启用且 `memory_consents` 无任何历史时追加 `GRANTED`，`source=auto_enroll`，`metadata.auto_enrolled=true`；返回是否新登记。
+- 已有 `GRANTED` 或 `REVOKED` 事件时返回 false，不追加事件。`/织忆 撤销授权`、`/织忆 关闭` 的拒绝状态不会被 auto_enroll 覆盖；`/织忆 清空` 不改变 consent/enabled。
+- `auto_enroll` 配置默认 true；false 时注入与 agent 工具都要求显式 `/织忆 授权`。
+
+### 注入
+
+- `AstrBotMemoryInjector` 在私聊 `on_llm_request` 中解析 Personal scope；scope 不存在且 auto_enroll=true 时创建；scope enabled 且无 consent 历史时自动登记，并 `event.send` 一条固定告知；告知失败被吞掉，不影响聊天。
+- 群事件不进入 Personal 注入；群记忆仍需 `/织忆 群开启`。
+
+### Agent 工具
+
+- `weave_memory_remember` 仅在用户明确表达长期偏好/背景/目标时由模型调用；`agent_write_enabled` 默认 true，可关闭。
+- 写入 `MemoryApplicationService.save_agent`：`source_type=AGENT`、`operator_type=AGENT`、`status=ACTIVE`；沿用去重、Revision、Source、WriteCoordinator 与 Consent guard。
+- 工具拒绝群聊、撤销/关闭、空内容、非法 memory_type；返回字符串给 Agent Loop，不直发用户消息。
+- 后台自动提取不在本版实现；V1.5 仍只产 `INFERRED` 候选。

@@ -1,4 +1,4 @@
-"""Explicit personal-memory use cases; no automatic extraction in V1.0."""
+"""Personal-memory use cases: explicit save/update and the constrained agent tool write."""
 
 from dataclasses import replace
 from datetime import datetime
@@ -74,6 +74,44 @@ class MemoryApplicationService:
         source = MemorySource(
             id=self._ids.new_id("source"), memory_id=memory_id,
             source_type=SourceType.EXPLICIT, operator_type=OperatorType.USER,
+            operator_id=operator_id, captured_at=now,
+        )
+        saved, receipt, _created = await self._coordinator.create_or_get_duplicate(
+            memory, revision, source,
+            guard=lambda: self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY),
+        )
+        return saved, receipt
+
+    async def save_agent(self, scope: Scope, content: str, *,
+                         operator_id: str,
+                         memory_type: MemoryType = MemoryType.FACT) -> tuple[MemoryEntity, WriteReceipt]:
+        """Save a memory requested by the model through an explicit user signal.
+
+        The model tool is constrained by its description; the source remains
+        AGENT so it is distinguishable from /织忆 保存 and from inferred
+        background extraction (which only produces candidates in V1.5).
+        """
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        normalized = normalize_content(content)
+        now = self._clock.now()
+        await self._expire_overdue_duplicate(scope, memory_type, normalized, now)
+        memory_id = self._ids.new_id("memory")
+        memory = MemoryEntity(
+            id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+            memory_type=memory_type, content=content, normalized_content=normalized,
+            status=MemoryStatus.ACTIVE, source_type=SourceType.AGENT,
+            current_revision=1, created_at=now, updated_at=now,
+        )
+        revision = MemoryRevision(
+            id=self._ids.new_id("revision"), memory_id=memory_id, revision=1,
+            content=content, status=MemoryStatus.ACTIVE, changed_at=now,
+            change_reason="agent memory tool",
+            snapshot={"scope_id": scope.id, "subject_id": scope.identity.subject_id,
+                      "memory_type": memory_type.value, "source_type": SourceType.AGENT.value},
+        )
+        source = MemorySource(
+            id=self._ids.new_id("source"), memory_id=memory_id,
+            source_type=SourceType.AGENT, operator_type=OperatorType.AGENT,
             operator_id=operator_id, captured_at=now,
         )
         saved, receipt, _created = await self._coordinator.create_or_get_duplicate(

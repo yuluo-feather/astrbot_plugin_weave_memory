@@ -84,3 +84,11 @@ V0 计划的清理顺序：墓碑 → 正文 → FTS/标签 → 缓存。V0.4 �
 - 群关闭/清空不影响个人；个人关闭/清空不影响群。
 - V1.1 无导出；导出/完整保留期/自动清理在 V1.2。群增长以 ACTIVE 计数与 `group_max_active=200` 告警，管理员清理。
 - 群关闭的可逆性是 V1.1 明确差异；个人关闭仍永久、无重新开启命令。
+
+## 9. V1.2 Personal 默认登记与 opt-out
+
+- Personal scope 的 auto_enroll 只对 `is_enabled=1` 且无 consent 历史的 scope 生效；首次私聊事件自动追加 `personal_memory=GRANTED`（`source=auto_enroll`）。
+- 已有 `GRANTED` 或 `REVOKED` 事件时 auto_enroll 不改写；`/织忆 撤销授权` 停止保存/检索/注入但保留数据，`/织忆 关闭` 置 `is_enabled=0` + REVOKED；两者都不会被下一次对话自动复活。
+- `/织忆 清空` 只删除正文/关联数据，不改变 consent/enabled；已关闭 scope 不会因清空恢复。
+- 群 scope 不参与 auto_enroll；群开启/关闭/清空/销毁语义不变。
+- 模型工具写入的 AGENT 记忆与其他 ACTIVE 记忆同样受生命周期、删除、清空、consent 与 scope enabled 约束。

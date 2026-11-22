@@ -39,6 +39,33 @@ class ConsentService:
         self._coordinator.write_metadata(lambda: self._repository.record(consent))
         return consent
 
+    def ensure_auto_enrolled(self, scope: Scope, consent_type: ConsentType, *,
+                             operator_id: str) -> bool:
+        """Grant consent only when the scope has no consent history.
+
+        An existing GRANTED or REVOKED event always wins: auto-enrollment must
+        never override an explicit user decision, including /织忆 撤销授权.
+        """
+        now = self._clock.now()
+        consent = MemoryConsent(
+            id=self._ids.new_id("consent"), subject_id=scope.identity.subject_id,
+            scope_id=scope.id, consent_type=consent_type.value,
+            state=ConsentState.GRANTED, source="auto_enroll", granted_at=now,
+            metadata={"operator_id": operator_id, "auto_enrolled": True},
+        )
+
+        def operation() -> bool:
+            history = self._repository.history(
+                subject_id=scope.identity.subject_id, scope_id=scope.id,
+                consent_type=consent_type.value,
+            )
+            if history:
+                return False
+            self._repository.record(consent)
+            return True
+
+        return self._coordinator.write_metadata(operation)
+
     def revoke(self, scope: Scope, consent_type: ConsentType, *,
                operator_id: str, source: str = "explicit_user_command") -> MemoryConsent:
         now = self._clock.now()

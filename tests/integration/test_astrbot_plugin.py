@@ -31,6 +31,7 @@ class FakeEvent:
         self.message_str = message
         self._user = user
         self._platform_id = platform_id
+        self.sent = []
 
     def is_private_chat(self):
         return not bool(self.message_obj.group_id)
@@ -53,6 +54,9 @@ class FakeEvent:
 
     def plain_result(self, text):
         return text
+
+    async def send(self, result):
+        self.sent.append(result)
 
 
 def install_astrbot_stubs(monkeypatch, data_dir):
@@ -89,6 +93,7 @@ def install_astrbot_stubs(monkeypatch, data_dir):
         command_group=command_group,
         event_message_type=passthrough,
         on_llm_request=passthrough,
+        llm_tool=passthrough,
         EventMessageType=types.SimpleNamespace(
             PRIVATE_MESSAGE="private", GROUP_MESSAGE="group",
         ),
@@ -136,7 +141,7 @@ def install_astrbot_stubs(monkeypatch, data_dir):
     return star_module
 
 
-def load_plugin(monkeypatch, tmp_path):
+def load_plugin(monkeypatch, tmp_path, config=None):
     star_module = install_astrbot_stubs(monkeypatch, tmp_path)
     root = Path(__file__).parents[2]
     source_main = root / "main.py"
@@ -158,7 +163,7 @@ def load_plugin(monkeypatch, tmp_path):
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
-    return module.WeaveMemoryPlugin(object()), star_module
+    return module.WeaveMemoryPlugin(object(), config), star_module
 
 
 async def collect(generator):
@@ -407,6 +412,138 @@ def test_plugin_consent_revocation_stops_injection_and_data_survives(monkeypatch
     asyncio.run(plugin.inject_personal_memory(FakeEvent(message="我住在哪里？"), request2))
     assert request2.extra_user_content_parts
     assert "东京" in request2.extra_user_content_parts[0].text
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_auto_enroll_grants_once_and_notifies(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    first = FakeEvent(message="我喜欢黑咖啡")
+    request = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(first, request))
+
+    assert len(first.sent) == 1
+    assert "默认开启" in first.sent[0]
+    assert request.extra_user_content_parts == []
+    rows = plugin._database.connection.execute(
+        "SELECT state, source FROM memory_consents ORDER BY rowid",
+    ).fetchall()
+    assert [(row["state"], row["source"]) for row in rows] == [("GRANTED", "auto_enroll")]
+
+    second = FakeEvent(message="我喜欢黑咖啡")
+    request2 = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(second, request2))
+    assert second.sent == []
+    assert plugin._database.connection.execute(
+        "SELECT count(*) FROM memory_consents",
+    ).fetchone()[0] == 1
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_auto_enroll_disabled_requires_explicit_grant(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path, config={"auto_enroll": False})
+    event = FakeEvent(message="我喜欢黑咖啡")
+    request = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(event, request))
+
+    assert event.sent == []
+    assert request.extra_user_content_parts == []
+    assert plugin._database.connection.execute(
+        "SELECT count(*) FROM memory_consents",
+    ).fetchone()[0] == 0
+
+    asyncio.run(collect(plugin.memory_grant(FakeEvent(message="/织忆 授权"))))
+    asyncio.run(collect(plugin.memory_save(FakeEvent(message="/织忆 保存 我喜欢黑咖啡"))))
+    request2 = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(FakeEvent(message="我喜欢什么咖啡"), request2))
+    assert request2.extra_user_content_parts
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_agent_tool_saves_agent_source_and_respects_opt_out(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    saved = asyncio.run(plugin.memory_remember_tool(
+        FakeEvent(message="记住我对花生过敏"), "我对花生过敏", "PREFERENCE",
+    ))
+    assert "已保存记忆" in saved
+    row = plugin._database.connection.execute(
+        "SELECT m.content, s.source_type, s.operator_type FROM memories m "
+        "JOIN memory_sources s ON s.memory_id=m.id",
+    ).fetchone()
+    assert row["content"] == "我对花生过敏"
+    assert row["source_type"] == "AGENT"
+    assert row["operator_type"] == "agent"
+
+    asyncio.run(collect(plugin.memory_revoke(FakeEvent(message="/织忆 撤销授权"))))
+    blocked = asyncio.run(plugin.memory_remember_tool(
+        FakeEvent(message="记住我喜欢跑步"), "我喜欢跑步",
+    ))
+    assert "未保存" in blocked
+    assert plugin._database.connection.execute(
+        "SELECT count(*) FROM memories",
+    ).fetchone()[0] == 1
+
+    group_blocked = asyncio.run(plugin.memory_remember_tool(
+        FakeEvent(group_id="g1", message="记住我喜欢跑步"), "我喜欢跑步",
+    ))
+    assert "个人记忆只在私聊生效" in group_blocked
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_agent_write_can_be_disabled(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path, config={"agent_write_enabled": False})
+    result = asyncio.run(plugin.memory_remember_tool(
+        FakeEvent(message="记住我喜欢跑步"), "我喜欢跑步",
+    ))
+    assert "已关闭" in result
+    assert plugin._database.connection.execute(
+        "SELECT count(*) FROM memories",
+    ).fetchone()[0] == 0
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_commands_auto_enroll_without_explicit_grant(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    saved = asyncio.run(collect(plugin.memory_save(
+        FakeEvent(message="/织忆 保存 我喜欢黑咖啡"),
+    )))[0]
+    assert "已保存记忆" in saved
+    rows = plugin._database.connection.execute(
+        "SELECT state, source FROM memory_consents ORDER BY rowid",
+    ).fetchall()
+    assert [(row["state"], row["source"]) for row in rows] == [("GRANTED", "auto_enroll")]
+
+    listed = asyncio.run(collect(plugin.memory_list(
+        FakeEvent(message="/织忆 列表"),
+    )))[0]
+    assert "我喜欢黑咖啡" in listed
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_close_works_after_revoke(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    asyncio.run(collect(plugin.memory_grant(FakeEvent(message="/织忆 授权"))))
+    asyncio.run(collect(plugin.memory_save(FakeEvent(message="/织忆 保存 我住在东京"))))
+    asyncio.run(collect(plugin.memory_revoke(FakeEvent(message="/织忆 撤销授权"))))
+    closed = asyncio.run(collect(plugin.memory_disable(
+        FakeEvent(message="/织忆 关闭 确认"),
+    )))[0]
+    assert "已永久关闭" in closed
+
+    request = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(FakeEvent(message="我住在哪里？"), request))
+    assert request.extra_user_content_parts == []
     asyncio.run(plugin.terminate())
 
 

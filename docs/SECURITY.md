@@ -22,14 +22,14 @@
 
 ## 3. Consent
 
-`memory_consents` 默认 fail-closed。必须在执行保存、检索、注入等动作前判定对应 Consent。V0 的显式保存不能被理解为对未来自动提取、外部模型处理或群共享的授权。
+`memory_consents` 自 V1.2 起采用 **默认登记 + opt-out**：`auto_enroll=true`（默认）时，首次符合条件的私聊事件自动建立 `personal_memory=GRANTED`，并发送一次告知；`auto_enroll=false` 时回到 fail-closed，必须显式 `/织忆 授权`。任何已存在的 `GRANTED` 或 `REVOKED` 事件都优先，auto_enroll 不改写用户已做出的决定。V0 的显式保存仍不能被理解为对未来自动提取、外部模型处理或群共享的授权。
 
-V0 使用单一 `personal_memory` Consent：无记录默认拒绝；`/织忆 授权` 开启保存、主动检索与自动注入；`/织忆 撤销授权` 停止这三类普通功能但不自动删除历史。Consent 事件 append-only，按追加顺序取最后一条；不再用时间戳决定先后。详见 ADR-0005。
+V1.2 起默认登记；`/织忆 授权` 仍是显式 opt-in/恢复命令，`/织忆 撤销授权` 停止保存、主动检索与自动注入但不自动删除历史。Consent 事件 append-only，按追加顺序取最后一条；不再用时间戳决定先后。详见 ADR-0005、ADR-0012。
 
 ## 4. 来源可信度
 
-- `EXPLICIT` 与 `INFERRED` 分开记录。
-- V0 只实现用户显式保存，不启用自动提取。
+- `EXPLICIT`、`AGENT` 与 `INFERRED` 分开记录。
+- V1.2 增加受约束的模型工具写入（`source_type=AGENT`）；后台自动提取仍不启用。
 - 不得将助手输出或工具输出伪装为用户显式陈述。
 - `operator_type` 与 `source_type` 分开保存。
 
@@ -101,3 +101,11 @@ Recall 候选查找与上下文注入之间可能发生 Consent revoke 或 Scope
 - 群解散/退群只做 disable + revoke + 数据保留；成员个人删除/退群在 V2.4。
 - v5 迁移前备份；有群数据拒绝回滚；V1.0 不能直接打开 v5；群关闭 ≠ schema 回滚。
 - V1.1 无导出；不得宣称已实现群导出/完整审计。
+
+## 11. V1.2 Personal 默认登记与 opt-out
+
+- `auto_enroll` 默认 `true`：新用户或没有任何 consent 记录的用户，首次符合条件的私聊事件自动建立 `personal_memory=GRANTED`；插件发送一次告知，不经过 LLM。`auto_enroll=false` 回到逐用户 `/织忆 授权`。
+- auto_enroll 只在 scope 已启用且 consent 历史为空时生效；已有 `GRANTED`/`REVOKED` 事件优先，`/织忆 撤销授权` 与 `/织忆 关闭` 不会被下一次对话复活。`/织忆 清空` 只删数据，不重新开启已关闭 scope。
+- 群共享记忆不参与 auto_enroll；仍由管理员 `/织忆 群开启` 显式开启，个人与群隔离不变。
+- 新增模型工具写入：只在用户明确提到长期偏好、背景或目标时调用；来源固定 `source_type=AGENT`、`operator_type=AGENT`，只写记忆正文，不保存完整聊天原文。工具受 Consent、scope enabled 与 `agent_write_enabled` 约束。
+- 后台自动提取仍只产 `INFERRED` 候选，不自动升级 `ACTIVE`；本次变更不等于开启无确认的推断记忆。

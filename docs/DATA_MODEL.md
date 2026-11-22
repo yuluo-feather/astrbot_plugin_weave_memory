@@ -168,3 +168,11 @@ V1.0 该表没有 `scope_id` 列，也没有应用层写入/查询 API；跨 Sco
 - FTS/读取除 `scope_id/subject_id` 外再做 `scope_type=GROUP` 防御过滤。
 - 群解散/退群不自动删个人记忆；成员个人删除/退群在 V2.4。
 - v5 迁移与 v4 回滚见 ADR-0011；有群数据时拒绝回滚，无群数据可回退并再次迁移。
+
+## 14. V1.2 Personal 默认登记与 AGENT 来源
+
+- 不新增 schema 版本；沿用 v5。`memory_consents` 追加 `GRANTED` 事件时使用 `source='auto_enroll'`，`metadata_json` 记录 `operator_id` 与 `auto_enrolled=true`。
+- 已有 `GRANTED`/`REVOKED` 历史时不追加 auto_enroll 事件；`/织忆 撤销授权` 与 `/织忆 关闭` 的拒绝状态持久。
+- 模型工具写入使用既有 `SourceType.AGENT` 与 `OperatorType.AGENT`；`memories.source_type=AGENT`，不引入新列。
+- `MemoryApplicationService.save_agent` 与显式保存共用 `(scope_id, subject_id, memory_type, normalized_content)` 去重键、Revision/Source 和 WriteCoordinator guard。
+- 后台自动提取仍使用 `SourceType.INFERRED` 与 `CANDIDATE`；不在 V1.2 写入 ACTIVE。

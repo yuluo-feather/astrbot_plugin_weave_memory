@@ -106,13 +106,17 @@ class WeaveMemoryPlugin(Star):
             )
 
             self._coordinator = coordinator
+            auto_enroll = self._config_bool("auto_enroll", True)
             self._commands = AstrBotMemoryCommands(
                 scopes, consent, memories, recall, lifecycle, clock, ids,
+                auto_enroll=auto_enroll,
             )
             self._group_commands = AstrBotGroupCommands(
                 group_scopes, group_lifecycle, group_memories, group_recall,
             )
-            self._injector = AstrBotMemoryInjector(scopes, consent, composer)
+            self._injector = AstrBotMemoryInjector(
+                scopes, consent, composer, auto_enroll=auto_enroll,
+            )
             self._group_injector = AstrBotGroupMemoryInjector(
                 group_scopes, consent, group_composer,
             )
@@ -185,6 +189,16 @@ class WeaveMemoryPlugin(Star):
         except (TypeError, ValueError):
             return default
         return value if value > 0 else default
+
+    def _config_bool(self, key: str, default: bool) -> bool:
+        if not hasattr(self._config, "get"):
+            return default
+        value = self._config.get(key, default)  # type: ignore[union-attr]
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return default
 
     @staticmethod
     def _error_text(action: str, exc: Exception) -> str:
@@ -281,6 +295,28 @@ class WeaveMemoryPlugin(Star):
             yield event.plain_result(await self._command_service().disable(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("关闭", exc))
+
+    @filter.llm_tool(name="weave_memory_remember")
+    async def memory_remember_tool(self, event: AstrMessageEvent,
+                                   content: str = "", memory_type: str = "FACT") -> str:
+        """织忆个人记忆：保存用户明确要求记住的长期偏好、背景、目标或事实。
+
+        仅在用户**明确表达长期记忆意图**时调用，例如「记住我喜欢黑咖啡」「以后都用中文」
+        「我对花生过敏」。一次闲聊、临时情绪、当前任务细节、密码/密钥/身份证/银行卡等敏感
+        信息不得调用。只保存一条简洁事实，不保存完整聊天原文。群聊不记录个人记忆。
+
+        Args:
+            content(string): 要保存的事实，尽量保留用户原话中的主体与偏好。
+            memory_type(string): PREFERENCE、FACT 或 EVENT，默认 FACT。
+        """
+        if not self._config_bool("agent_write_enabled", True):
+            return "未保存：织忆的模型记忆写入已关闭。"
+        try:
+            return await self._command_service().remember(event, content, memory_type)
+        except AuthorizationDenied:
+            return "未保存：个人记忆只在私聊生效。"
+        except _COMMAND_ERRORS as exc:
+            return f"未保存：{type(exc).__name__}。"
 
     @memory.command("群帮助")
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)

@@ -83,3 +83,10 @@ V0 目标为单进程、单实例、SQLite。写操作由应用层统一协调�
 - V1.1 不注册群级 Agent 工具；不实现导出；不做 Group personal/Project/Session。
 - 群身份/管理员/consent 的冻结决策见 ADR-0009/0010；v5 迁移与回滚见 ADR-0011。
 - 本段是 M0 契约，不包含实现；代码层仍只有 V1.0 Personal 路径。
+
+## 9. V1.2 Personal 默认登记与 agent 工具
+
+- `AstrBotMemoryInjector` 负责私聊 auto_enroll 与首次告知；不改变 `MemoryContextComposer` 的预算与过滤顺序。
+- `AstrBotMemoryCommands.remember` 作为模型工具入口，调用 `MemoryApplicationService.save_agent`；来源 `AGENT`，不绕过 Consent/Scope/WriteCoordinator。
+- 群共享路径（`AstrBotGroupCommands` / `GroupContextComposer`）不参与 auto_enroll。
+- 后台自动提取组件（`LlmExtractor` / `ExtractionService`）仍为预留边界，不在 V1.2 实现；V1.5 只产候选。

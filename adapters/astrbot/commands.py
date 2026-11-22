@@ -7,7 +7,7 @@ from ...app.lifecycle_service import LifecycleService
 from ...app.memory_service import MemoryApplicationService
 from ...app.recall_service import RecallService
 from ...app.scope_service import PersonalScopeService
-from ...core.errors import NotFound, ValidationError
+from ...core.errors import AuthorizationDenied, NotFound, ValidationError
 from ...core.model import MemoryType, OperatorType
 from ...core.ports import Clock, IdGenerator
 from .identity import AstrBotIdentityAdapter
@@ -17,7 +17,7 @@ class AstrBotMemoryCommands:
     def __init__(self, scopes: PersonalScopeService, consent: ConsentService,
                  memories: MemoryApplicationService, recall: RecallService,
                  lifecycle: LifecycleService, clock: Clock,
-                 ids: IdGenerator) -> None:
+                 ids: IdGenerator, *, auto_enroll: bool = True) -> None:
         self._scopes = scopes
         self._consent = consent
         self._memories = memories
@@ -25,13 +25,26 @@ class AstrBotMemoryCommands:
         self._lifecycle = lifecycle
         self._clock = clock
         self._ids = ids
+        self._auto_enroll = auto_enroll
         self._identity = AstrBotIdentityAdapter()
 
-    def _scope(self, event: Any, *, create: bool = False):
+    def _scope(self, event: Any, *, create: bool = False, enroll: bool = True):
         identity = self._identity.resolve_identity(event)
         scope = self._scopes.resolve(identity) if create else self._scopes.find(identity)
         if scope is None:
-            raise NotFound("尚未建立个人记忆空间，请先使用 /织忆 授权")
+            if not (create or (enroll and self._auto_enroll)):
+                raise NotFound("尚未建立个人记忆空间，请先使用 /织忆 授权")
+            scope = self._scopes.resolve(identity)
+        if enroll and self._auto_enroll and not self._consent.is_granted(
+            scope, PersonalConsentType.PERSONAL_MEMORY,
+        ):
+            if not self._scopes.is_enabled(scope):
+                raise AuthorizationDenied("personal memory scope is disabled")
+            if not self._consent.ensure_auto_enrolled(
+                scope, PersonalConsentType.PERSONAL_MEMORY,
+                operator_id=identity.subject_id,
+            ):
+                raise AuthorizationDenied("personal memory consent is revoked")
         return scope
 
     @staticmethod
@@ -58,14 +71,14 @@ class AstrBotMemoryCommands:
         )
 
     def grant(self, event: Any) -> str:
-        scope = self._scope(event, create=True)
+        scope = self._scope(event, create=True, enroll=False)
         operator_id = self._identity.resolve_operator_id(event)
         self._consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY,
                             operator_id=operator_id)
         return "已授权个人记忆。你可以使用 /织忆 保存 <内容> 保存记忆；自动注入也已开启。"
 
     def revoke(self, event: Any) -> str:
-        scope = self._scope(event, create=True)
+        scope = self._scope(event, create=True, enroll=False)
         operator_id = self._identity.resolve_operator_id(event)
         self._consent.revoke(scope, PersonalConsentType.PERSONAL_MEMORY,
                              operator_id=operator_id)
@@ -80,6 +93,34 @@ class AstrBotMemoryCommands:
         memory, receipt = await self._memories.save_explicit(
             scope, content, operator_id=operator_id,
             memory_type=MemoryType.FACT,
+        )
+        state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已保存，索引待恢复"
+        return f"已保存记忆：{memory.id}\n{state}"
+
+    async def remember(self, event: Any, content: str,
+                       memory_type: str = "FACT") -> str:
+        """Agent tool entry: save only when the model has an explicit user signal."""
+        content = (content or "").strip()
+        if not content:
+            return "未保存：内容为空。"
+        try:
+            parsed_type = MemoryType((memory_type or "FACT").upper())
+        except ValueError:
+            return "未保存：memory_type 只能是 PREFERENCE、FACT 或 EVENT。"
+        scope = self._scope(event, create=True, enroll=False)
+        if not self._scopes.is_enabled(scope):
+            return "未保存：个人记忆空间已关闭。"
+        operator_id = self._identity.resolve_operator_id(event)
+        if not self._consent.is_granted(scope, PersonalConsentType.PERSONAL_MEMORY):
+            if not self._auto_enroll:
+                return "未保存：尚未授权，请先发送 /织忆 授权。"
+            if not self._consent.ensure_auto_enrolled(
+                scope, PersonalConsentType.PERSONAL_MEMORY,
+                operator_id=operator_id,
+            ):
+                return "未保存：个人记忆已撤销，发送 /织忆 授权 可重新开启。"
+        memory, receipt = await self._memories.save_agent(
+            scope, content, operator_id=operator_id, memory_type=parsed_type,
         )
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已保存，索引待恢复"
         return f"已保存记忆：{memory.id}\n{state}"
@@ -130,7 +171,7 @@ class AstrBotMemoryCommands:
         memory_id = self._tail(event, "删除")
         if not memory_id:
             return "用法：/织忆 删除 <记忆ID>"
-        scope = self._scope(event)
+        scope = self._scope(event, enroll=False)
         operator_id = self._identity.resolve_operator_id(event)
         receipt = await self._lifecycle.delete_memory(
             memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
@@ -145,7 +186,7 @@ class AstrBotMemoryCommands:
     async def clear(self, event: Any) -> str:
         if self._tail(event, "清空") != "确认":
             return "清空不可恢复。确认执行请发送：/织忆 清空 确认"
-        scope = self._scope(event)
+        scope = self._scope(event, enroll=False)
         operator_id = self._identity.resolve_operator_id(event)
         receipt = await self._lifecycle.clear_scope(
             scope.id, operation_id=self._ids.new_id("operation"),
@@ -159,7 +200,7 @@ class AstrBotMemoryCommands:
     async def disable(self, event: Any) -> str:
         if self._tail(event, "关闭") != "确认":
             return "关闭会永久停止读写和注入（V0 不支持重新开启），但保留数据。确认执行请发送：/织忆 关闭 确认"
-        scope = self._scope(event)
+        scope = self._scope(event, enroll=False)
         operator_id = self._identity.resolve_operator_id(event)
         await self._lifecycle.disable_scope(
             scope.id, operation_id=self._ids.new_id("operation"),
