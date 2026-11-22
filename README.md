@@ -39,7 +39,7 @@
 
 - 🔒 **默认开启，可随时关闭**：`auto_enroll=true`（默认）时，首次私聊会自动登记个人记忆并发送一次告知；`/织忆 撤销授权` 或 `/织忆 关闭` 停止保存、检索与注入，已有数据保留。`auto_enroll=false` 回到逐用户 `/织忆 授权`；群记忆仍需管理员 `/织忆 群开启`。
 - 🏠 **本地优先，零第三方运行时依赖**：权威数据存本机 SQLite，检索用 FTS5；插件本身不依赖额外的 Python 包，AstrBot 与 SQLite 由宿主提供。
-- 🧠 **零命令记忆**：用户明确提到长期偏好、背景或目标时，模型可通过工具保存一条记忆，来源标记为 `AGENT`；只保存记忆正文，不保存完整聊天原文。后台自动提取仍只产候选，不会自动变成用户事实。
+- 🧪 **实验性自然语言写入（默认关闭）**：开启后，用户明确提到长期偏好、背景或目标时，模型可通过工具保存一条记忆，来源标记为 `AGENT`；只保存记忆正文，不保存完整聊天原文。默认关闭，开启前需补齐确定性触发、候选确认与每日限额（TODO V1.3），避免闲聊污染记忆库。后台自动提取仍只产候选，不会自动变成用户事实。
 - 🧠 **自动注入，但不污染会话**：LLM 请求到来时检索少量相关记忆，通过临时 `TextPart` 追加到本次请求；不修改 system prompt，也不写入持久会话历史。个人默认最多 4 条、384 estimated tokens。
 - 👥 **群共享记忆（V1.1）**：管理员开启并写入群级内容，成员只能读取当前群；个人记忆不进群，群记忆不出现在私聊。
 - ↩️ **授权可撤销**：`/织忆 撤销授权` 停止保存、检索与注入，但不会自动删除已有数据。
@@ -94,7 +94,7 @@
    └─ 自动登记 personal_memory=GRANTED + 一次性告知
         │
         ▼
-/织忆 保存 内容 或 模型工具写入（AGENT）
+/织忆 保存 内容 或 模型工具写入（AGENT，默认关闭）
    ├─ 规范化内容 → 同 Scope/Subject/类型下查重
    ├─ WriteCoordinator 串行写锁：入口校验 + 锁内二次校验 Consent
    ├─ SQLite 权威事务：记忆 + 初始 Revision + Source
@@ -119,7 +119,7 @@
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `auto_enroll` | bool | `true` | Personal 记忆默认登记。开启后，新用户或没有 consent 记录的私聊用户首次对话会自动登记并收到一次告知；设为 `false` 回到逐用户 `/织忆 授权`。已有授权/撤销记录不会被改写。 |
-| `agent_write_enabled` | bool | `true` | 允许模型工具在用户明确提到长期偏好、背景或目标时写入一条记忆；只保存记忆正文，不保存完整聊天原文。 |
+| `agent_write_enabled` | bool | `false` | 实验性：允许模型工具在用户明确提到长期偏好、背景或目标时写入一条记忆。默认关闭，开启前需补齐确定性触发、候选确认与每日限额（TODO V1.3）；只保存记忆正文，不保存完整聊天原文。 |
 | `group_admin_ids` | object | `{}` | 群管理员回退配置。键为 `platform\|tenant_id\|group_id`，值为管理员 ID 数组；仅在平台无法解析群主/管理员角色时使用。键必须精确匹配平台、平台实例与群 ID，避免跨群/跨实例复用。 |
 | `group_max_tokens` | int | `192` | 群记忆注入的 Token 预算（provider-neutral 估算值）。 |
 | `group_max_memories` | int | `2` | 群记忆注入的最大条数。 |
@@ -189,7 +189,7 @@ python scripts/build_astrbot_plugin.py
 - **SQLite schema v5**：V1.0 为 v4（`memory_relations` 预留表），V1.1 升到 v5（群 Scope/admin 字段）。从 v1–v4 升级到 v5 前，插件会自动在数据目录的 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移。升级前仍建议自行备份整个插件数据目录。有群数据时拒绝回滚到 V1.0，降级前对每个群执行 `群关闭 → 群销毁`（想保留群记忆就不要先做 `群清空`，否则备份只是清空后的快照），或按 `群关闭 → 群清空 → 群销毁` 处理。
 - **群生命周期**：群开启/关闭/清空/销毁均写操作审计；群关闭可逆，个人关闭永久；群销毁必须已经关闭，服务内自动备份并写 sidecar manifest，删除顺序为记忆/关联 → consent 历史 → operations 审计 → scope，提交后先恢复 FTS 再 secure purge。
 - **按作用域导出与审计**：`export_personal` / `export_group` 只导当前 scope 的 ACTIVE 记忆；个人导出需 consent，群导出需管理员，序列化在 `app/export.py`（命令 UX 留到 V1.3）。`memory_operations` 写入 `result=SUCCESS` 与操作元数据，不含正文；注入无缓存，删除/清空/关闭后下一次请求重新检索。
-- **测试与 CI**：2026-11-23 口径下 `157 passed`（Python 3.12.10），`ruff`、`mypy`、`compileall` 与插件包构建通过。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
+- **测试与 CI**：2026-11-23 口径下 `158 passed`（Python 3.12.10），`ruff`、`mypy`、`compileall` 与插件包构建通过。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
 
 ## 📜 版本与验收
 
@@ -197,8 +197,8 @@ python scripts/build_astrbot_plugin.py
 |------|--------------------|
 | V0「起针」 | 已完成：领域核心、SQLite + FTS5、写协调、生命周期、私聊闭环 |
 | V1.0「初织」 | 代码、私聊宿主烟测与专用 Scope 清空证据已完成；**正式验收待签署** |
-| V1.1「引线」 | M1/M2 群共享记忆已实现（157 passed）；**真实宿主群聊烟测待补** |
-| V1.2「锁边」 | Personal 默认登记 + opt-out、模型工具写入已实现（157 passed）；真实宿主首次告知/工具写入烟测待补 |
+| V1.1「引线」 | M1/M2 群共享记忆已实现（158 passed）；**真实宿主群聊烟测待补** |
+| V1.2「锁边」 | Personal 默认登记 + opt-out、模型工具写入已实现（158 passed）；真实宿主首次告知/工具写入烟测待补 |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 
 已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响。

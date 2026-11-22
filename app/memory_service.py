@@ -83,6 +83,8 @@ class MemoryApplicationService:
         )
         return saved, receipt
 
+    # TODO(V1.3): AGENT writes should gain a deterministic trigger phrase check,
+    # candidate mode, and a daily cap before this path is enabled by default.
     async def save_agent(self, scope: Scope, content: str, *,
                          operator_id: str,
                          memory_type: MemoryType = MemoryType.FACT) -> tuple[MemoryEntity, WriteReceipt]:

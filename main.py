@@ -296,30 +296,35 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("关闭", exc))
 
+    # TODO(V1.3): 自然语言写入在确定性触发、候选确认与每日限额完成前默认关闭，
+    # 避免模型把闲聊或临时情绪写成 ACTIVE 记忆。
     @filter.llm_tool(name="weave_memory_remember")
     async def memory_remember_tool(self, event: AstrMessageEvent,
-                                   content: str = "", memory_type: str = "FACT") -> str:
+                                   content: str = "", memory_type: str = "FACT"):
         """织忆个人记忆：保存用户明确要求记住的长期偏好、背景、目标或事实。
 
-        仅在用户**明确表达长期记忆意图**时调用，例如「记住我喜欢黑咖啡」「以后都用中文」
-        「我对花生过敏」。一次闲聊、临时情绪、当前任务细节、密码/密钥/身份证/银行卡等敏感
-        信息不得调用。只保存一条简洁事实，不保存完整聊天原文。群聊不记录个人记忆。
+        仅在用户明确要求记住，或明确提到长期偏好、背景、目标时调用，例如「记住我喜欢黑咖啡」
+        「以后都用中文」「我对花生过敏」。一次闲聊、临时情绪、当前任务细节、密码/密钥/
+        身份证/银行卡等敏感信息不得调用。只保存一条简洁事实，不保存完整聊天原文；群聊不调用。
 
         Args:
-            content(string): 要保存的事实，尽量保留用户原话中的主体与偏好。
+            content(string): 要保存的事实。
             memory_type(string): PREFERENCE、FACT 或 EVENT，默认 FACT。
         """
-        if not self._config_bool("agent_write_enabled", True):
-            return "未保存：织忆的模型记忆写入已关闭。"
+        if not self._config_bool("agent_write_enabled", False):
+            yield "未保存：织忆的模型记忆写入已关闭。"
+            return
         try:
-            return await self._command_service().remember(event, content, memory_type)
+            result = await self._command_service().remember(event, content, memory_type)
         except AuthorizationDenied:
-            return "未保存：个人记忆只在私聊生效。"
+            yield "未保存：个人记忆只在私聊生效。"
         except _COMMAND_ERRORS as exc:
-            return f"未保存：{type(exc).__name__}。"
+            yield f"未保存：{type(exc).__name__}。"
         except Exception as exc:
             logger.warning(f"织忆模型工具写入失败：{type(exc).__name__}")
-            return "未保存：记忆服务暂不可用。"
+            yield "未保存：记忆服务暂不可用。"
+        else:
+            yield result
 
     @memory.command("群帮助")
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)

@@ -179,6 +179,7 @@ def test_plugin_registers_only_zhuyi_prefix_and_help(monkeypatch, tmp_path):
     assert filter_obj.registered["name"] == "织忆"
     assert filter_obj.registered["alias"] == {"/织忆"}
     help_text = plugin._commands.help()
+    assert "默认已开启" in help_text
     assert "/织忆 保存" in help_text
     assert "/记忆" not in help_text
 
@@ -466,10 +467,12 @@ def test_plugin_auto_enroll_disabled_requires_explicit_grant(monkeypatch, tmp_pa
 def test_plugin_agent_tool_saves_agent_source_and_respects_opt_out(monkeypatch, tmp_path):
     import asyncio
 
-    plugin, _ = load_plugin(monkeypatch, tmp_path)
-    saved = asyncio.run(plugin.memory_remember_tool(
+    plugin, _ = load_plugin(
+        monkeypatch, tmp_path, config={"agent_write_enabled": True},
+    )
+    saved = asyncio.run(collect(plugin.memory_remember_tool(
         FakeEvent(message="记住我对花生过敏"), "我对花生过敏", "PREFERENCE",
-    ))
+    )))[0]
     assert "已保存记忆" in saved
     row = plugin._database.connection.execute(
         "SELECT m.content, s.source_type, s.operator_type FROM memories m "
@@ -480,17 +483,17 @@ def test_plugin_agent_tool_saves_agent_source_and_respects_opt_out(monkeypatch, 
     assert row["operator_type"] == "agent"
 
     asyncio.run(collect(plugin.memory_revoke(FakeEvent(message="/织忆 撤销授权"))))
-    blocked = asyncio.run(plugin.memory_remember_tool(
+    blocked = asyncio.run(collect(plugin.memory_remember_tool(
         FakeEvent(message="记住我喜欢跑步"), "我喜欢跑步",
-    ))
+    )))[0]
     assert "未保存" in blocked
     assert plugin._database.connection.execute(
         "SELECT count(*) FROM memories",
     ).fetchone()[0] == 1
 
-    group_blocked = asyncio.run(plugin.memory_remember_tool(
+    group_blocked = asyncio.run(collect(plugin.memory_remember_tool(
         FakeEvent(group_id="g1", message="记住我喜欢跑步"), "我喜欢跑步",
-    ))
+    )))[0]
     assert "个人记忆只在私聊生效" in group_blocked
     asyncio.run(plugin.terminate())
 
@@ -499,9 +502,9 @@ def test_plugin_agent_write_can_be_disabled(monkeypatch, tmp_path):
     import asyncio
 
     plugin, _ = load_plugin(monkeypatch, tmp_path, config={"agent_write_enabled": False})
-    result = asyncio.run(plugin.memory_remember_tool(
+    result = asyncio.run(collect(plugin.memory_remember_tool(
         FakeEvent(message="记住我喜欢跑步"), "我喜欢跑步",
-    ))
+    )))[0]
     assert "已关闭" in result
     assert plugin._database.connection.execute(
         "SELECT count(*) FROM memories",
@@ -550,15 +553,17 @@ def test_plugin_close_works_after_revoke(monkeypatch, tmp_path):
 def test_plugin_agent_tool_failure_does_not_escape(monkeypatch, tmp_path):
     import asyncio
 
-    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    plugin, _ = load_plugin(
+        monkeypatch, tmp_path, config={"agent_write_enabled": True},
+    )
 
     async def boom(*args, **kwargs):
         raise RuntimeError("boom")
 
     plugin._commands.remember = boom
-    result = asyncio.run(plugin.memory_remember_tool(
+    result = asyncio.run(collect(plugin.memory_remember_tool(
         FakeEvent(message="记住我喜欢跑步"), "我喜欢跑步",
-    ))
+    )))[0]
     assert "未保存" in result
     asyncio.run(plugin.terminate())
 

@@ -6,14 +6,14 @@
     "hint": "开启后，新用户或没有授权记录的私聊用户首次对话会自动登记个人记忆，并收到一次告知；用户可用 /织忆 关闭 停止。关闭后回到逐用户 /织忆 授权。"
   },
   "agent_write_enabled": {
-    "description": "允许模型工具写入个人记忆",
+    "description": "允许模型工具写入个人记忆（实验性，默认关闭）",
     "type": "bool",
-    "default": true,
-    "hint": "仅在用户明确提到长期偏好、背景或目标时，模型工具才会保存一条记忆；不保存完整聊天原文。"
+    "default": false,
+    "hint": "默认关闭，避免模型把闲聊或临时情绪写成长期记忆。开启前应先补齐确定性触发、候选确认与每日限额（TODO V1.3）。"
   },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",
-    "type": "object",
+    "type": "dict",
     "default": {},
     "hint": "仅在平台无法解析群主/管理员角色时使用。键必须精确匹配平台、平台实例和群 ID，避免跨群/跨实例复用。",
     "obvious_hint": true
