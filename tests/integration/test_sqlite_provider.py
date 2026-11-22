@@ -15,6 +15,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     NotFound,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
+    AdminSource,
     Identity,
     MemoryEntity,
     MemoryRevision,
@@ -67,10 +68,116 @@ def add_memory(store, scope, *, memory_id="mem-1", content="喜欢黑咖啡。",
     return memory
 
 
+def add_group_scope(store, *, scope_id="scope-group", group_id="group-1",
+                    platform="astrbot", tenant="default"):
+    identity = Identity(platform, tenant, ScopeType.GROUP, group_id,
+                        SubjectType.GROUP, group_id)
+    scope = Scope(scope_id, identity, NOW)
+    store.create_scope(scope)
+    return scope
+
+
+def add_group_memory(store, scope, *, memory_id="group-mem-1",
+                     content="群约定：周五复盘"):
+    memory = MemoryEntity(
+        id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        memory_type=MemoryType.PREFERENCE, content=content,
+        normalized_content=normalize_content(content), status=MemoryStatus.ACTIVE,
+        source_type=SourceType.MANUAL, current_revision=1,
+        created_at=NOW, updated_at=NOW,
+    )
+    revision = MemoryRevision("rev-" + memory_id, memory_id, 1, content,
+                              MemoryStatus.ACTIVE, NOW, "group admin save")
+    source = MemorySource("src-" + memory_id, memory_id, SourceType.MANUAL,
+                          OperatorType.ADMIN, "admin-1", NOW)
+    store.create(memory, revision, source)
+    return memory
+
+
+def add_group_consent(db, scope, *, consent_id="group-consent-1"):
+    db.connection.execute(
+        """INSERT INTO memory_consents
+        (id, subject_id, scope_id, consent_type, state, source, granted_at, revoked_at, metadata_json)
+        VALUES (?, ?, ?, 'group_memory', 'GRANTED', 'test', ?, NULL, '{}')""",
+        (consent_id, scope.identity.subject_id, scope.id, "2026-11-22T12:00:00.000000Z"),
+    )
+
+
+def test_group_scope_admin_metadata_and_lifecycle(sqlite_stack):
+    _, store, _, _ = sqlite_stack
+    scope = add_group_scope(store)
+    assert store.get_scope(scope.id) == scope
+    assert store.get_admin_metadata(scope.id) == ((), AdminSource.NONE)
+    store.set_admin_metadata(scope.id, ("admin-1", "admin-2"), AdminSource.EXPLICIT_CONFIG)
+    assert store.get_admin_metadata(scope.id) == (("admin-1", "admin-2"), AdminSource.EXPLICIT_CONFIG)
+    assert store.enable_scope(scope.id, operation_id="op-group-enable",
+                              operator_type=OperatorType.ADMIN, operator_id="admin-1",
+                              occurred_at=NOW)
+    assert store.is_scope_enabled(scope.id)
+    assert not store.enable_scope(scope.id, operation_id="op-group-enable",
+                                  operator_type=OperatorType.ADMIN, operator_id="admin-1",
+                                  occurred_at=NOW)
+    assert store.disable_group_scope(scope.id, operation_id="op-group-disable",
+                                     operator_type=OperatorType.ADMIN, operator_id="admin-1",
+                                     occurred_at=NOW)
+    assert not store.is_scope_enabled(scope.id)
+    assert store.count_active(scope.id) == 0
+
+
+def test_group_backup_destroy_and_rollback_path(tmp_path):
+    from data.plugins.astrbot_plugin_weave_memory.core.errors import StorageError
+
+    db = SQLiteDatabase(tmp_path / "group-destroy.db")
+    db.migrate()
+    store = SQLiteMemoryStore(db)
+    scope = add_group_scope(store)
+    store.set_admin_metadata(scope.id, ("admin-1",), AdminSource.EXPLICIT_CONFIG)
+    store.enable_scope(scope.id, operation_id="op-group-enable",
+                       operator_type=OperatorType.ADMIN, operator_id="admin-1",
+                       occurred_at=NOW)
+    memory = add_group_memory(store, scope)
+    add_group_consent(db, scope)
+    assert store.count_active(scope.id) == 1
+
+    backup = tmp_path / "group-backup.sqlite3"
+    digest = store.backup_group_scope(scope.id, str(backup))
+    assert backup.exists() and len(digest) == 64
+
+    with pytest.raises(StorageError):
+        db.rollback_to_v10()
+    assert db.schema_version() == 5
+
+    store.disable_group_scope(scope.id, operation_id="op-group-disable",
+                              operator_type=OperatorType.ADMIN, operator_id="admin-1",
+                              occurred_at=NOW)
+    removed = store.delete_group_scope(scope.id, operation_id="op-group-destroy",
+                                       operator_type=OperatorType.ADMIN,
+                                       operator_id="admin-1", occurred_at=NOW)
+    assert removed == 1
+    assert db.connection.execute("SELECT count(*) FROM memories WHERE scope_id=?", (scope.id,)).fetchone()[0] == 0
+    assert db.connection.execute("SELECT count(*) FROM memory_consents WHERE scope_id=?", (scope.id,)).fetchone()[0] == 0
+    assert db.connection.execute("SELECT count(*) FROM memory_operations WHERE scope_id=?", (scope.id,)).fetchone()[0] == 0
+    assert db.connection.execute("SELECT count(*) FROM memory_scopes WHERE id=?", (scope.id,)).fetchone()[0] == 0
+    pending = db.connection.execute(
+        "SELECT value FROM memory_meta WHERE key='secure_purge_pending'"
+    ).fetchone()[0]
+    assert pending == "1"
+    dirty = db.connection.execute(
+        "SELECT value FROM memory_meta WHERE key='fts_dirty_ids'"
+    ).fetchone()[0]
+    assert memory.id in dirty
+
+    db.rollback_to_v10()
+    assert db.schema_version() == 4
+    db.migrate()
+    assert db.schema_version() == 5
+    db.close()
+
+
 def test_migration_is_idempotent_and_creates_required_tables(sqlite_stack):
     db, _, _, _ = sqlite_stack
     assert db.connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
-    assert db.schema_version() == 4
+    assert db.schema_version() == 5
     db.migrate()
     tables = {row[0] for row in db.connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
@@ -78,7 +185,8 @@ def test_migration_is_idempotent_and_creates_required_tables(sqlite_stack):
             "memory_tags", "memory_operations", "memory_meta", "memory_consents",
             "memory_relations", "schema_migrations",
             "memory_fts"}.issubset(tables)
-    assert "is_enabled" in {row["name"] for row in db.connection.execute("PRAGMA table_info(memory_scopes)")}
+    scope_columns = {row["name"] for row in db.connection.execute("PRAGMA table_info(memory_scopes)")}
+    assert {"is_enabled", "admin_ids_json", "admin_source"}.issubset(scope_columns)
     assert db.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
 
@@ -182,7 +290,7 @@ def test_schema_can_roll_back_to_empty_and_reapply(tmp_path):
     db.rollback_to_zero()
     assert db.connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memories'").fetchone()[0] == 0
     db.migrate()
-    assert db.schema_version() == 4
+    assert db.schema_version() == 5
     db.close()
 
 
@@ -300,8 +408,8 @@ def test_v4_migration_failure_rolls_back_ddl_and_version_marker(tmp_path, monkey
 
     db = SQLiteDatabase(tmp_path / "failed-v4-migration.db")
     db.migrate()
-    db.connection.execute("DROP TABLE memory_relations")
-    db.connection.execute("DELETE FROM schema_migrations WHERE version=4")
+    db.rollback_to_v10()
+    db.rollback_to_v05()
     assert db.schema_version() == 3
 
     original_read_text = Path.read_text
@@ -324,17 +432,19 @@ def test_v4_migration_failure_rolls_back_ddl_and_version_marker(tmp_path, monkey
     db.close()
 
 
-def test_v3_database_upgrades_to_v4_reserved_relations_table(tmp_path):
+def test_v3_database_upgrades_to_v5_group_scopes(tmp_path):
     db = SQLiteDatabase(tmp_path / "upgrade-v3.db")
     db.migrate()
-    db.connection.execute("DROP TABLE memory_relations")
-    db.connection.execute("DELETE FROM schema_migrations WHERE version=4")
+    db.rollback_to_v10()
+    db.rollback_to_v05()
     assert db.schema_version() == 3
     db.migrate()
-    assert db.schema_version() == 4
+    assert db.schema_version() == 5
     assert db.connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone() is not None
+    scope_columns = {row["name"] for row in db.connection.execute("PRAGMA table_info(memory_scopes)")}
+    assert {"admin_ids_json", "admin_source"}.issubset(scope_columns)
     db.close()
 
 
@@ -349,6 +459,7 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
     store = SQLiteMemoryStore(db)
     store.create_scope(scope)
     existing = add_memory(store, scope, memory_id="rollback-existing", content="回滚后保留")
+    db.rollback_to_v10()
     db.rollback_to_v05()
     assert db.schema_version() == 3
     assert db.connection.execute(
@@ -356,8 +467,9 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
     ).fetchone() is None
     assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
     db.migrate()
+    assert db.schema_version() == 5
     assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
-    # Test the rollback guard with a minimal valid pair.
+    db.rollback_to_v10()
     first = add_memory(store, scope, memory_id="rollback-a", content="第一条")
     second = add_memory(store, scope, memory_id="rollback-b", content="第二条")
     db.connection.execute(

@@ -39,3 +39,7 @@ class StorageError(DomainError):
 
 class ConsentRevocationPending(StorageError):
     """Scope is already disabled, but its append-only revoke event needs retry."""
+
+
+class GroupConsentRevocationPending(StorageError):
+    """Group scope is disabled, but its group_memory REVOKED event needs retry."""

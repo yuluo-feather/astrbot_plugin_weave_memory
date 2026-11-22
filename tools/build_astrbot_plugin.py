@@ -19,7 +19,7 @@ def main() -> None:
         shutil.rmtree(output_dir)
     output_dir.mkdir()
 
-    for filename in ("main.py", "metadata.yaml", "requirements.txt"):
+    for filename in ("main.py", "metadata.yaml", "requirements.txt", "_conf_schema.json"):
         shutil.copy2(ROOT / filename, output_dir / filename)
     for package in PACKAGE_SOURCES:
         shutil.copytree(

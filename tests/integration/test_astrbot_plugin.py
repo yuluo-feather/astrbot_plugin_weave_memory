@@ -18,8 +18,16 @@ class FakeTextPart:
 
 
 class FakeEvent:
-    def __init__(self, *, user="u1", platform_id="instance-1", group_id="", message=""):
-        self.message_obj = types.SimpleNamespace(group_id=group_id)
+    def __init__(self, *, user="u1", platform_id="instance-1", group_id="",
+                 message="", group_owner=None, group_admins=None):
+        group = None
+        if group_id:
+            group = types.SimpleNamespace(
+                group_id=group_id,
+                group_owner=group_owner,
+                group_admins=group_admins,
+            )
+        self.message_obj = types.SimpleNamespace(group_id=group_id, group=group)
         self.message_str = message
         self._user = user
         self._platform_id = platform_id
@@ -29,6 +37,10 @@ class FakeEvent:
 
     def get_group_id(self):
         return self.message_obj.group_id
+
+    def is_admin(self):
+        group = self.message_obj.group
+        return bool(group and group.group_owner == self._user)
 
     def get_platform_name(self):
         return "test-platform"
@@ -77,7 +89,9 @@ def install_astrbot_stubs(monkeypatch, data_dir):
         command_group=command_group,
         event_message_type=passthrough,
         on_llm_request=passthrough,
-        EventMessageType=types.SimpleNamespace(PRIVATE_MESSAGE="private"),
+        EventMessageType=types.SimpleNamespace(
+            PRIVATE_MESSAGE="private", GROUP_MESSAGE="group",
+        ),
         registered=registered,
     )
     event_module.filter = filter_obj
@@ -172,6 +186,111 @@ def test_plugin_registers_only_zhuyi_prefix_and_help(monkeypatch, tmp_path):
         FakeEvent(message="/织忆 列表"),
     )))[0]
     assert "前缀回归" in listed
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_group_admin_config_parsing(monkeypatch, tmp_path):
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    mapping = plugin._explicit_group_admins({
+        "group_admin_ids": {"p|t|g": ["u1", "u2"]},
+    })
+    assert mapping == {("p", "t", "g"): ("u1", "u2")}
+    mapping2 = plugin._explicit_group_admins({
+        "group_admin_ids": [{
+            "platform": "p", "tenant_id": "t", "group_id": "g",
+            "admin_ids": ["u3"],
+        }],
+    })
+    assert mapping2 == {("p", "t", "g"): ("u3",)}
+    assert plugin._explicit_group_admins({"group_admin_ids": "bad"}) == {}
+
+
+def test_plugin_group_shared_enable_save_inject_close_clear_destroy(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    admin = dict(user="admin-1", group_id="g1", group_owner="admin-1")
+    member = dict(user="member-1", group_id="g1", group_owner="admin-1")
+
+    help_text = asyncio.run(collect(plugin.memory_group_help(
+        FakeEvent(message="/织忆 群帮助", **member),
+    )))[0]
+    assert "群保存" in help_text
+    before = asyncio.run(collect(plugin.memory_group_status(
+        FakeEvent(message="/织忆 群状态", **member),
+    )))[0]
+    assert "尚未开启" in before
+
+    opened = asyncio.run(collect(plugin.memory_group_enable(
+        FakeEvent(message="/织忆 群开启", **admin),
+    )))[0]
+    assert "已开启" in opened
+
+    saved = asyncio.run(collect(plugin.memory_group_save(
+        FakeEvent(message="/织忆 群保存 agreement 周五复盘", **admin),
+    )))[0]
+    assert "已保存群记忆" in saved
+    listed = asyncio.run(collect(plugin.memory_group_list(
+        FakeEvent(message="/织忆 群列表", **member),
+    )))[0]
+    assert "周五复盘" in listed
+
+    request = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(
+        FakeEvent(message="周五复盘", **member), request,
+    ))
+    assert request.extra_user_content_parts
+    assert "周五复盘" in request.extra_user_content_parts[0].text
+    assert request.extra_user_content_parts[0].is_temp is True
+
+    denied = asyncio.run(collect(plugin.memory_group_save(
+        FakeEvent(message="/织忆 群保存 topic 成员写入", **member),
+    )))[0]
+    assert "失败" in denied
+    status = asyncio.run(collect(plugin.memory_group_status(
+        FakeEvent(message="/织忆 群状态", **member),
+    )))[0]
+    assert "已开启" in status
+
+    asyncio.run(collect(plugin.memory_grant(FakeEvent(user="u1", message="/织忆 授权"))))
+    asyncio.run(collect(plugin.memory_save(
+        FakeEvent(user="u1", message="/织忆 保存 个人秘密"),
+    )))
+    group_request = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(
+        FakeEvent(message="个人秘密", **member), group_request,
+    ))
+    assert group_request.extra_user_content_parts == []
+    private_request = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(
+        FakeEvent(user="u1", message="周五复盘"), private_request,
+    ))
+    assert private_request.extra_user_content_parts == []
+    personal_request = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(
+        FakeEvent(user="u1", message="个人秘密"), personal_request,
+    ))
+    assert personal_request.extra_user_content_parts
+    assert "个人秘密" in personal_request.extra_user_content_parts[0].text
+
+    closed = asyncio.run(collect(plugin.memory_group_disable(
+        FakeEvent(message="/织忆 群关闭", **admin),
+    )))[0]
+    assert "已关闭" in closed
+    request2 = types.SimpleNamespace(extra_user_content_parts=[])
+    asyncio.run(plugin.inject_personal_memory(
+        FakeEvent(message="周五复盘", **member), request2,
+    ))
+    assert request2.extra_user_content_parts == []
+
+    cleared = asyncio.run(collect(plugin.memory_group_clear(
+        FakeEvent(message="/织忆 群清空 确认", **admin),
+    )))[0]
+    assert "已清空当前群" in cleared
+    destroyed = asyncio.run(collect(plugin.memory_group_destroy(
+        FakeEvent(message="/织忆 群销毁 确认", **admin),
+    )))[0]
+    assert "已销毁当前群数据" in destroyed
     asyncio.run(plugin.terminate())
 
 

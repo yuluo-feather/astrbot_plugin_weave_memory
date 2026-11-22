@@ -70,6 +70,29 @@ class ConsentState(StrEnum):
     REVOKED = "REVOKED"
 
 
+class AdminSource(StrEnum):
+    PLATFORM_ROLE = "PLATFORM_ROLE"
+    EXPLICIT_CONFIG = "EXPLICIT_CONFIG"
+    NONE = "NONE"
+
+
+@dataclass(frozen=True, slots=True)
+class AdminDecision:
+    source: AdminSource
+    admin_ids: tuple[str, ...]
+    allowed: bool
+    admin_available: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "admin_ids", tuple(self.admin_ids))
+        if any(not admin_id.strip() for admin_id in self.admin_ids):
+            raise ValidationError("admin ids must be non-empty")
+        if self.source is AdminSource.NONE and self.admin_ids:
+            raise ValidationError("NONE admin source cannot carry admin ids")
+        if self.allowed and not self.admin_ids:
+            raise ValidationError("allowed admin decision requires at least one admin")
+
+
 @dataclass(frozen=True, slots=True)
 class Identity:
     platform: str
@@ -86,6 +109,8 @@ class Identity:
                 raise ValidationError(f"{name} must be non-empty")
         if self.scope_type is ScopeType.PERSONAL and self.subject_type is not SubjectType.USER:
             raise ValidationError("PERSONAL scope requires USER subject")
+        if self.scope_type is ScopeType.GROUP and self.subject_type is not SubjectType.GROUP:
+            raise ValidationError("GROUP scope requires GROUP subject")
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,8 +123,8 @@ class Scope:
         if not self.id.strip():
             raise ValidationError("scope id must be non-empty")
         object.__setattr__(self, "created_at", require_aware_utc(self.created_at, "created_at"))
-        if self.identity.scope_type is not ScopeType.PERSONAL:
-            raise ValidationError("V0 only enables PERSONAL scopes")
+        if self.identity.scope_type not in {ScopeType.PERSONAL, ScopeType.GROUP}:
+            raise ValidationError("V1.1 only enables PERSONAL and GROUP scopes")
 
 
 @dataclass(frozen=True, slots=True)

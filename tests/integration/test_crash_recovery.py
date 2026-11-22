@@ -65,7 +65,7 @@ time.sleep(60)
     _kill_child_after_ready(script, db_path)
 
     reopened = SQLiteDatabase(db_path)
-    assert reopened.schema_version() == 4
+    assert reopened.schema_version() == 5
     assert reopened.connection.execute(
         "SELECT value FROM memory_meta WHERE key='before_crash'",
     ).fetchone()[0] == "kept"
@@ -154,8 +154,8 @@ def test_process_kill_during_v4_migration_rolls_back_ddl_and_allows_retry(tmp_pa
     db_path = tmp_path / "killed-v4-migration.db"
     db = SQLiteDatabase(db_path)
     db.migrate()
-    db.connection.execute("DROP TABLE memory_relations")
-    db.connection.execute("DELETE FROM schema_migrations WHERE version=4")
+    db.rollback_to_v10()
+    db.rollback_to_v05()
     assert db.schema_version() == 3
     db.close()
 
@@ -179,7 +179,7 @@ time.sleep(60)
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone() is None
     recovered.migrate()
-    assert recovered.schema_version() == 4
+    assert recovered.schema_version() == 5
     assert recovered.connection.execute(
         "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone()[0] == 1

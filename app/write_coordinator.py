@@ -68,6 +68,13 @@ class WriteCoordinator:
             self._ensure_open()
             return operation()
 
+    async def run_serialized(self, operation: Callable[[], T]) -> T:
+        """Run a synchronous multi-step write under the coordinator locks."""
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                return operation()
+
     def _index_state(self) -> IndexState:
         try:
             self._index.integrity_check()

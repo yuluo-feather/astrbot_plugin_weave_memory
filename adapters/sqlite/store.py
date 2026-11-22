@@ -6,6 +6,8 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
 from ...core.errors import (
@@ -16,6 +18,7 @@ from ...core.errors import (
     ValidationError,
 )
 from ...core.model import (
+    AdminSource,
     Identity,
     MemoryEntity,
     MemoryRevision,
@@ -94,9 +97,10 @@ class SQLiteMemoryStore:
                 conn.execute(
                     """INSERT INTO memory_scopes
                     (id, platform, tenant_id, scope_type, scope_external_id,
-                     subject_type, subject_id, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (scope.id, *values, _time_dump(scope.created_at)),
+                     subject_type, subject_id, created_at, is_enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (scope.id, *values, _time_dump(scope.created_at),
+                     0 if identity.scope_type is ScopeType.GROUP else 1),
                 )
         except sqlite3.IntegrityError as exc:
             raise Conflict("scope identity already exists") from exc
@@ -479,6 +483,209 @@ class SQLiteMemoryStore:
     def purge_deleted_payload(self) -> None:
         """Physically purge remnants left by committed delete/clear operations."""
         self.db.secure_purge()
+
+    def get_admin_metadata(self, scope_id: str) -> tuple[tuple[str, ...], AdminSource]:
+        try:
+            row = self.db.connection.execute(
+                "SELECT admin_ids_json, admin_source FROM memory_scopes WHERE id=?",
+                (scope_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read group admin metadata") from exc
+        if row is None:
+            raise NotFound("scope not found")
+        try:
+            raw = json.loads(row["admin_ids_json"])
+            if not isinstance(raw, list) or not all(
+                isinstance(item, str) and item.strip() for item in raw
+            ):
+                raise ValueError("admin ids must be a list of strings")
+            source = AdminSource(row["admin_source"])
+        except (TypeError, ValueError) as exc:
+            raise StorageError("stored group admin metadata is invalid") from exc
+        return tuple(raw), source
+
+    def set_admin_metadata(self, scope_id: str, admin_ids: tuple[str, ...],
+                           source: AdminSource) -> None:
+        ids = tuple(admin_ids)
+        if any(not item.strip() for item in ids):
+            raise ValidationError("admin ids must be non-empty")
+        payload = json.dumps(list(ids), ensure_ascii=False, separators=(",", ":"))
+        try:
+            with self.db.transaction() as conn:
+                row = conn.execute(
+                    "SELECT scope_type FROM memory_scopes WHERE id=?", (scope_id,),
+                ).fetchone()
+                if row is None:
+                    raise NotFound("scope not found")
+                if row["scope_type"] != "GROUP":
+                    raise Conflict("admin metadata is only valid for GROUP scopes")
+                conn.execute(
+                    "UPDATE memory_scopes SET admin_ids_json=?, admin_source=? WHERE id=?",
+                    (payload, source.value, scope_id),
+                )
+        except (Conflict, NotFound, ValidationError):
+            raise
+        except sqlite3.Error as exc:
+            raise StorageError("could not persist group admin metadata") from exc
+
+    def enable_scope(self, scope_id: str, *, operation_id: str,
+                     operator_type: OperatorType, operator_id: str,
+                     occurred_at: datetime) -> bool:
+        return self._set_group_enabled(
+            scope_id, enabled=True, operation_type="GROUP_ENABLE",
+            operation_id=operation_id, operator_type=operator_type,
+            operator_id=operator_id, occurred_at=occurred_at,
+        )
+
+    def disable_group_scope(self, scope_id: str, *, operation_id: str,
+                            operator_type: OperatorType, operator_id: str,
+                            occurred_at: datetime) -> bool:
+        return self._set_group_enabled(
+            scope_id, enabled=False, operation_type="GROUP_DISABLE",
+            operation_id=operation_id, operator_type=operator_type,
+            operator_id=operator_id, occurred_at=occurred_at,
+        )
+
+    def _set_group_enabled(self, scope_id: str, *, enabled: bool,
+                           operation_type: str, operation_id: str,
+                           operator_type: OperatorType, operator_id: str,
+                           occurred_at: datetime) -> bool:
+        try:
+            with self.db.transaction() as conn:
+                prior = conn.execute(
+                    "SELECT * FROM memory_operations WHERE id=?", (operation_id,),
+                ).fetchone()
+                if prior is not None:
+                    if (prior["scope_id"], prior["memory_id"], prior["operation_type"],
+                        prior["operator_type"], prior["operator_id"], prior["occurred_at"]) == (
+                        scope_id, None, operation_type, operator_type.value,
+                        operator_id, _time_dump(occurred_at)):
+                        return False
+                    raise Conflict("operation id already belongs to another operation")
+                row = conn.execute(
+                    "SELECT scope_type, is_enabled FROM memory_scopes WHERE id=?",
+                    (scope_id,),
+                ).fetchone()
+                if row is None:
+                    raise NotFound("scope not found")
+                if row["scope_type"] != "GROUP":
+                    raise Conflict("group lifecycle requires a GROUP scope")
+                if bool(row["is_enabled"]) is enabled:
+                    return False
+                conn.execute(
+                    "UPDATE memory_scopes SET is_enabled=?, disabled_at=? WHERE id=?",
+                    (1 if enabled else 0, None if enabled else _time_dump(occurred_at), scope_id),
+                )
+                self._insert_operation(
+                    conn, operation_id=operation_id, scope_id=scope_id,
+                    memory_id=None, operation_type=operation_type,
+                    operator_type=operator_type, operator_id=operator_id,
+                    occurred_at=occurred_at, metadata={"enabled": enabled},
+                )
+                return True
+        except (Conflict, NotFound, ValidationError):
+            raise
+        except sqlite3.IntegrityError as exc:
+            raise Conflict("group lifecycle operation identifier already exists") from exc
+        except sqlite3.Error as exc:
+            raise StorageError("could not change group scope state") from exc
+
+    def count_active(self, scope_id: str) -> int:
+        try:
+            return int(self.db.connection.execute(
+                "SELECT count(*) FROM memories WHERE scope_id=? AND status='ACTIVE'",
+                (scope_id,),
+            ).fetchone()[0])
+        except sqlite3.Error as exc:
+            raise StorageError("could not count active memories") from exc
+
+    def backup_group_scope(self, scope_id: str, destination: str) -> str:
+        try:
+            row = self.db.connection.execute(
+                "SELECT scope_type FROM memory_scopes WHERE id=?", (scope_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not inspect group scope for backup") from exc
+        if row is None:
+            raise NotFound("scope not found")
+        if row["scope_type"] != "GROUP":
+            raise Conflict("backup_group_scope requires a GROUP scope")
+        path = Path(destination)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.db.backup_to(path)
+        try:
+            check = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+            try:
+                check.row_factory = sqlite3.Row
+                scope = check.execute(
+                    "SELECT scope_type FROM memory_scopes WHERE id=?", (scope_id,),
+                ).fetchone()
+                if scope is None or scope["scope_type"] != "GROUP":
+                    raise StorageError("backup does not contain the target group scope")
+                check.execute(
+                    "SELECT count(*) FROM memories WHERE scope_id=?", (scope_id,),
+                ).fetchone()
+                check.execute(
+                    "SELECT count(*) FROM memory_consents WHERE scope_id=?", (scope_id,),
+                ).fetchone()
+            finally:
+                check.close()
+        except sqlite3.Error as exc:
+            raise StorageError("could not verify group backup") from exc
+        return sha256(path.read_bytes()).hexdigest()
+
+    def delete_group_scope(self, scope_id: str, *, operation_id: str,
+                           operator_type: OperatorType, operator_id: str,
+                           occurred_at: datetime) -> int:
+        """Atomically remove all group rows in an FK-safe order."""
+        try:
+            with self.db.transaction() as conn:
+                row = conn.execute(
+                    "SELECT scope_type FROM memory_scopes WHERE id=?", (scope_id,),
+                ).fetchone()
+                if row is None:
+                    return 0
+                if row["scope_type"] != "GROUP":
+                    raise Conflict("delete_group_scope requires a GROUP scope")
+                memory_ids = tuple(
+                    item["id"] for item in conn.execute(
+                        "SELECT id FROM memories WHERE scope_id=? ORDER BY id",
+                        (scope_id,),
+                    ).fetchall()
+                )
+                for memory_id in memory_ids:
+                    self._mark_fts_dirty(conn, memory_id)
+                conn.execute(
+                    """DELETE FROM memory_relations
+                       WHERE source_memory_id IN (SELECT id FROM memories WHERE scope_id=?)
+                          OR target_memory_id IN (SELECT id FROM memories WHERE scope_id=?)""",
+                    (scope_id, scope_id),
+                )
+                conn.execute(
+                    "DELETE FROM memory_tags WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)",
+                    (scope_id,),
+                )
+                conn.execute(
+                    "DELETE FROM memory_sources WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)",
+                    (scope_id,),
+                )
+                conn.execute(
+                    "DELETE FROM memory_revisions WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)",
+                    (scope_id,),
+                )
+                conn.execute("DELETE FROM memories WHERE scope_id=?", (scope_id,))
+                conn.execute("DELETE FROM memory_consents WHERE scope_id=?", (scope_id,))
+                conn.execute("DELETE FROM memory_operations WHERE scope_id=?", (scope_id,))
+                conn.execute("DELETE FROM memory_scopes WHERE id=?", (scope_id,))
+                self._mark_secure_purge_pending(conn)
+                return len(memory_ids)
+        except (Conflict, NotFound, ValidationError):
+            raise
+        except sqlite3.IntegrityError as exc:
+            raise Conflict("could not destroy group scope due to a constraint") from exc
+        except sqlite3.Error as exc:
+            raise StorageError("could not destroy group scope") from exc
 
     @staticmethod
     def _mark_secure_purge_pending(conn: sqlite3.Connection) -> None:

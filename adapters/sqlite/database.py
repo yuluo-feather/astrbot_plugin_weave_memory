@@ -24,7 +24,7 @@ class SQLiteDatabase:
     multi-process write coordination.
     """
 
-    CURRENT_SCHEMA_VERSION = 4
+    CURRENT_SCHEMA_VERSION = 5
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -68,6 +68,7 @@ class SQLiteDatabase:
 
     def migrate(self) -> None:
         self._ensure_open()
+        self.connection.execute("PRAGMA foreign_keys = OFF")
         try:
             with self.transaction() as conn:
                 conn.execute("""
@@ -121,8 +122,20 @@ class SQLiteDatabase:
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (4, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("reserved_memory_relations",),
                     )
+                    version = 4
+                if version < 5:
+                    migration_v5 = (Path(__file__).parent / "migrations" / "005_group_scopes.sql").read_text(encoding="utf-8")
+                    for statement in migration_v5.split(";"):
+                        if statement.strip():
+                            conn.execute(statement)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, name, applied_at) VALUES (5, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        ("group_scopes_admin",),
+                    )
         except sqlite3.Error as exc:
             raise StorageError("SQLite schema migration failed") from exc
+        finally:
+            self.connection.execute("PRAGMA foreign_keys = ON")
 
     def rollback_to_v05(self) -> None:
         """Roll back the V1.0-only reserved relation table to the V0.5 schema.
@@ -147,6 +160,74 @@ class SQLiteDatabase:
                 conn.execute("DELETE FROM schema_migrations WHERE version=4")
         except sqlite3.Error as exc:
             raise StorageError("could not roll back V1.0 schema to V0.5") from exc
+
+    def rollback_to_v10(self) -> None:
+        """Roll v5 back to v4 only when no group data remains."""
+        self._ensure_open()
+        self.connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            with self.transaction() as conn:
+                version = int(conn.execute(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                ).fetchone()[0])
+                if version != 5:
+                    raise StorageError("V1.0 rollback requires schema version 5")
+                group_scopes = int(conn.execute(
+                    "SELECT count(*) FROM memory_scopes WHERE scope_type='GROUP'",
+                ).fetchone()[0])
+                group_memories = int(conn.execute(
+                    """SELECT count(*) FROM memories m
+                       JOIN memory_scopes s ON s.id=m.scope_id
+                       WHERE s.scope_type='GROUP'""",
+                ).fetchone()[0])
+                group_consents = int(conn.execute(
+                    "SELECT count(*) FROM memory_consents WHERE consent_type='group_memory'",
+                ).fetchone()[0])
+                if group_scopes or group_memories or group_consents:
+                    raise StorageError("cannot roll back while group scope/memory/consent exists")
+                conn.execute("""
+                    CREATE TABLE memory_scopes_v4 (
+                        id TEXT PRIMARY KEY,
+                        platform TEXT NOT NULL,
+                        tenant_id TEXT NOT NULL,
+                        scope_type TEXT NOT NULL CHECK (scope_type = 'PERSONAL'),
+                        scope_external_id TEXT NOT NULL,
+                        subject_type TEXT NOT NULL CHECK (subject_type = 'USER'),
+                        subject_id TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        is_enabled INTEGER NOT NULL DEFAULT 1 CHECK (is_enabled IN (0, 1)),
+                        disabled_at TEXT,
+                        UNIQUE (platform, tenant_id, scope_type, scope_external_id, subject_type, subject_id)
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO memory_scopes_v4
+                        (id, platform, tenant_id, scope_type, scope_external_id,
+                         subject_type, subject_id, created_at, is_enabled, disabled_at)
+                    SELECT id, platform, tenant_id, scope_type, scope_external_id,
+                           subject_type, subject_id, created_at, is_enabled, disabled_at
+                    FROM memory_scopes
+                """)
+                conn.execute("DROP TABLE memory_scopes")
+                conn.execute("ALTER TABLE memory_scopes_v4 RENAME TO memory_scopes")
+                conn.execute("DELETE FROM schema_migrations WHERE version=5")
+        except sqlite3.Error as exc:
+            raise StorageError("could not roll back V1.1 schema to V1.0") from exc
+        finally:
+            self.connection.execute("PRAGMA foreign_keys = ON")
+
+    def backup_to(self, destination: str | Path) -> None:
+        """Create a consistent SQLite backup for group destroy/rollback."""
+        self._ensure_open()
+        try:
+            with self._lock:
+                target = sqlite3.connect(str(destination))
+                try:
+                    self.connection.backup(target)
+                finally:
+                    target.close()
+        except sqlite3.Error as exc:
+            raise StorageError("could not create SQLite backup") from exc
 
     def rollback_to_zero(self) -> None:
         """Destructively remove the V0 schema; intended for tests/dev rollback only."""

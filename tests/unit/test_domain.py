@@ -49,10 +49,13 @@ def test_personal_scope_requires_user_subject():
         Identity("astrbot", "default", ScopeType.PERSONAL, "u1", SubjectType.GROUP, "g1")
 
 
-def test_scope_rejects_non_personal_in_v0():
+def test_scope_allows_group_and_rejects_project_session():
     identity = Identity("astrbot", "default", ScopeType.GROUP, "g1", SubjectType.GROUP, "g1")
+    scope = Scope("s1", identity, NOW)
+    assert scope.identity.scope_type is ScopeType.GROUP
+    project = Identity("astrbot", "default", ScopeType.PROJECT, "p1", SubjectType.PROJECT, "p1")
     with pytest.raises(ValidationError):
-        Scope("s1", identity, NOW)
+        Scope("s2", project, NOW)
 
 
 def test_candidate_workflow_expiry_archives_without_using_semantic_valid_until(memory_factory):

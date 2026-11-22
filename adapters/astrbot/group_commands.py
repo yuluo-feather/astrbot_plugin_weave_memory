@@ -1,0 +1,175 @@
+"""AstrBot group command translation for V1.1 Group shared."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ...app.group_lifecycle_service import GroupLifecycleService
+from ...app.group_memory_service import GroupMemoryService
+from ...app.group_recall_service import GroupRecallService
+from ...app.scope_service import GroupScopeService
+from ...core.errors import (
+    AuthorizationDenied,
+    GroupConsentRevocationPending,
+    IndexUnavailable,
+    InvalidTransition,
+    NotFound,
+)
+from ...core.model import Scope
+from .identity import AstrBotIdentityAdapter
+
+
+class AstrBotGroupCommands:
+    def __init__(self, scopes: GroupScopeService, lifecycle: GroupLifecycleService,
+                 memories: GroupMemoryService, recall: GroupRecallService) -> None:
+        self._scopes = scopes
+        self._lifecycle = lifecycle
+        self._memories = memories
+        self._recall = recall
+        self._identity = AstrBotIdentityAdapter()
+
+    @staticmethod
+    def _tail(event: Any, subcommand: str) -> str:
+        raw = event.message_str.strip().lstrip("/").strip()
+        if raw.startswith("织忆"):
+            raw = raw[len("织忆"):].strip()
+        if raw.startswith(subcommand):
+            return raw[len(subcommand):].strip()
+        return raw
+
+    def _identity_and_decision(self, event: Any):
+        identity = self._identity.resolve_group_identity(event)
+        sender_id = self._identity.resolve_group_operator_id(event)
+        decision = self._scopes.admin_decision(identity, sender_id, event)
+        return identity, sender_id, decision
+
+    def _find_scope(self, identity) -> Scope:
+        scope = self._scopes.find(identity)
+        if scope is None:
+            raise NotFound("group memory is not enabled")
+        return scope
+
+    @staticmethod
+    def _error_text(action: str, exc: Exception) -> str:
+        if isinstance(exc, GroupConsentRevocationPending):
+            return "群记忆已关闭，但 group_memory 撤销记录写入失败，请重试 /织忆 群关闭。"
+        if isinstance(exc, AuthorizationDenied):
+            return f"{action}失败：需要群管理员，或群记忆未开启。"
+        if isinstance(exc, NotFound):
+            return f"{action}失败：当前群尚未开启织忆群记忆。"
+        if isinstance(exc, InvalidTransition):
+            return f"{action}失败：请先关闭群记忆再执行该操作。"
+        if isinstance(exc, IndexUnavailable):
+            return f"{action}失败：检索索引暂不可用，正文数据不会因此丢失。"
+        return f"{action}失败：{type(exc).__name__}。"
+
+    def help(self) -> str:
+        return (
+            "织忆群记忆命令：\n"
+            "/织忆 群帮助 —— 查看群命令\n"
+            "/织忆 群开启 —— 管理员开启当前群共享记忆\n"
+            "/织忆 群关闭 —— 管理员关闭当前群记忆（可重新开启）\n"
+            "/织忆 群清空 确认 —— 管理员清空当前群记忆\n"
+            "/织忆 群销毁 确认 —— 管理员彻底移除当前群数据（需先关闭并备份）\n"
+            "/织忆 群保存 <topic|agreement|atmosphere|experience> <内容> —— 管理员写入\n"
+            "/织忆 群列表 —— 查看当前群记忆（需已开启）\n"
+            "/织忆 群查询 <问题> —— 检索当前群记忆（需已开启）\n"
+            "/织忆 群状态 —— 查看当前群状态"
+        )
+
+    async def enable(self, event: Any) -> str:
+        identity, sender_id, decision = self._identity_and_decision(event)
+        if not decision.allowed:
+            raise AuthorizationDenied("group enable requires an administrator")
+        scope = self._scopes.ensure_scope(identity, decision)
+        await self._lifecycle.enable(scope, decision, operator_id=sender_id)
+        return "已开启当前群共享记忆。管理员可使用 /织忆 群保存 写入群级内容。"
+
+    async def disable(self, event: Any) -> str:
+        identity, sender_id, decision = self._identity_and_decision(event)
+        if not decision.allowed:
+            raise AuthorizationDenied("group disable requires an administrator")
+        scope = self._find_scope(identity)
+        await self._lifecycle.disable(scope, decision, operator_id=sender_id)
+        return "已关闭当前群共享记忆；数据保留，可由管理员重新开启。"
+
+    async def clear(self, event: Any) -> str:
+        if self._tail(event, "群清空") != "确认":
+            return "清空不可恢复。确认执行请发送：/织忆 群清空 确认"
+        identity, sender_id, decision = self._identity_and_decision(event)
+        if not decision.allowed:
+            raise AuthorizationDenied("group clear requires an administrator")
+        scope = self._find_scope(identity)
+        receipt = await self._lifecycle.clear(scope, decision, operator_id=sender_id)
+        state = "索引已重建" if receipt.index_state.value == "HEALTHY" else "清空已提交，索引待恢复"
+        purge = "" if receipt.purged is not False else "\n物理擦除未完成，将在下次插件启动时自动重试。"
+        return f"已清空当前群 {receipt.affected_count} 条记忆。{state}{purge}"
+
+    async def destroy(self, event: Any) -> str:
+        if self._tail(event, "群销毁") != "确认":
+            return "群销毁不可恢复。确认执行请发送：/织忆 群销毁 确认"
+        identity, sender_id, decision = self._identity_and_decision(event)
+        if not decision.allowed:
+            raise AuthorizationDenied("group destroy requires an administrator")
+        scope = self._find_scope(identity)
+        receipt = await self._lifecycle.destroy(scope, decision, operator_id=sender_id)
+        purge = "物理擦除完成" if receipt.purged else "物理擦除待下次启动重试"
+        return (
+            f"已销毁当前群数据 {receipt.affected_count} 条；备份已写入插件数据目录；"
+            f"{purge}。"
+        )
+
+    async def save(self, event: Any) -> str:
+        payload = self._tail(event, "群保存")
+        parts = payload.split(maxsplit=1)
+        if len(parts) != 2:
+            return "用法：/织忆 群保存 <topic|agreement|atmosphere|experience> <内容>"
+        group_label, content = parts
+        identity, sender_id, decision = self._identity_and_decision(event)
+        if not decision.allowed:
+            raise AuthorizationDenied("group write requires an administrator")
+        scope = self._find_scope(identity)
+        memory, receipt = await self._memories.save_group(
+            scope, content, group_label=group_label,
+            operator_id=sender_id, decision=decision,
+        )
+        state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已保存，索引待恢复"
+        warning = "\n群记忆已达软上限，请管理员清理。" if self._memories.needs_cleanup(scope) else ""
+        return f"已保存群记忆：{memory.id}\n{state}{warning}"
+
+    def list(self, event: Any) -> str:
+        identity, _, _ = self._identity_and_decision(event)
+        scope = self._find_scope(identity)
+        memories = self._memories.list_group(scope)
+        if not memories:
+            return "当前群没有可用的共享记忆。"
+        lines = [
+            f"{item.id} [{item.memory_type.value}] [revision {item.current_revision}] {item.content}"
+            for item in memories[:30]
+        ]
+        suffix = f"\n另有 {len(memories) - 30} 条未显示" if len(memories) > 30 else ""
+        return "当前群共享记忆：\n" + "\n".join(lines) + suffix
+
+    async def query(self, event: Any) -> str:
+        query = self._tail(event, "群查询")
+        if not query:
+            return "用法：/织忆 群查询 <问题>"
+        identity, _, _ = self._identity_and_decision(event)
+        scope = self._find_scope(identity)
+        memories = self._recall.recall_group(query, scope)
+        if not memories:
+            return "没有找到相关群记忆。"
+        await self._recall.record_access(tuple(item.id for item in memories), scope)
+        lines = [f"[{item.memory_type.value}] {item.content}（{item.id}）" for item in memories]
+        return "检索到的群记忆：\n" + "\n".join(lines)
+
+    def status(self, event: Any) -> str:
+        identity, _, _ = self._identity_and_decision(event)
+        status = self._scopes.status(identity)
+        if not status.created:
+            return "当前群尚未开启织忆群记忆。"
+        state = "已开启" if status.enabled else "已关闭"
+        return (
+            f"当前群织忆状态：{state}；记忆 {status.count} 条；"
+            f"管理员来源 {status.admin_source.value}。"
+        )

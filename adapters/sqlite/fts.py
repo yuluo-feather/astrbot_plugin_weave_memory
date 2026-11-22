@@ -179,7 +179,8 @@ class SQLiteFTSIndex:
             raise IndexUnavailable("FTS rebuild failed") from exc
 
     def search(self, query: str, *, scope_id: str, subject_id: str,
-               limit: int = 20, at: datetime | None = None) -> tuple[str, ...]:
+               limit: int = 20, at: datetime | None = None,
+               scope_type: str = "PERSONAL") -> tuple[str, ...]:
         if not query or not query.strip():
             return ()
         if limit < 1 or limit > 100:
@@ -204,7 +205,7 @@ class SQLiteFTSIndex:
                 JOIN memories m ON m.id=f.memory_id
                 JOIN memory_scopes s ON s.id=m.scope_id
                 WHERE memory_fts MATCH ? AND m.scope_id=? AND m.subject_id=?
-                  AND m.status='ACTIVE' AND s.is_enabled=1
+                  AND m.status='ACTIVE' AND s.is_enabled=1 AND s.scope_type=?
                   AND (m.valid_from IS NULL OR m.valid_from <= ?)
                   AND (m.valid_until IS NULL OR m.valid_until > ?)
                 ORDER BY bm25(memory_fts) ASC,
@@ -212,7 +213,7 @@ class SQLiteFTSIndex:
                   CASE m.source_type WHEN 'EXPLICIT' THEN 0 ELSE 1 END ASC,
                   m.memory_type ASC, m.created_at DESC, m.id ASC
                 LIMIT ?""",
-                (fts_query, scope_id, subject_id, at_key, at_key, limit),
+                (fts_query, scope_id, subject_id, scope_type, at_key, at_key, limit),
             ).fetchall()
             return tuple(row["id"] for row in rows)
         except sqlite3.Error as exc:

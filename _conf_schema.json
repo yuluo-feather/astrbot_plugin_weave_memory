@@ -1,0 +1,31 @@
+{
+  "group_admin_ids": {
+    "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",
+    "type": "object",
+    "default": {},
+    "hint": "仅在平台无法解析群主/管理员角色时使用。键必须精确匹配平台、平台实例和群 ID，避免跨群/跨实例复用。",
+    "obvious_hint": true
+  },
+  "group_max_tokens": {
+    "description": "群记忆注入 Token 预算（估算值）",
+    "type": "int",
+    "default": 192,
+    "hint": "群上下文默认比私聊更小；这是 provider-neutral 估算，不是精确 tokenizer 计数。"
+  },
+  "group_max_memories": {
+    "description": "群记忆注入最大条数",
+    "type": "int",
+    "default": 2
+  },
+  "group_candidate_limit": {
+    "description": "群检索候选上限",
+    "type": "int",
+    "default": 8
+  },
+  "group_max_active": {
+    "description": "单个群 ACTIVE 记忆软上限（告警用）",
+    "type": "int",
+    "default": 200,
+    "hint": "超过后提示管理员清理；V1.1 不做自动淘汰。"
+  }
+}
