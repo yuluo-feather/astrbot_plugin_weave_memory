@@ -1,0 +1,7 @@
+name: astrbot_plugin_weave_memory
+display_name: 织忆 Weave Memory Engine
+desc: 独立的个人记忆引擎，支持显式保存、检索和私聊上下文注入。
+short_desc: 私有、可撤销授权的个人记忆。
+version: v1.0.0-dev.1
+author: Weave Memory Engine
+astrbot_version: ">=4.29.4,<4.30"

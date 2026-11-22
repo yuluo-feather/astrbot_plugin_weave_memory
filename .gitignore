@@ -130,8 +130,7 @@ commit_msg.txt
 # card_render._resolve_asset 按 .png 找、找不到回退 .webp
 assets/**/*.png
 
-# 开发侧维护工具（引用本机系统字体，对插件运行无用；不进 repos 与市场包）
-tools/
+# 织忆构建工具随 dev 跟踪；构建产物仍由 dist/ 忽略
 
 # 未发布段只活在开发侧（发布时改名 vX.Y.Z.md 才入库）；repos 侧同样忽略
 changelogs/unreleased.md

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weave-memory-engine"
+version = "1.0.0.dev1"
+description = "Weave Memory Engine V1.0 personal memory engine development preview"
+requires-python = ">=3.11"
+license = { text = "Proprietary - internal project" }
+authors = [{ name = "Weave Memory Engine contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.9", "mypy>=1.10"]
+
+[tool.setuptools.packages.find]
+include = ["weavemem*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+
+[tool.setuptools.package-data]
+"weavemem.adapters.sqlite" = ["migrations/*.sql"]
