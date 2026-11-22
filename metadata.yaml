@@ -1,7 +1,28 @@
+# 运行环境要求：Python 3.12+（与 AstrBot 最低要求一致）；AstrBot 版本范围在下方 astrbot_version 正式声明
 name: astrbot_plugin_weave_memory
-display_name: 织忆 Weave Memory Engine
-desc: 独立的个人记忆引擎，支持显式保存、检索和私聊上下文注入。
-short_desc: 私有、可撤销授权的个人记忆。
+display_name: 织忆
+desc: 本地优先的 AstrBot 记忆引擎：显式保存、SQLite+FTS5 检索、私聊与群聊上下文注入
+short_desc: 显式保存、可撤销授权的本地记忆引擎
+help: |
+  [织忆 帮助] 查看个人记忆命令
+  [织忆 授权] 开启个人记忆保存、检索与自动注入（默认未授权）
+  [织忆 撤销授权] 停止保存、检索和注入，已有数据保留
+  [织忆 保存 内容] 显式保存一条事实
+  [织忆 更新 记忆ID 当前revision 新内容] 修订指定记忆，revision 不匹配时拒绝覆盖
+  [织忆 列表] 查看已保存的个人记忆
+  [织忆 查询 问题] 主动检索个人记忆
+  [织忆 删除 记忆ID] 不可恢复地删除一条记忆
+  [织忆 清空 确认] 不可恢复地清空个人记忆
+  [织忆 关闭 确认] 永久关闭个人记忆空间（数据保留，当前版本不支持重新开启）
+  [群命令] 群聊内发送 /织忆 群帮助 查看；群开启/群关闭/群清空/群销毁/群保存仅群管理员，成员可读 群列表/群查询/群状态
+  触发：个人命令仅私聊生效，群命令仅群聊生效；统一前缀 /织忆
+  状态：开发预览 v1.0.0-dev.1，未正式发版；V1.0 正式验收与 V1.1 群聊宿主烟测待补
 version: v1.0.0-dev.1
-author: Weave Memory Engine
+author: 羽落
+repo: https://github.com/yuluo-feather/astrbot_plugin_weave_memory
 astrbot_version: ">=4.29.4,<4.30"
+tags:
+  - 记忆
+  - 隐私
+  - 上下文
+  - 工具

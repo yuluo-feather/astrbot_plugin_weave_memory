@@ -121,7 +121,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: 构建
-        run: python tools/build_astrbot_plugin.py
+        run: python scripts/build_astrbot_plugin.py
       - uses: actions/upload-artifact@v7
         with:
           name: astrbot_plugin_weave_memory

@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import UTC, datetime
 
 import pytest
@@ -445,6 +446,83 @@ def test_v3_database_upgrades_to_v5_group_scopes(tmp_path):
     ).fetchone() is not None
     scope_columns = {row["name"] for row in db.connection.execute("PRAGMA table_info(memory_scopes)")}
     assert {"admin_ids_json", "admin_source"}.issubset(scope_columns)
+    db.close()
+
+
+def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
+    db_path = tmp_path / "backup-before-v5.db"
+    db = SQLiteDatabase(db_path)
+    db.migrate()
+    db.rollback_to_v10()
+    assert db.schema_version() == 4
+    store = SQLiteMemoryStore(db)
+    identity = Identity("astrbot", "default", ScopeType.PERSONAL,
+                        "platform-backup-user", SubjectType.USER, "backup-user")
+    scope = Scope("scope-backup", identity, NOW)
+    store.create_scope(scope)
+    memory = add_memory(store, scope, memory_id="mem-backup", content="迁移前必须保留")
+    db.close()
+
+    upgraded = SQLiteDatabase(db_path)
+    backup_path = upgraded.migrate()
+    assert backup_path is not None
+    assert backup_path.exists()
+    assert backup_path.parent.name == "migration_backups"
+    assert upgraded.schema_version() == 5
+    assert SQLiteMemoryStore(upgraded).get(
+        memory.id, scope_id=scope.id, subject_id="backup-user",
+    ) == memory
+
+    backup = sqlite3.connect(f"file:{backup_path}?mode=ro", uri=True)
+    try:
+        version = backup.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        ).fetchone()[0]
+        content = backup.execute(
+            "SELECT content FROM memories WHERE id=?", (memory.id,),
+        ).fetchone()[0]
+    finally:
+        backup.close()
+    assert version == 4
+    assert content == "迁移前必须保留"
+    upgraded.close()
+
+
+def test_migration_backup_failure_aborts_upgrade(tmp_path, monkeypatch):
+    from data.plugins.astrbot_plugin_weave_memory.core.errors import StorageError
+
+    db_path = tmp_path / "backup-failure.db"
+    db = SQLiteDatabase(db_path)
+    db.migrate()
+    db.rollback_to_v10()
+    store = SQLiteMemoryStore(db)
+    identity = Identity("astrbot", "default", ScopeType.PERSONAL,
+                        "platform-failure-user", SubjectType.USER, "failure-user")
+    scope = Scope("scope-failure", identity, NOW)
+    store.create_scope(scope)
+    memory = add_memory(store, scope, memory_id="mem-failure", content="备份失败也要保留")
+    db.close()
+
+    upgraded = SQLiteDatabase(db_path)
+
+    def fail_backup(self, destination):
+        raise StorageError("forced backup failure")
+
+    monkeypatch.setattr(SQLiteDatabase, "backup_to", fail_backup)
+    with pytest.raises(StorageError):
+        upgraded.migrate()
+    assert upgraded.schema_version() == 4
+    assert SQLiteMemoryStore(upgraded).get(
+        memory.id, scope_id=scope.id, subject_id="failure-user",
+    ) == memory
+    upgraded.close()
+
+
+def test_fresh_and_current_database_skip_migration_backup(tmp_path):
+    db = SQLiteDatabase(tmp_path / "fresh.db")
+    assert db.migrate() is None
+    assert not (tmp_path / "migration_backups").exists()
+    assert db.migrate() is None
     db.close()
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 from typing import Self
@@ -14,6 +15,7 @@ from ...core.errors import ServiceClosed, StorageError
 _SCHEMA_V1 = (Path(__file__).parent / "migrations" / "001_initial.sql").read_text(encoding="utf-8")
 SECURE_PURGE_KEY = "secure_purge_pending"
 SECURE_PURGE_BASELINE_KEY = "secure_purge_baseline_done"
+MIGRATION_BACKUP_DIR = "migration_backups"
 
 
 class SQLiteDatabase:
@@ -66,8 +68,80 @@ class SQLiteDatabase:
                     self.connection.execute("ROLLBACK")
                 raise
 
-    def migrate(self) -> None:
+    def _read_schema_version(self) -> int:
         self._ensure_open()
+        try:
+            exists = self.connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'",
+            ).fetchone()
+            if exists is None:
+                return 0
+            row = self.connection.execute(
+                "SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations",
+            ).fetchone()
+            return int(row["version"])
+        except sqlite3.Error as exc:
+            raise StorageError("could not read schema version") from exc
+
+    def _migration_backup_path(self, version: int) -> Path:
+        database = Path(self.path)
+        backup_dir = database.parent / MIGRATION_BACKUP_DIR
+        try:
+            backup_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise StorageError("could not create migration backup directory") from exc
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        base = f"{database.stem}_v{version}_to_v{self.CURRENT_SCHEMA_VERSION}_{stamp}"
+        candidate = backup_dir / f"{base}.sqlite3"
+        counter = 1
+        while candidate.exists():
+            candidate = backup_dir / f"{base}_{counter}.sqlite3"
+            counter += 1
+        return candidate
+
+    @staticmethod
+    def _discard_backup(path: Path) -> None:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _backup_before_migration(self, version: int) -> Path | None:
+        if self.path == ":memory:" or version < 1 or version >= self.CURRENT_SCHEMA_VERSION:
+            return None
+        destination = self._migration_backup_path(version)
+        try:
+            self.backup_to(destination)
+        except StorageError:
+            self._discard_backup(destination)
+            raise
+        try:
+            backup = sqlite3.connect(str(destination))
+            try:
+                integrity = backup.execute("PRAGMA integrity_check").fetchone()
+                if integrity is None or integrity[0] != "ok":
+                    raise StorageError("migration backup integrity check failed")
+                row = backup.execute(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                ).fetchone()
+                if row is None or int(row[0]) != version:
+                    raise StorageError("migration backup schema version mismatch")
+            finally:
+                backup.close()
+        except StorageError:
+            self._discard_backup(destination)
+            raise
+        except sqlite3.Error as exc:
+            self._discard_backup(destination)
+            raise StorageError("could not verify migration backup") from exc
+        return destination
+
+    def migrate(self) -> Path | None:
+        self._ensure_open()
+        version = self._read_schema_version()
+        if version > self.CURRENT_SCHEMA_VERSION:
+            raise StorageError("database schema is newer than this application")
+        backup_path = self._backup_before_migration(version)
         self.connection.execute("PRAGMA foreign_keys = OFF")
         try:
             with self.transaction() as conn:
@@ -136,6 +210,7 @@ class SQLiteDatabase:
             raise StorageError("SQLite schema migration failed") from exc
         finally:
             self.connection.execute("PRAGMA foreign_keys = ON")
+        return backup_path
 
     def rollback_to_v05(self) -> None:
         """Roll back the V1.0-only reserved relation table to the V0.5 schema.
@@ -217,7 +292,7 @@ class SQLiteDatabase:
             self.connection.execute("PRAGMA foreign_keys = ON")
 
     def backup_to(self, destination: str | Path) -> None:
-        """Create a consistent SQLite backup for group destroy/rollback."""
+        """Create a consistent SQLite backup for migration, group destroy, or rollback."""
         self._ensure_open()
         try:
             with self._lock:

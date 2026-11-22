@@ -258,3 +258,4 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - 群注入只走当前群 Scope；FTS/读取加 `scope_type=GROUP` 防御过滤；注入失败不阻塞聊天。
 - V1.1 不实现导出；V1.2 再做导出与完整保留策略。
 - v5 迁移/回滚见 ADR-0011；群销毁是回滚前置，见 ADR-0010/0011。
+- v1–v4 升级到 v5 前，`SQLiteDatabase.migrate()` 自动在数据目录 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移，原 schema 与数据不变。

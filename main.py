@@ -62,7 +62,9 @@ class WeaveMemoryPlugin(Star):
             data_dir = Path(StarTools.get_data_dir())
             data_dir.mkdir(parents=True, exist_ok=True)
             self._database = SQLiteDatabase(data_dir / "weave_memory.sqlite3")
-            self._database.migrate()
+            backup_path = self._database.migrate()
+            if backup_path is not None:
+                logger.info(f"织忆数据库迁移前备份：{backup_path}")
             store = SQLiteMemoryStore(self._database)
             index = SQLiteFTSIndex(self._database)
             StartupRecoveryService(self._database, index).run()

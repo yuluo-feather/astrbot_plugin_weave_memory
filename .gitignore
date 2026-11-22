@@ -117,7 +117,7 @@ webui/node_modules/
 webui/dist/
 node_modules/
 
-# 星羽塔罗专有：发版脚本产物与发布归档
+# 发版脚本产物与发布归档
 release/
 commit_msg.txt
 
@@ -126,11 +126,16 @@ commit_msg.txt
 *.backup
 *.orig
 
+# 运行时数据库备份（默认在插件数据目录；本地调试时也不入库）
+migration_backups/
+group_backups/
+
 # 素材只入库 WebP（PNG 原图约 219 MB，留在开发侧本地）
 # card_render._resolve_asset 按 .png 找、找不到回退 .webp
 assets/**/*.png
 
-# 织忆构建工具随 dev 跟踪；构建产物仍由 dist/ 忽略
+# 构建脚本放 scripts/ 随仓库跟踪；本地 tools/ 与构建产物不入库
+tools/
 
 # 未发布段只活在开发侧（发布时改名 vX.Y.Z.md 才入库）；repos 侧同样忽略
 changelogs/unreleased.md
