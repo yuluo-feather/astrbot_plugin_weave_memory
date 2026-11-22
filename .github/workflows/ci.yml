@@ -1,0 +1,129 @@
+# 织忆 CI：push / PR 跑 lint、编译、测试、静态检查与 AstrBot 契约导入；
+# main 上额外构建插件 zip 作为 Actions 产物。
+#
+# 口径分工：
+#   - pytest 参数在 pytest.ini，ruff 配置在 ruff.toml，mypy 配置在 mypy.ini；
+#     YAML 不复制第二套规则；
+#   - 工具链版本只来自 requirements-dev.txt；本仓库无第三方运行时依赖；
+#   - 真实 AstrBot WebUI / 群聊角色 / Provider 注入仍走本机宿主烟测，CI 只做
+#     可重复的代码与契约检查。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: lint & test (${{ matrix.os }} · py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: 装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+      - name: 编译检查
+        run: python -m compileall -q core app adapters main.py tests
+      - name: ruff
+        run: python -m ruff check .
+      - name: pytest
+        run: python -m pytest
+
+  static:
+    name: 静态类型 (mypy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: 装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+      - name: mypy
+        run: python -m mypy
+      - name: mypy .（含 tests）
+        run: python -m mypy .
+
+  contract:
+    name: AstrBot 4.29.4 契约导入
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: 装插件工具链与真框架
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt "astrbot==4.29.4"
+      - name: 框架版本
+        run: python -c "import astrbot; print('astrbot', astrbot.__version__)"
+      - name: 真框架导入插件
+        run: |
+          python - <<'PY'
+          import pathlib
+          import shutil
+          import sys
+          import tempfile
+
+          root = pathlib.Path.cwd()
+          temp = pathlib.Path(tempfile.mkdtemp())
+          plugins = temp / "data" / "plugins"
+          plugins.mkdir(parents=True)
+          shutil.copytree(
+              root,
+              plugins / "astrbot_plugin_weave_memory",
+              ignore=shutil.ignore_patterns(".git", "__pycache__", "dist", ".github"),
+          )
+          sys.path.insert(0, str(temp))
+          import data.plugins.astrbot_plugin_weave_memory.main as plugin
+          print("HOST_IMPORT_OK", plugin.WeaveMemoryPlugin.__name__)
+          PY
+
+  package:
+    name: 构建插件 zip
+    needs: [test, static]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: 构建
+        run: python tools/build_astrbot_plugin.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: astrbot_plugin_weave_memory
+          path: dist/astrbot_plugin_weave_memory.zip
+          retention-days: 30
