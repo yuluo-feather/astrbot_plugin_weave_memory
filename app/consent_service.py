@@ -2,9 +2,10 @@
 
 from enum import StrEnum
 
-from ..core.errors import AuthorizationDenied
 from ..core.model import ConsentState, MemoryConsent, Scope
+from ..core.policy.consent import ConsentPolicy
 from ..core.ports import Clock, ConsentRepository, IdGenerator
+from .write_coordinator import WriteCoordinator
 
 
 class PersonalConsentType(StrEnum):
@@ -12,9 +13,10 @@ class PersonalConsentType(StrEnum):
 
 
 class ConsentService:
-    def __init__(self, repository: ConsentRepository, clock: Clock,
-                 ids: IdGenerator) -> None:
+    def __init__(self, repository: ConsentRepository, coordinator: WriteCoordinator,
+                 clock: Clock, ids: IdGenerator) -> None:
         self._repository = repository
+        self._coordinator = coordinator
         self._clock = clock
         self._ids = ids
 
@@ -27,7 +29,7 @@ class ConsentService:
             state=ConsentState.GRANTED, source=source, granted_at=now,
             metadata={"operator_id": operator_id},
         )
-        self._repository.record(consent)
+        self._coordinator.write_metadata(lambda: self._repository.record(consent))
         return consent
 
     def revoke(self, scope: Scope, consent_type: PersonalConsentType, *,
@@ -39,7 +41,7 @@ class ConsentService:
             state=ConsentState.REVOKED, source=source, revoked_at=now,
             metadata={"operator_id": operator_id},
         )
-        self._repository.record(consent)
+        self._coordinator.write_metadata(lambda: self._repository.record(consent))
         return consent
 
     def is_granted(self, scope: Scope, consent_type: PersonalConsentType) -> bool:
@@ -49,5 +51,11 @@ class ConsentService:
         )
 
     def require(self, scope: Scope, consent_type: PersonalConsentType) -> None:
-        if not self.is_granted(scope, consent_type):
-            raise AuthorizationDenied(f"{consent_type.value} consent is not granted")
+        events = self._repository.history(
+            subject_id=scope.identity.subject_id, scope_id=scope.id,
+            consent_type=consent_type.value,
+        )
+        ConsentPolicy(events).require(
+            subject_id=scope.identity.subject_id, scope_id=scope.id,
+            consent_type=consent_type.value,
+        )

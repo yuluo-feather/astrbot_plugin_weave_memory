@@ -24,7 +24,7 @@
 
 `memory_consents` 默认 fail-closed。必须在执行保存、检索、注入等动作前判定对应 Consent。V0 的显式保存不能被理解为对未来自动提取、外部模型处理或群共享的授权。
 
-V0 使用单一 `personal_memory` Consent：无记录默认拒绝；`/记忆 授权` 开启保存、主动检索与自动注入；`/记忆 撤销授权` 停止这三类普通功能但不自动删除历史。Consent 事件 append-only，按追加顺序取最后一条；不再用时间戳决定先后。详见 ADR-0005。
+V0 使用单一 `personal_memory` Consent：无记录默认拒绝；`/织忆 授权` 开启保存、主动检索与自动注入；`/织忆 撤销授权` 停止这三类普通功能但不自动删除历史。Consent 事件 append-only，按追加顺序取最后一条；不再用时间戳决定先后。详见 ADR-0005。
 
 ## 4. 来源可信度
 
@@ -47,6 +47,8 @@ V0 使用单一 `personal_memory` Consent：无记录默认拒绝；`/记忆 授
 ## 6. 删除与审计
 
 删除/清空在权威事务中先写不含正文的最小 tombstone audit，再物理删除正文、Revision、Source、Tag，并标记 FTS dirty。索引未同步时检索 fail-closed。审计字段白名单见 ADR-0004。
+
+物理擦除按 ADR-0008：所有由本应用打开的 SQLite 连接启用 `PRAGMA secure_delete = ON`；删除/清空在同一事务内写入 `secure_purge_pending`；仅在 FTS 同步/重建成功且索引 `HEALTHY` 后执行 `wal_checkpoint(TRUNCATE)` → `VACUUM` → `wal_checkpoint(TRUNCATE)`，两次 checkpoint 的 `(busy, log)` 都必须为 0，否则保留 pending 并报告未完成。升级时若 `secure_purge_baseline_done` 缺失，启动执行一次基线擦除。该保证以“应用自身连接、无其他读快照、checkpoint 成功”为条件；不承诺 SSD、操作系统缓存、文件系统空闲块或备份层面的取证级擦除，也不等同于数据库加密。
 
 ## 7. Scope 关闭
 

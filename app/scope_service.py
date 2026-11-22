@@ -6,11 +6,14 @@ from uuid import NAMESPACE_URL, uuid5
 from ..core.errors import NotFound, ValidationError
 from ..core.model import Identity, Scope, ScopeType
 from ..core.ports import Clock, ScopeStore
+from .write_coordinator import WriteCoordinator
 
 
 class PersonalScopeService:
-    def __init__(self, store: ScopeStore, clock: Clock) -> None:
+    def __init__(self, store: ScopeStore, coordinator: WriteCoordinator,
+                 clock: Clock) -> None:
         self._store = store
+        self._coordinator = coordinator
         self._clock = clock
 
     @staticmethod
@@ -35,7 +38,7 @@ class PersonalScopeService:
         if existing is not None:
             return existing
         scope = Scope(self.stable_scope_id(identity), identity, self._clock.now())
-        self._store.create_scope(scope)
+        self._coordinator.write_metadata(lambda: self._store.create_scope(scope))
         return scope
 
     def is_enabled(self, scope: Scope) -> bool:

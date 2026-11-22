@@ -1,8 +1,9 @@
 """Explicit personal-memory use cases; no automatic extraction in V1.0."""
 
 from dataclasses import replace
+from datetime import datetime
 
-from ..core.errors import Conflict
+from ..core.errors import Conflict, NotFound
 from ..core.model import (
     MemoryEntity,
     MemoryRevision,
@@ -16,17 +17,38 @@ from ..core.model import (
 from ..core.normalization import normalize_content
 from ..core.ports import Clock, IdGenerator, MemoryStore
 from .consent_service import ConsentService, PersonalConsentType
+from .lifecycle_service import LifecycleService
 from .write_coordinator import WriteCoordinator, WriteReceipt
 
 
 class MemoryApplicationService:
     def __init__(self, store: MemoryStore, coordinator: WriteCoordinator,
-                 consent: ConsentService, clock: Clock, ids: IdGenerator) -> None:
+                 consent: ConsentService, lifecycle: LifecycleService,
+                 clock: Clock, ids: IdGenerator) -> None:
         self._store = store
         self._coordinator = coordinator
         self._consent = consent
+        self._lifecycle = lifecycle
         self._clock = clock
         self._ids = ids
+
+    async def _expire_overdue_duplicate(self, scope: Scope, memory_type: MemoryType,
+                                        normalized: str, now: datetime) -> None:
+        """Expire an overdue ACTIVE duplicate so it stops blocking the unique key."""
+        for memory in self._store.list_active(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+        ):
+            if (memory.memory_type is memory_type
+                    and memory.normalized_content == normalized
+                    and memory.valid_until is not None
+                    and memory.valid_until <= now):
+                try:
+                    await self._lifecycle.expire_active(
+                        memory, revision_id=self._ids.new_id("revision"), at=now,
+                    )
+                except (Conflict, NotFound):
+                    # Another writer expired, deleted, or cleared it first.
+                    pass
 
     async def save_explicit(self, scope: Scope, content: str, *,
                             operator_id: str,
@@ -34,6 +56,7 @@ class MemoryApplicationService:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
         normalized = normalize_content(content)
         now = self._clock.now()
+        await self._expire_overdue_duplicate(scope, memory_type, normalized, now)
         memory_id = self._ids.new_id("memory")
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,

@@ -75,12 +75,16 @@ def test_latest_revocation_wins_and_regrant_restores(consent_stack):
                            consent_type="personal_memory")
 
 
-def test_same_timestamp_revocation_wins(consent_stack):
+def test_same_timestamp_follows_append_order(consent_stack):
     _, _, repo, scope = consent_stack
     repo.record(consent("c1", scope, ConsentState.GRANTED))
     repo.record(consent("c2", scope, ConsentState.REVOKED))
     assert not repo.is_granted(subject_id="user-1", scope_id=scope.id,
                                consent_type="personal_memory")
+    # A later grant in the same microsecond must win: order, not timestamp.
+    repo.record(consent("c3", scope, ConsentState.GRANTED))
+    assert repo.is_granted(subject_id="user-1", scope_id=scope.id,
+                           consent_type="personal_memory")
 
 
 def test_consent_idempotency_and_scope_subject_binding(consent_stack):

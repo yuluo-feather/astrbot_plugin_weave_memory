@@ -8,7 +8,7 @@
 
 1. V0 使用单一 `personal_memory` consent，默认无记录即拒绝。授权后允许显式保存、主动检索与自动注入；撤销后这三类普通功能全部停止，但不自动删除既有数据。
 2. Delete/Clear 始终可用于用户主动清理数据，即使 Consent 已撤销；Scope Disable 是更强的关闭操作，会停止普通读写/检索，但保留数据供管理审计。
-3. Consent 采用 append-only 事件记录；最新事件决定当前状态；相同时间戳时 REVOKED 优先。SQLite schema migration v3 新增 `memory_consents`。
+3. Consent 采用 append-only 事件记录；最新事件按追加顺序决定当前状态，时间戳不参与排序。SQLite 以 `rowid` 作为追加顺序，因此同一微秒内先 revoke 再 regrant 时 regrant 生效。SQLite schema migration v3 新增 `memory_consents`。
 4. AstrBot 身份使用 `get_platform_name()`、`get_platform_id()`、`get_sender_id()`；`platform_id` 作为 Tenant 隔离平台实例；Scope 只接受私聊事件（`message_obj.group_id` 必须为空）。身份字段缺失或群聊事件 fail-closed。
 5. AstrBot 目标版本暂定 `>=4.29.4,<4.30`，宿主 Python `>=3.12`。4.29.4 是 2026-11-22 可确认的稳定发布版本；后续升级需重新验证插件 API。
 6. 每轮动态记忆不修改 `req.system_prompt`，而是追加 `TextPart(...).mark_as_temp()` 到 `req.extra_user_content_parts`，避免将记忆写入会话历史；使用官方 `StarTools.get_data_dir()` 获取插件独立数据目录。

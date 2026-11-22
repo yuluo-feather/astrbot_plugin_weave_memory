@@ -42,11 +42,13 @@ adapters/sqlite implements ports
 | `adapters/astrbot` | 身份解析、命令翻译、注入上下文选择 | 直接写表、依赖 AstrBot SDK |
 | `plugin` | AstrBot 插件入口和 composition root | 复杂业务逻辑 |
 
+开发目录已按用户要求对齐星羽 dev，拍平为根 `main.py` + `core/` + `app/` + `adapters/`；上表的 `plugin` 是逻辑边界，不是物理目录。`adapters/astrbot` 将身份、命令与注入合并为三个模块，未单独建立 Message/Conversation/Tool/Lifecycle Adapter 类；Tool Adapter 在 V1.0 本就不注册。
+
 ## 4. V0 组件
 
 - Domain：Memory Entity、Scope、Source、Revision、Status。
 - Policy：ConsentPolicy、Lifecycle、Conflict/Dedup。
-- Ports：MemoryStore、SearchIndex、PlatformAdapter、ScopeStore、ConsentRepository、SchemaVersionProvider、Clock、IdGenerator；均已建立 Protocol。
+- Ports：MemoryStore、SearchIndex、PlatformAdapter、ScopeStore、ConsentRepository、SchemaVersionProvider、Clock、IdGenerator；均已建立 Protocol。V1.0 另外保留空边界 `ManagementService`（V1.6/V2）与 `LlmExtractor`（V1.5），不提供实现。
 - Application：WriteCoordinator、LifecycleService、StartupRecoveryService、ConsentService、PersonalScopeService、MemoryApplicationService、RecallService、MemoryContextComposer。
 - SQLite：权威表、FTS5、版本迁移、索引 dirty 标记与重建能力（ADR-0003）。
 - AstrBot：V0.5 私聊身份、命令与 `on_llm_request` 临时注入适配。
@@ -59,8 +61,8 @@ V0 目标为单进程、单实例、SQLite。写操作由应用层统一协调�
 
 - MemoryStore 与 SearchIndex 共用同一 SQLiteDatabase 连接；权威写入和 FTS 同步分属两个事务。
 - ID 已抽象为 IdGenerator 端口；Personal Scope 使用完整 Identity tuple 的 UUID5，其余实体使用 UUID4。
-- 真实 AstrBot v4.29.4 宿主烟测；stub 测试不能替代宿主验证。
-- 宿主重载时 Coordinator 与 Database 关闭顺序已由 terminate 实现，仍需真实运行验证。
+- 真实 AstrBot v4.29.4 宿主烟测已完成（2026-11-23）；stub 测试不能替代宿主验证。
+- 宿主重载时 Coordinator 与 Database 关闭顺序由 terminate 实现，真实宿主重载烟测已完成（2026-11-23）。
 
 
 ## 7. V1.0 执行边界

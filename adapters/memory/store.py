@@ -53,14 +53,11 @@ class InMemoryMemoryStore:
                 raise NotFound("memory not found")
             return memory
 
-    def find_active_duplicate(self, *, scope_id: str, subject_id: str,
-                              memory_type: str, normalized_content: str) -> MemoryEntity | None:
+    def find_active_duplicate(self, key: DedupKey) -> MemoryEntity | None:
         with self._lock:
             for memory in self._memories.values():
-                if (memory.scope_id == scope_id and memory.subject_id == subject_id
-                        and memory.memory_type.value == memory_type
-                        and memory.normalized_content == normalized_content
-                        and memory.status.value == "ACTIVE"):
+                if (memory.status.value == "ACTIVE"
+                        and DedupKey.from_memory(memory) == key):
                     return memory
             return None
 
@@ -108,6 +105,9 @@ class InMemoryMemoryStore:
                         and memory.subject_id == subject_id
                         and memory.status.value == "ACTIVE"):
                     self._memories[memory_id] = replace(memory, last_accessed_at=at)
+
+    def purge_deleted_payload(self) -> None:
+        return None
 
     def revisions(self, memory_id: str) -> tuple[MemoryRevision, ...]:
         with self._lock:

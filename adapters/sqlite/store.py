@@ -27,7 +27,8 @@ from ...core.model import (
     SubjectType,
 )
 from ...core.normalization import NORMALIZATION_VERSION
-from .database import SQLiteDatabase
+from ...core.policy.dedup import DedupKey
+from .database import SECURE_PURGE_KEY, SQLiteDatabase
 
 
 def _time_dump(value: datetime | None) -> str | None:
@@ -142,6 +143,16 @@ class SQLiteMemoryStore:
             raise Conflict("source must belong to memory and match source_type")
         try:
             with self.db.transaction() as conn:
+                scope = conn.execute(
+                    "SELECT subject_id, is_enabled FROM memory_scopes WHERE id=?",
+                    (memory.scope_id,),
+                ).fetchone()
+                if scope is None:
+                    raise NotFound("scope not found")
+                if scope["subject_id"] != memory.subject_id:
+                    raise Conflict("memory subject does not match scope identity")
+                if scope["is_enabled"] != 1:
+                    raise AuthorizationDenied("scope is disabled")
                 existing = conn.execute("SELECT * FROM memories WHERE id=?", (memory.id,)).fetchone()
                 if existing is not None:
                     expected_memory = (
@@ -189,13 +200,6 @@ class SQLiteMemoryStore:
                         return  # Exact replay: idempotent success.
                     raise Conflict("memory id already exists with different content")
 
-                scope = conn.execute("SELECT subject_id, is_enabled FROM memory_scopes WHERE id = ?", (memory.scope_id,)).fetchone()
-                if scope is None:
-                    raise NotFound("scope not found")
-                if scope["subject_id"] != memory.subject_id:
-                    raise Conflict("memory subject does not match scope identity")
-                if scope["is_enabled"] != 1:
-                    raise AuthorizationDenied("scope is disabled")
                 conn.execute(
                     """INSERT INTO memories
                     (id, scope_id, subject_id, memory_type, content, normalized_content,
@@ -287,15 +291,15 @@ class SQLiteMemoryStore:
             raise NotFound("memory not found")
         return self._row_to_memory(row)
 
-    def find_active_duplicate(self, *, scope_id: str, subject_id: str,
-                              memory_type: str, normalized_content: str) -> MemoryEntity | None:
+    def find_active_duplicate(self, key: DedupKey) -> MemoryEntity | None:
         try:
             row = self.db.connection.execute(
                 """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
                 WHERE m.scope_id=? AND m.subject_id=? AND m.memory_type=?
                   AND m.normalized_content=? AND m.status='ACTIVE' AND s.is_enabled=1
                 ORDER BY m.created_at, m.id LIMIT 1""",
-                (scope_id, subject_id, memory_type, normalized_content),
+                (key.scope_id, key.subject_id, key.memory_type,
+                 key.normalized_content),
             ).fetchone()
         except sqlite3.Error as exc:
             raise StorageError("could not find active duplicate memory") from exc
@@ -370,6 +374,7 @@ class SQLiteMemoryStore:
                 conn.execute("DELETE FROM memory_sources WHERE memory_id=?", (memory_id,))
                 conn.execute("DELETE FROM memory_revisions WHERE memory_id=?", (memory_id,))
                 conn.execute("DELETE FROM memories WHERE id=?", (memory_id,))
+                self._mark_secure_purge_pending(conn)
         except (Conflict, NotFound, ValidationError):
             raise
         except sqlite3.IntegrityError as exc:
@@ -423,6 +428,7 @@ class SQLiteMemoryStore:
                 conn.execute("DELETE FROM memory_sources WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)", (scope_id,))
                 conn.execute("DELETE FROM memory_revisions WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)", (scope_id,))
                 conn.execute("DELETE FROM memories WHERE scope_id=?", (scope_id,))
+                self._mark_secure_purge_pending(conn)
                 return memory_ids
         except (Conflict, NotFound, ValidationError):
             raise
@@ -469,6 +475,18 @@ class SQLiteMemoryStore:
             raise Conflict("disable operation identifier already exists") from exc
         except sqlite3.Error as exc:
             raise StorageError("could not disable scope") from exc
+
+    def purge_deleted_payload(self) -> None:
+        """Physically purge remnants left by committed delete/clear operations."""
+        self.db.secure_purge()
+
+    @staticmethod
+    def _mark_secure_purge_pending(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            "INSERT INTO memory_meta(key,value) VALUES(?, '1') "
+            "ON CONFLICT(key) DO UPDATE SET value='1'",
+            (SECURE_PURGE_KEY,),
+        )
 
     @staticmethod
     def _insert_operation(conn: sqlite3.Connection, *, operation_id: str,

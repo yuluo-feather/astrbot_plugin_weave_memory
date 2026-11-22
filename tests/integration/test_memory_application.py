@@ -17,6 +17,9 @@ from data.plugins.astrbot_plugin_weave_memory.app.consent_service import (
     ConsentService,
     PersonalConsentType,
 )
+from data.plugins.astrbot_plugin_weave_memory.app.lifecycle_service import (
+    LifecycleService,
+)
 from data.plugins.astrbot_plugin_weave_memory.app.memory_service import (
     MemoryApplicationService,
 )
@@ -33,10 +36,12 @@ from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     AuthorizationDenied,
     Conflict,
+    ServiceClosed,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     Identity,
     MemoryType,
+    OperatorType,
     ScopeType,
     SubjectType,
 )
@@ -59,9 +64,10 @@ def app_stack(tmp_path):
     clock = FixedClock()
     ids = UUID4IdGenerator()
     coordinator = WriteCoordinator(store, index)
-    scopes = PersonalScopeService(store, clock)
-    consent = ConsentService(consent_repo, clock, ids)
-    memories = MemoryApplicationService(store, coordinator, consent, clock, ids)
+    scopes = PersonalScopeService(store, coordinator, clock)
+    consent = ConsentService(consent_repo, coordinator, clock, ids)
+    lifecycle = LifecycleService(coordinator, store, consent)
+    memories = MemoryApplicationService(store, coordinator, consent, lifecycle, clock, ids)
     recall = RecallService(store, index, consent, clock, coordinator, store)
     yield db, store, index, scopes, consent, memories, recall, coordinator
     db.close()
@@ -206,6 +212,161 @@ def test_recall_excludes_expired_and_not_yet_valid_memories_before_limit(app_sta
 
     assert recall.recall("黑咖啡", scope) == ()
     assert asyncio.run(MemoryContextComposer(recall).compose("黑咖啡", scope)) is None
+
+
+def test_explicit_save_expires_overdue_duplicate_and_creates_new_memory(app_stack):
+    db, store, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    first, _ = asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    db.connection.execute(
+        "UPDATE memories SET valid_until=? WHERE id=?",
+        ("2026-11-22T11:59:59.000000Z", first.id),
+    )
+
+    second, _ = asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    assert second.id != first.id
+    assert store.get(first.id, scope_id=scope.id, subject_id="u1").status.value == "EXPIRED"
+
+
+def test_explicit_save_treats_future_active_duplicate_as_existing(app_stack):
+    db, _, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    first, _ = asyncio.run(memories.save_explicit(scope, "明天去爬山", operator_id="u1"))
+    db.connection.execute(
+        "UPDATE memories SET valid_from=? WHERE id=?",
+        ("2026-11-22T12:00:01.000000Z", first.id),
+    )
+
+    second, _ = asyncio.run(memories.save_explicit(scope, "明天去爬山", operator_id="u1"))
+    assert second.id == first.id
+
+
+def test_explicit_save_survives_overdue_duplicate_deleted_during_expiry(
+    app_stack, monkeypatch,
+):
+    db, store, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    first, _ = asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    db.connection.execute(
+        "UPDATE memories SET valid_until=? WHERE id=?",
+        ("2026-11-22T11:59:59.000000Z", first.id),
+    )
+    original = memories._lifecycle.expire_active
+
+    async def delete_then_expire(memory, **kwargs):
+        store.delete(
+            memory.id, scope_id=scope.id, subject_id="u1",
+            operation_id="op-expire-race", operator_type=OperatorType.USER,
+            operator_id="u1", occurred_at=NOW,
+        )
+        return await original(memory, **kwargs)
+
+    monkeypatch.setattr(memories._lifecycle, "expire_active", delete_then_expire)
+    second, _ = asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    assert second.id != first.id
+
+
+def test_explicit_save_survives_overdue_duplicate_cleared_during_expiry(
+    app_stack, monkeypatch,
+):
+    db, store, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    first, _ = asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    db.connection.execute(
+        "UPDATE memories SET valid_until=? WHERE id=?",
+        ("2026-11-22T11:59:59.000000Z", first.id),
+    )
+    original = memories._lifecycle.expire_active
+
+    async def clear_then_expire(memory, **kwargs):
+        store.clear_scope(
+            scope.id, operation_id="op-expire-clear",
+            operator_type=OperatorType.USER, operator_id="u1", occurred_at=NOW,
+        )
+        return await original(memory, **kwargs)
+
+    monkeypatch.setattr(memories._lifecycle, "expire_active", clear_then_expire)
+    second, _ = asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    assert second.id != first.id
+
+
+def test_concurrent_saves_with_overdue_duplicate_create_one_active(app_stack):
+    db, store, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    first, _ = asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    db.connection.execute(
+        "UPDATE memories SET valid_until=? WHERE id=?",
+        ("2026-11-22T11:59:59.000000Z", first.id),
+    )
+
+    async def save_four():
+        return await asyncio.gather(*[
+            memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1")
+            for _ in range(4)
+        ])
+
+    results = asyncio.run(save_four())
+    ids = {memory.id for memory, _ in results}
+    assert len(ids) == 1
+    new_id = next(iter(ids))
+    assert new_id != first.id
+    active = store.list_active(scope_id=scope.id, subject_id="u1")
+    assert len(active) == 1
+    assert active[0].id == new_id
+    assert store.get(first.id, scope_id=scope.id, subject_id="u1").status.value == "EXPIRED"
+
+
+def test_revoke_during_overdue_expiry_fails_save_after_expiring(
+    app_stack, monkeypatch,
+):
+    db, _, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    first, _ = asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    db.connection.execute(
+        "UPDATE memories SET valid_until=? WHERE id=?",
+        ("2026-11-22T11:59:59.000000Z", first.id),
+    )
+    original = memories._lifecycle.expire_active
+
+    async def revoke_then_expire(memory, **kwargs):
+        consent.revoke(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+        return await original(memory, **kwargs)
+
+    monkeypatch.setattr(memories._lifecycle, "expire_active", revoke_then_expire)
+    with pytest.raises(AuthorizationDenied):
+        asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+    # Documented side effect: the old memory may already be EXPIRED.
+    assert memories._store.get(
+        first.id, scope_id=scope.id, subject_id="u1",
+    ).status.value == "EXPIRED"
+
+
+def test_consent_require_uses_latest_history_state(app_stack):
+    _, _, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    consent.revoke(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    with pytest.raises(AuthorizationDenied):
+        consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+    asyncio.run(memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1"))
+
+
+def test_metadata_writes_share_coordinator_gate(app_stack):
+    _, _, _, scopes, consent, _, _, coordinator = app_stack
+    scope = scopes.resolve(identity())
+    asyncio.run(coordinator.close())
+    with pytest.raises(ServiceClosed):
+        scopes.resolve(identity("u2"))
+    with pytest.raises(ServiceClosed):
+        consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
 
 
 def test_explicit_save_is_idempotent_for_same_scope_type_and_normalized_content(app_stack):

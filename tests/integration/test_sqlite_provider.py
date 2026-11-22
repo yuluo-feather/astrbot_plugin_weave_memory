@@ -9,6 +9,7 @@ from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
     SQLiteMemoryStore,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
+    AuthorizationDenied,
     Conflict,
     IndexUnavailable,
     NotFound,
@@ -68,6 +69,7 @@ def add_memory(store, scope, *, memory_id="mem-1", content="喜欢黑咖啡。",
 
 def test_migration_is_idempotent_and_creates_required_tables(sqlite_stack):
     db, _, _, _ = sqlite_stack
+    assert db.connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
     assert db.schema_version() == 4
     db.migrate()
     tables = {row[0] for row in db.connection.execute(
@@ -126,6 +128,28 @@ def test_partial_unique_index_only_blocks_active_and_candidate(sqlite_stack):
                  MemorySource("src-active-2", duplicate.id, SourceType.EXPLICIT, OperatorType.USER, "user-1", NOW))
 
 
+def test_exact_create_replay_is_rejected_after_scope_disable(sqlite_stack):
+    db, store, _, scope = sqlite_stack
+    add_memory(store, scope, memory_id="mem-disable-replay")
+    store.disable_scope(scope.id, operation_id="op-disable-replay",
+                        operator_type=OperatorType.USER, operator_id="user-1",
+                        occurred_at=NOW)
+    with pytest.raises(AuthorizationDenied):
+        add_memory(store, scope, memory_id="mem-disable-replay")
+
+
+def test_memory_relations_reject_dangling_references(sqlite_stack):
+    import sqlite3
+
+    db, _, _, scope = sqlite_stack
+    with pytest.raises(sqlite3.IntegrityError):
+        db.connection.execute(
+            "INSERT INTO memory_relations(id,source_memory_id,target_memory_id,relation_type,created_at) "
+            "VALUES(?,?,?,?,?)",
+            ("rel-dangling", "missing-1", "missing-2", "RELATED", NOW.isoformat()),
+        )
+
+
 def test_fts_sync_search_and_scope_filter(sqlite_stack):
     _, store, index, scope = sqlite_stack
     memory = add_memory(store, scope)
@@ -159,6 +183,33 @@ def test_schema_can_roll_back_to_empty_and_reapply(tmp_path):
     assert db.connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memories'").fetchone()[0] == 0
     db.migrate()
     assert db.schema_version() == 4
+    db.close()
+
+
+def test_candidate_and_active_same_key_conflict(sqlite_stack):
+    _, store, _, scope = sqlite_stack
+    add_memory(store, scope, memory_id="m-active", content="同名事实")
+    with pytest.raises(Conflict):
+        add_memory(
+            store, scope, memory_id="m-candidate", content="同名事实",
+            status=MemoryStatus.CANDIDATE,
+        )
+
+
+def test_in_memory_secure_purge_marks_complete():
+    db = SQLiteDatabase(":memory:")
+    db.migrate()
+    db.secure_purge()
+    state = {
+        row["key"]: row["value"]
+        for row in db.connection.execute(
+            "SELECT key, value FROM memory_meta WHERE key LIKE 'secure_purge_%'"
+        ).fetchall()
+    }
+    assert state["secure_purge_pending"] == "0"
+    assert state["secure_purge_baseline_done"] == "1"
+    # No file/WAL exists for :memory:, so there is nothing to retry at startup.
+    assert db.secure_purge_if_pending() is False
     db.close()
 
 

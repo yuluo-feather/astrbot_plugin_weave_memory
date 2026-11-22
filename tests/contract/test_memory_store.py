@@ -12,6 +12,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.model import (
     OperatorType,
     SourceType,
 )
+from data.plugins.astrbot_plugin_weave_memory.core.policy.dedup import DedupKey
 from data.plugins.astrbot_plugin_weave_memory.core.policy.lifecycle import transition
 
 from tests.conftest import NOW
@@ -82,13 +83,28 @@ def test_find_active_duplicate_is_scope_subject_and_type_scoped(memory_factory):
     store = InMemoryMemoryStore()
     memory = memory_factory()
     store.create(memory, revision(memory), source(memory.id))
+    key = DedupKey.from_memory(memory)
+    assert store.find_active_duplicate(key) == memory
     assert store.find_active_duplicate(
-        scope_id=memory.scope_id, subject_id=memory.subject_id,
-        memory_type=memory.memory_type.value,
-        normalized_content=memory.normalized_content,
-    ) == memory
-    assert store.find_active_duplicate(
-        scope_id="other-scope", subject_id=memory.subject_id,
-        memory_type=memory.memory_type.value,
-        normalized_content=memory.normalized_content,
+        DedupKey("other-scope", key.subject_id, key.memory_type, key.normalized_content),
     ) is None
+    assert store.find_active_duplicate(
+        DedupKey(key.scope_id, "other-subject", key.memory_type, key.normalized_content),
+    ) is None
+    assert store.find_active_duplicate(
+        DedupKey(key.scope_id, key.subject_id, "EVENT", key.normalized_content),
+    ) is None
+
+
+def test_find_active_duplicate_is_status_based_not_validity_based(memory_factory):
+    """Expiry is handled by the save-path sweep, not by the dedup lookup."""
+    store = InMemoryMemoryStore()
+    expired = memory_factory(
+        id="m-expired", valid_until=NOW - timedelta(seconds=1),
+    )
+    future = memory_factory(
+        id="m-future", content="明天去爬山", valid_from=NOW + timedelta(seconds=1),
+    )
+    for memory in (expired, future):
+        store.create(memory, revision(memory), source(memory.id))
+        assert store.find_active_duplicate(DedupKey.from_memory(memory)) == memory

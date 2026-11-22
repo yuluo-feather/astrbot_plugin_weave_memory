@@ -14,6 +14,7 @@ from ..model import (
     OperatorType,
     Scope,
 )
+from ..policy.dedup import DedupKey
 
 
 class Clock(Protocol):
@@ -30,8 +31,7 @@ class MemoryStore(Protocol):
 
     def get(self, memory_id: str, *, scope_id: str, subject_id: str) -> MemoryEntity: ...
 
-    def find_active_duplicate(self, *, scope_id: str, subject_id: str,
-                              memory_type: str, normalized_content: str) -> MemoryEntity | None: ...
+    def find_active_duplicate(self, key: DedupKey) -> MemoryEntity | None: ...
 
     def update(self, memory: MemoryEntity, *, expected_revision: int,
                revision: MemoryRevision, source: MemorySource | None = None) -> None: ...
@@ -53,6 +53,8 @@ class MemoryStore(Protocol):
                       operator_type: OperatorType, operator_id: str,
                       occurred_at: datetime) -> bool: ...
 
+    def purge_deleted_payload(self) -> None: ...
+
 
 class SearchIndex(Protocol):
     def is_healthy(self) -> bool: ...
@@ -68,6 +70,22 @@ class SearchIndex(Protocol):
 class PlatformAdapter(Protocol):
     """The only boundary allowed to accept host event objects."""
     def resolve_identity(self, event: object) -> Identity: ...
+
+
+class ManagementService(Protocol):
+    """Reserved V1.6/V2 boundary for the JSON management API.
+
+    V1.0 defines no methods and provides no implementation; signatures freeze
+    when V1.6 starts.
+    """
+
+
+class LlmExtractor(Protocol):
+    """Reserved V1.5 boundary for structured extraction.
+
+    V1.0 defines no methods and calls no model; ExtractionService is the V1.5
+    application service built on this port.
+    """
 
 
 class SchemaVersionProvider(Protocol):
@@ -87,3 +105,5 @@ class ConsentRepository(Protocol):
                 consent_type: str) -> MemoryConsent | None: ...
     def is_granted(self, *, subject_id: str, scope_id: str,
                    consent_type: str) -> bool: ...
+    def history(self, *, subject_id: str, scope_id: str,
+                consent_type: str) -> tuple[MemoryConsent, ...]: ...

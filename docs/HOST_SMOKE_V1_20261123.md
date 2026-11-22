@@ -1,5 +1,7 @@
 # 织忆 V1.0 真实 AstrBot 宿主烟测（2026-11-23）
 
+> 历史记录：当前命令前缀为 `/织忆`；下文 `/记忆 …` 为当时执行记录。
+
 环境：AstrBot v4.29.4，插件版本 `v1.0.0-dev.1`，schema v4，WebUI `http://localhost:6185`。
 
 - 测试前已用 SQLite backup API 备份 v0.5 数据库（备份留在源 review workspace，不随本仓库迁移）。

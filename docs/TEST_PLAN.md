@@ -169,14 +169,53 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 
 
 ## 12. V1.0 M3 进程终止专项（2026-11-23）
-
 - 未提交 WAL 写事务中强制终止子进程：重启后未提交行回滚，既有数据保留。
 - COMMIT 后立即异常退出：已提交数据保留。
 - v3→v4 DDL 与 marker 写入中途强制终止：DDL/marker 一起回滚，重启后可重试迁移。
 - 已提交 FTS dirty marker 与索引差异后进程退出：启动恢复从权威表重建 FTS。
-- 当前全量测试：100 passed（Python 3.13）。
+- 当前全量测试：132 passed（Python 3.13 当时基线为 100；2026-11-23 P3 补测后 132）。
 - 限制：不代表物理断电、存储介质损坏或多进程并发恢复已验证。详见 `V1.0_M3_CRASH_RECOVERY_REPORT_20261123.md`。
 
-## 13. V1.0 独立验收状态
+### V1.0 删除/清空物理擦除（ADR-0008）
 
+- SQLite 连接默认 `PRAGMA secure_delete = 1`。
+- 单条删除与 Scope 清空后，**连接未关闭时**数据库主文件及 WAL 均不含被删正文 canary；关闭后再复核一次。
+- 第二个连接持有 WAL 读快照时，`wal_checkpoint(TRUNCATE)` 返回 busy：delete 与 clear 都返回 `purged=False`、pending 标记保持 `1`；释放快照后重试成功并清除。
+- 非 WAL（`journal_mode=DELETE`）下 checkpoint 返回 `log < 0`：仍执行 `secure_delete` + VACUUM 并标记完成。
+- 清空一个 Scope 后 VACUUM 不得删除其他 Scope 的 live 记忆。
+- 过期重复扫描期间旧记忆被 delete/clear：显式保存不得以 NotFound 失败，应继续创建新记忆。
+- FTS 同步/重建失败时不执行 VACUUM，`secure_purge_pending` 标记保留；启动恢复重建 FTS 后重试并清除。
+- 补丁前 `secure_delete=OFF` 生成的旧库：启动时 baseline 缺失触发一次全库擦除，旧 canary 消失。
+- 命令层在物理擦除未完成时提示下次插件启动自动重试，不把逻辑删除误报为失败。
+- 限制：不覆盖存在外部读快照/备份工具的并发窗口，也不覆盖 SSD 磨损均衡、OS 缓存、文件系统空闲块或备份/快照层面的取证级擦除。
+
+### V1.0 P3 补测（2026-11-23）
+
+已补：
+- baseline 启动擦除：reader busy 时保留 baseline 缺失并抛出 `StorageError`，释放后重试；checkpoint 失败与第二次 checkpoint busy 都不写 `baseline_done`。
+- 非 WAL：delete、clear、baseline 三条路径在 `journal_mode=DELETE` 下仍标记完成并清除 canary。
+- clear FTS dirty：`PENDING_REBUILD`、`purged=False`、pending 保留；启动恢复重建后重试清除。
+- 多 Scope 清空：其他 Scope 的 `memories`、FTS、revisions、sources、tags 均在 VACUUM 后保留。
+- 命令层 `purged=False`：delete/clear 文案提示“物理擦除未完成，将在下次插件启动时自动重试”。
+- `:memory:`：写入完成标记；`secure_purge_if_pending()` 因无文件返回 False。
+- `write_metadata`：可控阻塞 fake store 验证元数据写等待在途内容写完成；关闭后仍返回 `ServiceClosed`。
+- 过期重复：delete/clear/revoke 发生在 expire 前时，save 继续查重或明确失败；并发同键 save 只产生一个 ACTIVE。
+- Consent：多事件后最新状态由 `ConsentService.require` 的完整 history 路径生效。
+- CANDIDATE 同键：与 ACTIVE 的唯一索引冲突为预期，V1.0 无 candidate 写入路径。
+
+仍未覆盖：
+- 非 WAL 与 FTS dirty/reader 的组合没有单独参数化；非 WAL 路径与 FTS dirty 路径分别有独立回归。
+- update/disable 与过期扫描的竞态未稳定构造；delete/clear/revoke 已覆盖。
+- 命令层真实 I/O 失败的 `purged=False` 未抓包，文案通过 fake receipt 验证。
+- PERSIST/TRUNCATE 等 journal 模式的 rollback journal 文件不在“主库 + WAL”保证内。
+- 外部读快照/备份工具的长窗口、SSD/OS/文件系统/备份层面的取证级擦除仍不承诺。
+
+### V1.0 命令前缀（2026-11-23）
+
+- 命令组注册名为 `织忆`，alias 仅 `{"/织忆"}`；不注册 `/记忆`。
+- help、README、当前运行文档全部使用 `/织忆`；历史烟测保留 `/记忆` 并标注当前前缀。
+- 测试覆盖 `/织忆 授权`、`/织忆 保存`、`/织忆 列表` 路径，以及 help/命令组不含 `/记忆`。
+- 真实宿主 `/织忆 帮助/授权/保存/列表` 已验证（2026-11-23，见 `HOST_SMOKE_ZHUYI_PREFIX_20261123.md`）；旧 `/记忆 帮助` 未返回插件帮助，进入普通聊天。
+
+## 13. V1.0 独立验收状态
 当前结论为条件通过（开发验收），正式发布签署未完成。真实 AstrBot 清空命令验证与 Provider 持久历史/token 级证据仍待补。详见 `V1.0_INDEPENDENT_ACCEPTANCE_REVIEW_20261123.md`。

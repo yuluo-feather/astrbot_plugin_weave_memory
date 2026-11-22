@@ -44,12 +44,14 @@ def memory_factory():
     )
 
     def make(*, id="m-1", scope_id="scope-a", subject_id="user-a", content="喜欢黑咖啡。",
-             status=MemoryStatus.ACTIVE, revision=1, superseded_by=None):
+             status=MemoryStatus.ACTIVE, revision=1, superseded_by=None,
+             memory_type=MemoryType.PREFERENCE, valid_from=None, valid_until=None):
         return MemoryEntity(
             id=id, scope_id=scope_id, subject_id=subject_id,
-            memory_type=MemoryType.PREFERENCE, content=content,
+            memory_type=memory_type, content=content,
             normalized_content=normalize_content(content), status=status,
             source_type=SourceType.EXPLICIT, current_revision=revision,
             created_at=NOW, updated_at=NOW, superseded_by=superseded_by,
+            valid_from=valid_from, valid_until=valid_until,
         )
     return make

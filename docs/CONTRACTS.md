@@ -9,6 +9,8 @@
 
 - 核心层只使用平台无关 DTO / 值对象。
 - 所有写入都必须经过应用层 WriteCoordinator；Adapter 不得直接写表。
+- 内容写入走 Coordinator 的异步写锁；Scope/Consent 元数据写入调用 `write_metadata`，与内容写入共享同一把可重入写锁。
+- `write_metadata` 不等待 async `_lock`，因此不加入同一 FIFO 队列；内容写临界区不含 await，单事件循环下数据库写不会重叠。若未来引入 await/多线程写，必须把元数据写统一为 async 写入口。
 - 失败不得被静默吞掉；错误必须能区分验证失败、未授权、冲突、未找到、存储失败、索引失败及关闭状态。
 - 权威数据写入成功但 FTS 更新失败时，不得丢失权威正文；索引必须可检测并重建。
 - 并发更新必须使用乐观锁，版本不匹配不得静默覆盖。
@@ -42,7 +44,13 @@
 
 ### ConsentPolicy
 
-对指定调用者、动作、主体与作用域执行授权判定；默认拒绝。V0 仅 Personal。
+对指定调用者、动作、主体与作用域执行授权判定；默认拒绝。V0 仅 Personal。`ConsentService.require` 必须加载 append-only 事件历史并调用该 Domain 策略，不在 Adapter 或命令层重复实现判定。该实现每次读取完整历史，复杂度 O(N)；V1.0 个人库可接受，latest-only 缓存留给后续版本。
+
+### 预留端口（V1.0 只定义边界，不实现）
+
+- `ManagementService`：V1.6/V2 JSON 管理 API 的边界；V1.0 不提供方法实现。
+- `LlmExtractor`：V1.5 结构化提取端口；V1.0 不调用模型、不注册提取管线。
+- `ExtractionService`：V1.5 应用服务，基于 `LlmExtractor`；V1.0 不创建占位实现。
 
 ## 3. 应用服务职责
 
@@ -71,9 +79,8 @@
 | NotFound | 目标不存在或对调用者不可见 | 不得泄漏跨用户存在性 |
 | Conflict | 乐观锁/唯一约束冲突 | 否，要求显式处理 |
 | StorageError | 权威存储操作失败 | 否 |
-| IndexUnavailable | 派生索引不可用/未同步 | 检索 fail-closed；写入回执标记 PENDING_REBUILD |
+| IndexUnavailable | 派生索引不可用/未同步 | 检索 fail-closed；写入回执标记 PENDING_REBUILD；注入层按空注入处理 |
 | ServiceClosed | 生命周期已关闭 | 否 |
-| IndexUnavailable | 检索/注入链路不可用 | 检索 fail-closed；注入层按空注入处理 |
 
 领域异常类型已实现；跨平台稳定错误码和自动重试策略留待后续版本，不在 V0 静默重试。
 
@@ -95,12 +102,13 @@
 
 ## 7. V0.4 写协调与生命周期实现契约（ADR-0004）
 
-- 所有应用写操作经单实例 WriteCoordinator 串行化。
+- 所有应用写操作经单实例 WriteCoordinator 串行化；Scope/Consent 元数据写入走 `write_metadata`。
 - 状态转换由 LifecycleService 守卫；DELETED 只能走物理清理用例。
 - 删除/清空在一个权威事务内写最小 tombstone audit、标记 FTS dirty 并物理删除正文关联数据。
 - 关闭 Scope 停止普通读写与检索，不删除正文。
 - 删除/清空/关闭操作使用 operation ID；同操作重放幂等。
 - 启动恢复检查 migration 和 FTS；V0 无后台任务队列。
+- V1.0 热重载语义：等待持有中的写锁、拒绝排队写入、关闭 SQLite 连接；因无后台任务，不实现超时取消或未完成任务快照。
 
 ## 8. Token 预算
 
@@ -117,6 +125,8 @@ V0.5 使用 provider-neutral estimate：CJK 字符和标点各计 1，ASCII 字�
 ## 10. V1.0 新增应用契约
 
 - `MemoryStore.find_active_duplicate` 必须同时按 `scope_id`、`subject_id`、`memory_type`、`normalized_content` 精确过滤，只返回 ACTIVE。
+- 显式保存前先把同键、已过 `valid_until` 的 ACTIVE 记忆转 `EXPIRED`，再执行查重，避免过期记录占用唯一索引；未来才生效的 ACTIVE 同键记录仍视为已存在。
+- 该过期扫描在 WriteCoordinator 写锁之外执行，复杂度 O(N)，且先于最终写入/Consent guard；若随后保存失败，旧记忆可能已转 `EXPIRED`。V1.0 接受该语义，候选/批量维护在 V1.6 再统一。
 - `WriteCoordinator.create_or_get_duplicate` 在同一写锁内完成查重与创建；命中时返回原记忆及原 revision，不新增 revision/source。
 - `MemoryApplicationService.update_explicit` 必须由调用者指定 `memory_id` 和 `expected_revision`；只允许更新 ACTIVE 记忆。
 - 旧 revision 不匹配返回 `Conflict`；自然键唯一约束冲突也显式返回 `Conflict`，不得静默覆盖或自动合并。
@@ -169,3 +179,15 @@ V0.5 使用 provider-neutral estimate：CJK 字符和标点各计 1，ASCII 字�
 ### V1.0 关闭的部分失败错误语义
 
 Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageError 子类）。它表示 Scope disabled 已提交、普通访问已阻断，但 append-only REVOKED 事件待重试；AstrBot 命令层必须向用户准确表达这一部分成功状态。
+
+
+### V1.0 删除/清空的物理擦除（ADR-0008）
+
+- 所有由本应用打开的 SQLite 连接启用 `PRAGMA secure_delete = ON`。
+- `delete` / `clear_scope` 在权威事务内写 `memory_meta.secure_purge_pending = '1'`。
+- 仅当 FTS 同步/重建成功、索引 `HEALTHY` 后，才执行 `wal_checkpoint(TRUNCATE)` → `VACUUM` → `wal_checkpoint(TRUNCATE)`；两次 checkpoint 都校验 `busy` 与 `log`，`busy != 0` 或 `log > 0` 时保留 pending 并返回 `purged=False`；`log < 0` 表示非 WAL 模式，继续 VACUUM。
+- 成功后清 pending 并写 `secure_purge_baseline_done='1'`；启动时若 baseline 缺失，执行一次全库基线擦除，清理升级前的旧残留。
+- 索引未恢复或擦除失败时保留标记；插件下次启动完成 FTS 恢复后重试。
+- 命令层在擦除未完成时提示「将在下次插件启动时自动重试」，不得把逻辑删除误报为失败。
+- 有条件保证：应用自身连接、`secure_delete=ON`、无其他连接持有 WAL 读快照、checkpoint 成功时，SQLite 主库与 WAL 不保留可恢复正文；只读连接/备份快照/backup API 会令 checkpoint busy，此时状态为 pending。
+- 不承诺 SSD、OS 缓存、文件系统空闲块或备份层面的取证级擦除。

@@ -12,7 +12,8 @@ from typing import Self
 from ...core.errors import ServiceClosed, StorageError
 
 _SCHEMA_V1 = (Path(__file__).parent / "migrations" / "001_initial.sql").read_text(encoding="utf-8")
-
+SECURE_PURGE_KEY = "secure_purge_pending"
+SECURE_PURGE_BASELINE_KEY = "secure_purge_baseline_done"
 
 
 class SQLiteDatabase:
@@ -39,6 +40,7 @@ class SQLiteDatabase:
             self.connection.row_factory = sqlite3.Row
             self.connection.execute("PRAGMA foreign_keys = ON")
             self.connection.execute("PRAGMA busy_timeout = 5000")
+            self.connection.execute("PRAGMA secure_delete = ON")
             if self.path != ":memory:":
                 self.connection.execute("PRAGMA journal_mode = WAL")
                 self.connection.execute("PRAGMA synchronous = FULL")
@@ -159,6 +161,71 @@ class SQLiteDatabase:
                     conn.execute(f"DROP TABLE IF EXISTS {table}")
         except sqlite3.Error as exc:
             raise StorageError("could not roll back SQLite schema to empty V0 state") from exc
+
+    def _checkpoint_truncate(self) -> None:
+        row = self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if row is None:
+            raise StorageError("WAL checkpoint returned no status")
+        busy, log = int(row[0]), int(row[1])
+        # log < 0 means the database is not in WAL mode (checkpoint is a no-op).
+        if busy or log > 0:
+            raise StorageError("WAL checkpoint is blocked by a reader; purge remains pending")
+
+    @staticmethod
+    def _mark_purge_complete(conn: sqlite3.Connection) -> None:
+        for key, value in (
+            (SECURE_PURGE_KEY, "0"),
+            (SECURE_PURGE_BASELINE_KEY, "1"),
+        ):
+            conn.execute(
+                "INSERT INTO memory_meta(key,value) VALUES(?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+
+    def secure_purge(self) -> None:
+        """Remove committed-deletion remnants from the database and WAL files.
+
+        secure_delete overwrites deleted cells; checkpoint + VACUUM remove WAL
+        frames and free pages that may still hold pre-existing content. A busy
+        checkpoint leaves the pending marker set instead of falsely reporting
+        completion. This is a SQLite-level purge, not a forensic SSD guarantee.
+        """
+        if self.path == ":memory:":
+            with self.transaction() as conn:
+                self._mark_purge_complete(conn)
+            return
+        self._ensure_open()
+        try:
+            with self._lock:
+                self._ensure_open()
+                self._checkpoint_truncate()
+                self.connection.execute("VACUUM")
+                self._checkpoint_truncate()
+                with self.transaction() as conn:
+                    self._mark_purge_complete(conn)
+        except sqlite3.Error as exc:
+            raise StorageError("secure purge failed") from exc
+
+    def secure_purge_if_pending(self) -> bool:
+        """Retry pending purge, and run a one-time baseline purge on upgrade."""
+        if self.path == ":memory:":
+            return False
+        with self._lock:
+            self._ensure_open()
+            try:
+                rows = self.connection.execute(
+                    "SELECT key, value FROM memory_meta WHERE key IN (?, ?)",
+                    (SECURE_PURGE_KEY, SECURE_PURGE_BASELINE_KEY),
+                ).fetchall()
+            except sqlite3.Error as exc:
+                raise StorageError("could not read secure purge state") from exc
+            state = {row["key"]: row["value"] for row in rows}
+            if (state.get(SECURE_PURGE_KEY) != "1"
+                    and state.get(SECURE_PURGE_BASELINE_KEY) == "1"):
+                return False
+            self.secure_purge()
+            return True
 
     def schema_version(self) -> int:
         self._ensure_open()

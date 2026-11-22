@@ -37,6 +37,8 @@ V0 领域实体至少表达以下信息（字段名/可空性需与 CONTRACTS �
 | `created_at` / `updated_at` / `last_accessed_at` | 时间字段 |
 | `metadata_json` | 扩展元数据 |
 
+V0/V1 计划书字段列表中的 `source_id` 未落为 `memories` 列；当前模型用 `source_type` + `memory_sources` 关系表表达来源证据，避免维护指向“当前 source”的冗余外键。
+
 V0 的 `memory_type` 仅使用 `PREFERENCE`、`FACT`、`EVENT`。总计划书中的 `DECISION / RELATION / PLAN / PROFILE` 不在 V0 实现范围。
 
 ## 3. Source 与 operator
@@ -50,6 +52,8 @@ V0 的 `memory_type` 仅使用 `PREFERENCE`、`FACT`、`EVENT`。总计划书中
 ## 4. Revision
 
 Revision 表达重要变更历史。V0 计划要求内容/状态/作用域/来源变化触发 revision；标点等非实质修改是否触发、字段快照格式及保留策略仍待明确。
+
+V1.0 执行口径：显式更新即使归一化内容不变也新增 revision；标点级合并未实现，留待 V1.3 评估。当前模型没有独立属性键，不能把同一 `MemoryType` 下的不同正文自动互替（ADR-0006）。
 
 ## 5. Consent
 
@@ -116,6 +120,7 @@ Revision 表达重要变更历史。V0 计划要求内容/状态/作用域/来�
 ## 12. V1.0 执行补充
 
 - `valid_from` 与 `valid_until` 在 FTS 候选查询前过滤；边界为 `valid_from <= now < valid_until`。
+- 查重按 ACTIVE 状态匹配同键，不受 `valid_from/valid_until` 影响；显式保存前先把同键、已过 `valid_until` 的 ACTIVE 记忆转 `EXPIRED`，再查重，避免过期记录占用唯一索引。未来生效的 ACTIVE 同键记录仍视为已存在。
 - 显式保存幂等键沿用 `(scope_id, subject_id, memory_type, normalized_content)`，只对 ACTIVE 精确重复返回既有 ID。
 - 显式更新按 `memory_id + expected_revision` 定位；正文变化生成新 Revision 与 Source 记录。
 - 当前模型没有独立“属性键”，不得把同一 `MemoryType` 下所有不同文本推断为同一事实并自动互相替代。
@@ -129,3 +134,18 @@ Revision 表达重要变更历史。V0 计划要求内容/状态/作用域/来�
 ### V1.0 `memory_relations` 预留结构
 
 V1.0 增加最小有向边表：`id`、`source_memory_id`、`target_memory_id`、`relation_type`、`created_at`、`metadata_json`。两端引用 `memories`，禁止自环，按 source/target 建索引；不实现关系 API/Graph Retrieval。列结构是 ADR-0007 的实现选择，因为计划书只要求保留表，未指定字段。
+
+V1.0 该表没有 `scope_id` 列，也没有应用层写入/查询 API；跨 Scope 边不影响检索。`memory_operations` 也没有 `result` 字段，V1.8 ledger 审计再引入。
+
+### V1.0 宿主入口边界
+
+- `/织忆 保存` 固定写入 `FACT`；`PREFERENCE`/`EVENT` 在领域层可用，但 V1.0 没有宿主命令入口。
+- `memory_tags` 表存在但没有写入 API；标签检索留给后续版本。
+- `valid_from`/`valid_until` 已参与检索过滤，但没有命令设置有效期；到期 ACTIVE 记忆会在下次同键显式保存前转 `EXPIRED`。
+
+### V1.0 明确 deferred
+
+- 候选 `expires_at`/workflow TTL 不持久化；V1.0 无 candidate 路径，留到 V1.5/V1.6。V1.0 没有 candidate 写入路径；CANDIDATE 与 ACTIVE 同键仍受唯一索引约束，候选功能在 V1.5/V1.6 设计时处理。
+- 群管理员授权来源规则随 Group shared 在 V1.1 实现。
+- `REJECTED` 的正文保留/清除策略随候选管理在 V1.6 实现。
+- `memory_operations.result` 与 `memory_relations.scope_id` 留到 V1.8/V2 的审计与关系检索。

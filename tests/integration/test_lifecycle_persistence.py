@@ -118,6 +118,10 @@ def test_clear_scope_only_removes_target_scope_and_audits_each_tombstone(stack):
     assert store.get(other.id, scope_id=second_scope.id, subject_id="u2") == other
     assert db.connection.execute("SELECT count(*) FROM memory_operations WHERE operation_type='CLEAR_MEMORY'").fetchone()[0] == 1
     assert db.connection.execute("SELECT count(*) FROM memory_operations WHERE id='op-clear-1'").fetchone()[0] == 1
+    metadata = db.connection.execute(
+        "SELECT metadata_json FROM memory_operations WHERE operation_type='CLEAR_MEMORY'"
+    ).fetchone()[0]
+    assert "第一条记忆" not in metadata
     assert not index.is_healthy()
     index.rebuild()
     assert index.search("第二条", scope_id=second_scope.id, subject_id="u2") == (other.id,)
@@ -149,6 +153,28 @@ def test_disable_scope_stops_reads_and_writes_without_deleting_data(stack):
     assert not store.disable_scope(scope.id, operation_id="op-disable-1",
                                    operator_type=OperatorType.USER, operator_id="u1",
                                    occurred_at=NOW)
+
+
+def test_delete_and_clear_remain_available_after_scope_disable(stack):
+    db, store, _, scope = stack
+    first = add(store, scope, mid="m-disable-delete", content="待删除记忆")
+    add(store, scope, mid="m-disable-clear", content="待清空记忆")
+    store.disable_scope(scope.id, operation_id="op-disable-cleanup",
+                        operator_type=OperatorType.USER, operator_id="u1",
+                        occurred_at=NOW)
+    store.delete(first.id, scope_id=scope.id, subject_id="u1",
+                 operation_id="op-delete-after-disable",
+                 operator_type=OperatorType.USER, operator_id="u1",
+                 occurred_at=NOW)
+    assert db.connection.execute(
+        "SELECT count(*) FROM memories WHERE id=?", (first.id,)
+    ).fetchone()[0] == 0
+    store.clear_scope(scope.id, operation_id="op-clear-after-disable",
+                      operator_type=OperatorType.USER, operator_id="u1",
+                      occurred_at=NOW)
+    assert db.connection.execute(
+        "SELECT count(*) FROM memories WHERE scope_id=?", (scope.id,)
+    ).fetchone()[0] == 0
 
 
 def test_delete_purges_incoming_and_outgoing_reserved_relations(stack):

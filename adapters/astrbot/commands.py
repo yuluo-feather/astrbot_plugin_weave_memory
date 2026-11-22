@@ -31,14 +31,14 @@ class AstrBotMemoryCommands:
         identity = self._identity.resolve_identity(event)
         scope = self._scopes.resolve(identity) if create else self._scopes.find(identity)
         if scope is None:
-            raise NotFound("尚未建立个人记忆空间，请先使用 /记忆 授权")
+            raise NotFound("尚未建立个人记忆空间，请先使用 /织忆 授权")
         return scope
 
     @staticmethod
     def _tail(event: Any, subcommand: str) -> str:
         raw = event.message_str.strip().lstrip("/").strip()
-        if raw.startswith("记忆"):
-            raw = raw[len("记忆"):].strip()
+        if raw.startswith("织忆"):
+            raw = raw[len("织忆"):].strip()
         if raw.startswith(subcommand):
             return raw[len(subcommand):].strip()
         return raw
@@ -46,15 +46,15 @@ class AstrBotMemoryCommands:
     def help(self) -> str:
         return (
             "织忆命令：\n"
-            "/记忆 授权 —— 开启个人记忆存储与自动注入\n"
-            "/记忆 撤销授权 —— 停止存储、检索和注入（不删除已有数据）\n"
-            "/记忆 保存 <内容> —— 显式保存一条事实\n"
-            "/记忆 更新 <记忆ID> <当前revision> <新内容> —— 显式修订指定记忆\n"
-            "/记忆 列表 —— 查看已保存记忆\n"
-            "/记忆 查询 <问题> —— 主动检索记忆\n"
-            "/记忆 删除 <记忆ID> —— 不可恢复地删除一条记忆\n"
-            "/记忆 清空 确认 —— 不可恢复地清空个人记忆\n"
-            "/记忆 关闭 确认 —— 永久关闭个人记忆空间（当前版本不支持重新开启，数据保留）"
+            "/织忆 授权 —— 开启个人记忆存储与自动注入\n"
+            "/织忆 撤销授权 —— 停止存储、检索和注入（不删除已有数据）\n"
+            "/织忆 保存 <内容> —— 显式保存一条事实\n"
+            "/织忆 更新 <记忆ID> <当前revision> <新内容> —— 显式修订指定记忆\n"
+            "/织忆 列表 —— 查看已保存记忆\n"
+            "/织忆 查询 <问题> —— 主动检索记忆\n"
+            "/织忆 删除 <记忆ID> —— 不可恢复地删除一条记忆\n"
+            "/织忆 清空 确认 —— 不可恢复地清空个人记忆\n"
+            "/织忆 关闭 确认 —— 永久关闭个人记忆空间（当前版本不支持重新开启，数据保留）"
         )
 
     def grant(self, event: Any) -> str:
@@ -62,7 +62,7 @@ class AstrBotMemoryCommands:
         operator_id = self._identity.resolve_operator_id(event)
         self._consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY,
                             operator_id=operator_id)
-        return "已授权个人记忆。你可以使用 /记忆 保存 <内容> 保存记忆；自动注入也已开启。"
+        return "已授权个人记忆。你可以使用 /织忆 保存 <内容> 保存记忆；自动注入也已开启。"
 
     def revoke(self, event: Any) -> str:
         scope = self._scope(event, create=True)
@@ -74,7 +74,7 @@ class AstrBotMemoryCommands:
     async def save(self, event: Any) -> str:
         content = self._tail(event, "保存")
         if not content:
-            return "用法：/记忆 保存 <你希望记住的内容>"
+            return "用法：/织忆 保存 <你希望记住的内容>"
         scope = self._scope(event)
         operator_id = self._identity.resolve_operator_id(event)
         memory, receipt = await self._memories.save_explicit(
@@ -88,7 +88,7 @@ class AstrBotMemoryCommands:
         payload = self._tail(event, "更新")
         parts = payload.split(maxsplit=2)
         if len(parts) != 3:
-            return "用法：/记忆 更新 <记忆ID> <当前revision> <新内容>"
+            return "用法：/织忆 更新 <记忆ID> <当前revision> <新内容>"
         memory_id, revision_text, content = parts
         try:
             expected_revision = int(revision_text)
@@ -117,7 +117,7 @@ class AstrBotMemoryCommands:
     async def query(self, event: Any) -> str:
         query = self._tail(event, "查询")
         if not query:
-            return "用法：/记忆 查询 <问题>"
+            return "用法：/织忆 查询 <问题>"
         scope = self._scope(event)
         memories = self._recall.recall(query, scope)
         if not memories:
@@ -129,7 +129,7 @@ class AstrBotMemoryCommands:
     async def delete(self, event: Any) -> str:
         memory_id = self._tail(event, "删除")
         if not memory_id:
-            return "用法：/记忆 删除 <记忆ID>"
+            return "用法：/织忆 删除 <记忆ID>"
         scope = self._scope(event)
         operator_id = self._identity.resolve_operator_id(event)
         receipt = await self._lifecycle.delete_memory(
@@ -139,11 +139,12 @@ class AstrBotMemoryCommands:
             at=self._clock.now(),
         )
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "删除已提交，索引待恢复"
-        return f"记忆已删除。{state}"
+        purge = "" if receipt.purged is not False else "\n物理擦除未完成，将在下次插件启动时自动重试。"
+        return f"记忆已删除。{state}{purge}"
 
     async def clear(self, event: Any) -> str:
         if self._tail(event, "清空") != "确认":
-            return "清空不可恢复。确认执行请发送：/记忆 清空 确认"
+            return "清空不可恢复。确认执行请发送：/织忆 清空 确认"
         scope = self._scope(event)
         operator_id = self._identity.resolve_operator_id(event)
         receipt = await self._lifecycle.clear_scope(
@@ -152,11 +153,12 @@ class AstrBotMemoryCommands:
             at=self._clock.now(),
         )
         state = "索引已重建" if receipt.index_state.value == "HEALTHY" else "清空已提交，索引待恢复"
-        return f"已清空 {receipt.affected_count} 条记忆。{state}"
+        purge = "" if receipt.purged is not False else "\n物理擦除未完成，将在下次插件启动时自动重试。"
+        return f"已清空 {receipt.affected_count} 条记忆。{state}{purge}"
 
     async def disable(self, event: Any) -> str:
         if self._tail(event, "关闭") != "确认":
-            return "关闭会永久停止读写和注入（V0 不支持重新开启），但保留数据。确认执行请发送：/记忆 关闭 确认"
+            return "关闭会永久停止读写和注入（V0 不支持重新开启），但保留数据。确认执行请发送：/织忆 关闭 确认"
         scope = self._scope(event)
         operator_id = self._identity.resolve_operator_id(event)
         await self._lifecycle.disable_scope(

@@ -6,7 +6,7 @@
 
 ## 决策
 
-1. `WriteCoordinator` 是应用层唯一写入口，使用单实例 `asyncio.Lock` 串行化当前事件循环内的写操作；SQLite 连接保持线程亲和，数据库调用在所属事件循环线程同步执行。V0 不支持多实例写协调。
+1. `WriteCoordinator` 是应用层唯一写入口，使用单实例 `asyncio.Lock` 串行化当前事件循环内的内容写操作；Scope/Consent 元数据写入通过 `write_metadata` 与内容写入共享同一把可重入写锁。SQLite 连接保持线程亲和，数据库调用在所属事件循环线程同步执行。V0 不支持多实例写协调。
 2. `LifecycleService` 负责状态转换，调用 Domain Lifecycle 守卫后交由 WriteCoordinator 持久化 Revision；候选激活和 SUPERSEDED 恢复要求 USER/ADMIN 显式操作，系统只能执行到期归档/过期。
 3. 删除采用单事务 tombstone-and-purge：先写 `memory_operations` 最小审计记录（状态标记 DELETED，不含正文），标记 FTS dirty，再删除 tags、sources、revisions、memory 正文。事务失败时全部回滚；成功后 FTS 在独立事务移除索引项。
 4. 清空 Personal Scope 在单事务内为每条记忆写 `CLEAR_MEMORY` 最小 tombstone、写 `CLEAR_SCOPE` 汇总审计、标记所有索引项 dirty，并删除目标 Scope 的 tags/sources/revisions/memories。随后全量重建 FTS。其他 Scope 不受影响。

@@ -56,15 +56,19 @@ class WeaveMemoryPlugin(Star):
             store = SQLiteMemoryStore(self._database)
             index = SQLiteFTSIndex(self._database)
             StartupRecoveryService(self._database, index).run()
+            try:
+                self._database.secure_purge_if_pending()
+            except StorageError as exc:
+                logger.warning(f"织忆启动时的物理擦除未完成：{type(exc).__name__}")
 
             clock = SystemClock()
             ids = UUID4IdGenerator()
             consent_repository = SQLiteConsentStore(self._database)
             coordinator = WriteCoordinator(store, index)
-            scopes = PersonalScopeService(store, clock)
-            consent = ConsentService(consent_repository, clock, ids)
-            memories = MemoryApplicationService(store, coordinator, consent, clock, ids)
+            scopes = PersonalScopeService(store, coordinator, clock)
+            consent = ConsentService(consent_repository, coordinator, clock, ids)
             lifecycle = LifecycleService(coordinator, store, consent)
+            memories = MemoryApplicationService(store, coordinator, consent, lifecycle, clock, ids)
             recall = RecallService(store, index, consent, clock, coordinator, store)
             composer = MemoryContextComposer(recall)
 
@@ -72,7 +76,7 @@ class WeaveMemoryPlugin(Star):
             self._commands = AstrBotMemoryCommands(
                 scopes, consent, memories, recall, lifecycle, clock, ids,
             )
-            self._injector = AstrBotMemoryInjector(scopes, composer)
+            self._injector = AstrBotMemoryInjector(scopes, consent, composer)
             self._ready = True
         except (OSError, RuntimeError, ValueError, StorageError, IndexUnavailable) as exc:
             logger.error(f"织忆初始化失败，记忆功能暂不可用：{type(exc).__name__}")
@@ -88,7 +92,7 @@ class WeaveMemoryPlugin(Star):
     @staticmethod
     def _error_text(action: str, exc: Exception) -> str:
         if isinstance(exc, ConsentRevocationPending):
-            return "个人记忆空间已关闭，数据已停止读写；但授权撤销记录写入失败，请重试 /记忆 关闭 确认。"
+            return "个人记忆空间已关闭，数据已停止读写；但授权撤销记录写入失败，请重试 /织忆 关闭 确认。"
         if isinstance(exc, AuthorizationDenied):
             return f"{action}失败：尚未授权或个人记忆空间已关闭。"
         if isinstance(exc, NotFound):
@@ -97,7 +101,7 @@ class WeaveMemoryPlugin(Star):
             return f"{action}失败：检索索引暂不可用，正文数据不会因此丢失。"
         return f"{action}失败：{type(exc).__name__}。"
 
-    @filter.command_group("记忆", alias={"/记忆"})
+    @filter.command_group("织忆", alias={"/织忆"})
     def memory(self):
         """个人记忆管理命令组。"""
 
