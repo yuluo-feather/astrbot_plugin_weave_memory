@@ -287,6 +287,8 @@ class ExtractionJobStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     SKIPPED_DUPLICATE_ACTIVE = "SKIPPED_DUPLICATE_ACTIVE"
     FAILED = "FAILED"
+    # TODO(V2): reserved by the contract and the SQLite CHECK constraint for
+    # manual cancellation; no producer exists yet. Do not remove as dead code.
     CANCELLED = "CANCELLED"
 
 
@@ -373,6 +375,8 @@ class ImportJobStatus(StrEnum):
     RUNNING = "RUNNING"
     DONE = "DONE"
     FAILED = "FAILED"
+    # TODO(V2): reserved by CONTRACTS/ADR-0017 and the SQLite CHECK; the
+    # importer reports per-entry skips but never sets this job status.
     SKIPPED = "SKIPPED"
 
 
