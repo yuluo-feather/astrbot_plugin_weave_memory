@@ -69,6 +69,8 @@ class AstrBotIdentityAdapter:
         group_value = str(group_id)
         if not platform_value.strip() or not tenant_value.strip() or not subject_value.strip():
             raise AuthorizationDenied("AstrBot returned an empty identity field")
+        if len(group_value) > 256:
+            raise AuthorizationDenied("group id exceeds 256 characters")
         return platform_value, tenant_value, subject_value, group_value
 
     def resolve_group_identity(self, event: Any) -> Identity:

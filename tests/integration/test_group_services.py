@@ -260,6 +260,26 @@ def test_group_member_cannot_manage_or_write(group_stack):
             scope, "成员写入", group_label="topic",
             operator_id="member", decision=member,
         ))
+    with pytest.raises(AuthorizationDenied):
+        asyncio.run(lifecycle.disable(scope, member, operator_id="member"))
+    with pytest.raises(AuthorizationDenied):
+        asyncio.run(lifecycle.clear(scope, member, operator_id="member"))
+    with pytest.raises(AuthorizationDenied):
+        asyncio.run(lifecycle.destroy(scope, member, operator_id="member"))
+
+
+def test_group_admin_source_none_fails_closed(group_stack):
+    identity = group_identity()
+    scope, _ = make_scope(group_stack, identity)
+    group_stack["admins"].admin_ids = ()
+    group_stack["admins"].source = AdminSource.NONE
+    decision = group_stack["scopes"].admin_decision(identity, "admin-1")
+    assert decision.source is AdminSource.NONE
+    assert decision.allowed is False
+    with pytest.raises(AuthorizationDenied):
+        asyncio.run(group_stack["lifecycle"].enable(
+            scope, decision, operator_id="admin-1",
+        ))
 
 
 def test_group_labels_map_to_memory_types(group_stack):

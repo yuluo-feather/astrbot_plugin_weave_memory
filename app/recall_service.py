@@ -71,7 +71,11 @@ class RecallService:
             limit=limit, at=self._clock.now(),
         )
         memories: list[MemoryEntity] = []
+        seen: set[str] = set()
         for memory_id in memory_ids:
+            if memory_id in seen:
+                continue
+            seen.add(memory_id)
             try:
                 memory = self._store.get(
                     memory_id, scope_id=scope.id,

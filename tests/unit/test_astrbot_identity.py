@@ -48,6 +48,14 @@ def test_group_event_is_rejected():
         AstrBotIdentityAdapter().resolve_identity(Event(group_id="group-1"))
 
 
+def test_group_identity_rejects_overlong_group_id():
+    adapter = AstrBotIdentityAdapter()
+    identity = adapter.resolve_group_identity(Event(group_id="g" * 256))
+    assert identity.scope_external_id == "g" * 256
+    with pytest.raises(AuthorizationDenied):
+        adapter.resolve_group_identity(Event(group_id="g" * 257))
+
+
 def test_missing_group_field_fails_closed():
     event = Event()
     event.message_obj = types.SimpleNamespace()
