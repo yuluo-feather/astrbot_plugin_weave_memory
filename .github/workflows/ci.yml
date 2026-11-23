@@ -49,9 +49,20 @@ jobs:
       - name: pytest
         run: python -m pytest
 
-  static:
-    name: 静态类型 (mypy)
+  preflight:
+    name: 发布预检
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: 静态预检
+        run: python scripts/preflight.py --ci
+
+  static:
+    name: 静态类型 (mypy)    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
