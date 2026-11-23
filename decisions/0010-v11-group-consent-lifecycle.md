@@ -1,6 +1,6 @@
 # ADR-0010：V1.1 Group consent、可逆 disable 与 clear
 
-状态：Accepted for V1.1 M0（契约冻结；未实现）
+状态：Accepted for V1.1 M0（契约冻结；V1.1 已实现）
 日期：2026-11-23
 
 ## 背景

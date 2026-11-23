@@ -1,6 +1,6 @@
 # ADR-0009：V1.1 Group Scope 身份与管理员来源
 
-状态：Accepted for V1.1 M0（契约冻结；未实现）
+状态：Accepted for V1.1 M0（契约冻结；V1.1 已实现）
 日期：2026-11-23
 
 ## 背景
