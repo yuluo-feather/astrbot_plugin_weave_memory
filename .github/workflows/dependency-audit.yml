@@ -1,0 +1,32 @@
+# 依赖安全巡检：每周 pip-audit，检查 requirements.txt 解析到的版本有无已知 CVE。
+# 与 push/PR 解耦：它查的是上游今天有没有新披露，与本次改动无关。
+name: 依赖安全巡检
+
+on:
+  schedule:
+    - cron: "17 1 * * 1" # 每周一 09:17 CST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: pip-audit (requirements.txt)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: 装审计工具
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+      - name: pip-audit
+        env:
+          PYTHONUTF8: "1"
+        run: python -m pip_audit -r requirements.txt

@@ -1,0 +1,29 @@
+# CodeQL：GitHub 原生代码扫描，公开仓免费，代码不出本仓。
+# 只报不拦：结果落 Security 页签，分析本身失败才算红；告警处置权在人手上。
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1" # 每周一 11:17 北京时间，错开整点
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: 分析 (python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v4

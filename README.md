@@ -210,13 +210,7 @@ git clone https://github.com/yuluo-feather/astrbot_plugin_weave_memory.git
 
 然后重启 AstrBot 或重载插件。
 
-### 🌷 方式三：构建并安装 ZIP
-
-```bash
-python scripts/build_astrbot_plugin.py
-```
-
-产物为 `dist/astrbot_plugin_weave_memory.zip`。请安装整个 ZIP，不要只复制 `main.py`。
+> 本地 ZIP 构建属于开发侧工具，不随公开仓分发；插件市场与直接 clone 均使用仓库快照。
 
 > 📌 **白名单提示**：如果 AstrBot 的 `plugin_set` 是手工白名单，必须把 `astrbot_plugin_weave_memory` 加进去；否则插件能加载，但命令会被静默过滤。
 >
@@ -229,7 +223,7 @@ python scripts/build_astrbot_plugin.py
   - `core/`：领域模型、策略与端口；不导入 AstrBot、`sqlite3` 或具体基础设施实现
   - `app/`：应用服务编排（写入协调、检索、注入、生命周期、Consent、群服务）
   - `adapters/`：AstrBot 平台适配与 SQLite/FTS5 实现
-  - `scripts/`：自包含插件包构建与离线 V1.4 评测 Harness
+  - `scripts/weave_admin.py`：部署者带外群管理 CLI
 - **权威数据与派生索引分离**：`memories`、`memory_revisions`、`memory_sources`、`memory_scopes`、`memory_tags`、`memory_operations` 等是权威表；`memory_fts` 是派生索引，可重建。索引未同步时检索 fail-closed，启动恢复会检查并重建。
 - **写入串行化**：所有内容写入经过单实例 `WriteCoordinator`；内容写与 Scope/Consent 元数据写共享同一把可重入写锁。保存前按 `(scope_id, subject_id, memory_type, normalized_content)` 查重，规范化采用 Unicode NFKC、空白折叠、`casefold()` 与去除末尾句末标点。
 - **乐观锁**：更新必须携带 `memory_id + expected_revision`；revision 不匹配返回冲突，不静默覆盖。正文、Revision、Source 在同一权威事务提交。
@@ -254,12 +248,12 @@ python scripts/build_astrbot_plugin.py
 | V1.5「添线」 | 核心实现：schema v6、分层 consent、单条/批量私聊捕获、敏感前置过滤、候选确认/拒绝、任务恢复与离线指标 harness；默认关闭，真实宿主模型调用与质量采集待补 |
 | V1.6「候线」 | 核心实现：schema v7、候选 TTL/惰性归档、确认/拒绝/过期审计、拒绝默认清正文、只读管理 JSON API 与 `weave_admin` 候选/维护命令；真实宿主管理 API 烟测已通过 |
 | V1.7「接线」 | 核心实现：schema v8、导出格式 v2、导入/导出/回滚/dry-run/断点续跑、群导入导出命令与管理 API 端点；宿主真机导入导出烟测待补 |
-| V1.8「归档」 | 核心实现：schema v9 谱系/序号、独立 ledger-first 删除/清空/consent/群销毁、备份产物与三模式恢复、restore journal、维护 API 与私聊命令；真实宿主 v8→v9 迁移、备份/恢复、维护 API、空库 disaster-rebuild、群销毁与附件删除恢复排除烟测已通过（`docs/HOST_SMOKE_V1.8_20261123.md`） |
+| V1.8「归档」 | 核心实现：schema v9 谱系/序号、独立 ledger-first 删除/清空/consent/群销毁、备份产物与三模式恢复、restore journal、维护 API 与私聊命令；真实宿主 v8→v9 迁移、备份/恢复、维护 API、空库 disaster-rebuild、群销毁与附件删除恢复排除烟测已通过（宿主烟测已通过） |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 
-已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响；V1.8 的 v8→v9 迁移、`/织忆 备份|恢复`（merge/revert/dry-run）、旧备份不复活删除与维护管理 API 已通过（`docs/HOST_SMOKE_V1.8_20261123.md`）。
+已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响；V1.8 的 v8→v9 迁移、`/织忆 备份|恢复`（merge/revert/dry-run）、旧备份不复活删除与维护管理 API 已通过（宿主烟测已通过）。
 
-V1.4 评测命令：`python scripts/evaluate_v14.py`。数据集只含合成内容，Harness 使用临时 SQLite 库；参数实验只允许 `--split train`，不得使用留出集调参。V1.5 核心提取管线已实现且默认关闭；离线质量入口为 `python scripts/evaluate_v15_extraction.py --responses <recorded.json>`，真实模型调用与质量采集待补。Group personal、向量检索、WebUI 等仍按路线图逐版推进。
+V1.4/V1.5 的评测数据与 Harness 在开发侧维护，不随插件分发。Group personal、向量检索、WebUI 等仍按路线图逐版推进。
 
 ## 🌙 注意事项
 

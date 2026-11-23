@@ -1,5 +1,4 @@
-# 织忆 CI：push / PR 跑 lint、编译、测试、静态检查与 AstrBot 契约导入；
-# main 上额外构建插件 zip 作为 Actions 产物。
+# 织忆 CI：push / PR 跑 lint、编译、测试、静态检查、仓库卫生与 AstrBot 契约导入；
 #
 # 口径分工：
 #   - pytest 参数在 pytest.ini，ruff 配置在 ruff.toml，mypy 配置在 mypy.ini；
@@ -108,22 +107,3 @@ jobs:
           import data.plugins.astrbot_plugin_weave_memory.main as plugin
           print("HOST_IMPORT_OK", plugin.WeaveMemoryPlugin.__name__)
           PY
-
-  package:
-    name: 构建插件 zip
-    needs: [test, static]
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - name: 构建
-        run: python scripts/build_astrbot_plugin.py
-      - uses: actions/upload-artifact@v7
-        with:
-          name: astrbot_plugin_weave_memory
-          path: dist/astrbot_plugin_weave_memory.zip
-          retention-days: 30
