@@ -561,9 +561,15 @@ class SQLiteDatabase:
                 target = sqlite3.connect(str(destination))
                 try:
                     self.connection.backup(target)
+                    # A WAL-mode target can leave committed frames in -wal and
+                    # sidecar files; normalize to a single self-contained file.
+                    target.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    target.execute("PRAGMA journal_mode=DELETE")
                 finally:
                     target.close()
-        except sqlite3.Error as exc:
+                for suffix in ("-wal", "-shm"):
+                    Path(f"{destination}{suffix}").unlink(missing_ok=True)
+        except (OSError, sqlite3.Error) as exc:
             raise StorageError("could not create SQLite backup") from exc
 
     def rollback_to_zero(self) -> None:

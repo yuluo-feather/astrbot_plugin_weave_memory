@@ -261,7 +261,8 @@ def test_old_backup_does_not_revive_deleted_memory(stack):
     memory = save(stack)
     backup_id = make_backup(stack)
     delete(stack, memory.id)
-    stack.backup.restore(backup_id, mode="merge", confirm=True)
+    result = stack.backup.restore(backup_id, mode="merge", confirm=True)
+    assert result["excluded_count"] == 1
     assert memory.id not in memory_ids(stack)
     assert row_count(stack, "memory_revisions", "memory_id=?", (memory.id,)) == 0
 

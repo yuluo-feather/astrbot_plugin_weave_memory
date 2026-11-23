@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
@@ -336,6 +337,25 @@ def test_schema_can_roll_back_to_empty_and_reapply(tmp_path):
     db.migrate()
     assert db.schema_version() == 9
     db.close()
+
+
+def test_backup_to_leaves_a_single_self_contained_file(tmp_path):
+    db = SQLiteDatabase(tmp_path / "source.db")
+    db.migrate()
+    target = tmp_path / "snapshot.sqlite3"
+    db.backup_to(target)
+    try:
+        assert target.exists()
+        assert not Path(f"{target}-wal").exists()
+        assert not Path(f"{target}-shm").exists()
+        check = sqlite3.connect(str(target))
+        try:
+            assert check.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 9
+            assert check.execute("PRAGMA journal_mode").fetchone()[0].lower() == "delete"
+        finally:
+            check.close()
+    finally:
+        db.close()
 
 
 def test_candidate_and_active_same_key_conflict(sqlite_stack):

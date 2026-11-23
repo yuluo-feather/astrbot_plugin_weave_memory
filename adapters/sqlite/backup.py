@@ -519,6 +519,8 @@ class BackupService:
             rows = connection.execute(
                 "SELECT id, scope_id, db_lineage_id, creation_seq FROM memories",
             ).fetchall()
+        backup_ids = {row["id"] for row in rows}
+        excluded_ids &= backup_ids
         for row in rows:
             if row["scope_id"] in destroy_scopes:
                 excluded_ids.add(row["id"])
@@ -602,7 +604,7 @@ class BackupService:
                             tx, mode=mode, excluded_ids=excluded_ids,
                             excluded_scopes=excluded_scopes,
                         )
-                    excluded = self._apply_exclusions(tx, events)
+                    applied_excluded = self._apply_exclusions(tx, events)
                     self._advance_watermarks(
                         tx, manifest, events, mode=mode,
                         current_lineage=new_lineage,
@@ -627,7 +629,8 @@ class BackupService:
             "db_lineage_id": new_lineage,
             "ledger_seq_at_backup": manifest.get("ledger_seq_at_backup"),
             "creation_seq_at_backup": manifest.get("creation_seq_at_backup"),
-            "excluded_count": excluded,
+            "excluded_count": len(excluded_ids),
+            "excluded_rows_deleted": applied_excluded,
             "pre_restore_snapshot": pre_snapshot,
             "restored": True,
         }

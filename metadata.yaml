@@ -30,7 +30,7 @@ help: |
   [备份 V1.8] /织忆 备份 [列表] 创建/查看主库快照；账本独立保存，备份不含账本
   [恢复 V1.8] /织忆 恢复 <备份ID> [merge|revert|disaster-rebuild] 确认；不带确认即 dry-run，旧备份按 ledger 排除删除/清空/撤销授权
   触发：个人命令仅私聊生效，群命令仅群聊生效；统一前缀 /织忆
-  状态：开发预览 v1.0.0-dev.1，未正式发版；V1.8 核心已实现，真实宿主备份恢复烟测待补
+  状态：开发预览 v1.0.0-dev.1，未正式发版；V1.8 核心已实现，真实宿主 v8→v9 迁移、备份/恢复与维护 API 烟测已通过
 version: v1.0.0-dev.1
 author: 羽落
 repo: https://github.com/yuluo-feather/astrbot_plugin_weave_memory
