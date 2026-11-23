@@ -107,5 +107,5 @@ Recall 候选查找与上下文注入之间可能发生 Consent revoke 或 Scope
 - `auto_enroll` 默认 `true`：新用户或没有任何 consent 记录的用户，首次符合条件的私聊事件自动建立 `personal_memory=GRANTED`；插件发送一次告知，不经过 LLM。`auto_enroll=false` 回到逐用户 `/织忆 授权`。
 - auto_enroll 只在 scope 已启用且 consent 历史为空时生效；已有 `GRANTED`/`REVOKED` 事件优先，`/织忆 撤销授权` 与 `/织忆 关闭` 不会被下一次对话复活。`/织忆 清空` 只删数据，不重新开启已关闭 scope。
 - 群共享记忆不参与 auto_enroll；仍由管理员 `/织忆 群开启` 显式开启，个人与群隔离不变。
-- 新增模型工具写入：只在用户明确提到长期偏好、背景或目标时调用；来源固定 `source_type=AGENT`、`operator_type=AGENT`，只写记忆正文，不保存完整聊天原文。工具受 Consent、scope enabled 与 `agent_write_enabled` 约束。
+- 新增模型工具写入：只在用户明确提到长期偏好、背景或目标时调用；来源固定 `source_type=AGENT`、`operator_type=agent`，只写记忆正文，不保存完整聊天原文。工具受 Consent、scope enabled 与 `agent_write_enabled` 约束。
 - 后台自动提取仍只产 `INFERRED` 候选，不自动升级 `ACTIVE`；本次变更不等于开启无确认的推断记忆。

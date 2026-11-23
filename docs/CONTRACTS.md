@@ -276,7 +276,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 ### Agent 工具
 
 - `weave_memory_remember` 仅在用户明确表达长期偏好/背景/目标时由模型调用；`agent_write_enabled` 默认 true，可关闭。
-- 写入 `MemoryApplicationService.save_agent`：`source_type=AGENT`、`operator_type=AGENT`、`status=ACTIVE`；沿用去重、Revision、Source、WriteCoordinator 与 Consent guard。
+- 写入 `MemoryApplicationService.save_agent`：`source_type=AGENT`、`operator_type=agent`、`status=ACTIVE`；沿用去重、Revision、Source、WriteCoordinator 与 Consent guard。
 - 工具拒绝群聊、撤销/关闭、空内容、非法 memory_type；返回字符串给 Agent Loop，不直发用户消息。
 - 后台自动提取不在本版实现；V1.5 仍只产 `INFERRED` 候选。
 
