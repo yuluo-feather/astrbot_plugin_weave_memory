@@ -241,6 +241,29 @@ def test_group_destroy_reuses_existing_backup_and_records_row_counts(group_stack
     assert manifest["row_counts"]["memory_scopes"] == 1
 
 
+def test_group_clear_then_destroy_rolls_back_and_remigrates(group_stack):
+    identity = group_identity()
+    scope, decision = make_scope(group_stack, identity)
+    lifecycle = group_stack["lifecycle"]
+    memories = group_stack["memories"]
+    asyncio.run(lifecycle.enable(scope, decision, operator_id="admin-1"))
+    asyncio.run(memories.save_group(
+        scope, "群约定：周五复盘", group_label="agreement",
+        operator_id="admin-1", decision=decision,
+    ))
+    asyncio.run(lifecycle.disable(scope, decision, operator_id="admin-1"))
+    asyncio.run(lifecycle.clear(scope, decision, operator_id="admin-1"))
+    receipt = asyncio.run(lifecycle.destroy(scope, decision, operator_id="admin-1"))
+    assert receipt.affected_count == 0
+
+    db = group_stack["db"]
+    assert db.schema_version() == 5
+    db.rollback_to_v10()
+    assert db.schema_version() == 4
+    db.migrate()
+    assert db.schema_version() == 5
+
+
 def test_group_member_cannot_manage_or_write(group_stack):
     identity = group_identity()
     scopes = group_stack["scopes"]

@@ -4,13 +4,23 @@ import pytest
 from data.plugins.astrbot_plugin_weave_memory.adapters.memory.store import (
     InMemoryMemoryStore,
 )
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
+    SQLiteDatabase,
+)
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
+    SQLiteMemoryStore,
+)
 from data.plugins.astrbot_plugin_weave_memory.core.errors import Conflict, NotFound
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
+    Identity,
     MemoryRevision,
     MemorySource,
     MemoryStatus,
     OperatorType,
+    Scope,
+    ScopeType,
     SourceType,
+    SubjectType,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.policy.dedup import DedupKey
 from data.plugins.astrbot_plugin_weave_memory.core.policy.lifecycle import transition
@@ -29,8 +39,32 @@ def revision(memory, reason="created"):
                           NOW, reason)
 
 
-def test_create_and_scope_filtered_get(memory_factory):
-    store = InMemoryMemoryStore()
+@pytest.fixture(params=["in_memory", "sqlite"])
+def store(request, tmp_path):
+    if request.param == "in_memory":
+        yield InMemoryMemoryStore()
+        return
+    db = SQLiteDatabase(tmp_path / "contract.db")
+    db.migrate()
+    sqlite_store = SQLiteMemoryStore(db)
+    identity = Identity(
+        "astrbot", "t1", ScopeType.PERSONAL, "user-a",
+        SubjectType.USER, "user-a",
+    )
+    sqlite_store.create_scope(Scope("scope-a", identity, NOW))
+    yield sqlite_store
+    db.close()
+
+
+def revision_count(store, memory_id):
+    if isinstance(store, InMemoryMemoryStore):
+        return len(store.revisions(memory_id))
+    return store.db.connection.execute(
+        "SELECT count(*) FROM memory_revisions WHERE memory_id=?", (memory_id,),
+    ).fetchone()[0]
+
+
+def test_create_and_scope_filtered_get(memory_factory, store):
     m = memory_factory()
     store.create(m, revision(m), source(m.id))
     assert store.get(m.id, scope_id=m.scope_id, subject_id=m.subject_id) == m
@@ -38,8 +72,7 @@ def test_create_and_scope_filtered_get(memory_factory):
         store.get(m.id, scope_id="other", subject_id=m.subject_id)
 
 
-def test_duplicate_active_memory_conflicts(memory_factory):
-    store = InMemoryMemoryStore()
+def test_duplicate_active_memory_conflicts(memory_factory, store):
     m1 = memory_factory()
     m2 = memory_factory(id="m-2", content=" 喜欢黑咖啡！ ")
     store.create(m1, revision(m1), source(m1.id))
@@ -47,19 +80,17 @@ def test_duplicate_active_memory_conflicts(memory_factory):
         store.create(m2, revision(m2), source(m2.id))
 
 
-def test_optimistic_update_conflict(memory_factory):
-    store = InMemoryMemoryStore()
+def test_optimistic_update_conflict(memory_factory, store):
     m = memory_factory()
     store.create(m, revision(m), source(m.id))
     updated = transition(m, MemoryStatus.ARCHIVED, at=NOW + timedelta(seconds=1))
     store.update(updated, expected_revision=1, revision=revision(updated, "archived"))
     with pytest.raises(Conflict):
         store.update(updated, expected_revision=1, revision=revision(updated, "stale"))
-    assert len(store.revisions(m.id)) == 2
+    assert revision_count(store, m.id) == 2
 
 
-def test_only_active_memories_are_listed(memory_factory):
-    store = InMemoryMemoryStore()
+def test_only_active_memories_are_listed(memory_factory, store):
     m = memory_factory()
     store.create(m, revision(m), source(m.id))
     assert len(store.list_active(scope_id=m.scope_id, subject_id=m.subject_id)) == 1
@@ -68,19 +99,17 @@ def test_only_active_memories_are_listed(memory_factory):
     assert store.list_active(scope_id=m.scope_id, subject_id=m.subject_id) == ()
 
 
-def test_exact_create_replay_is_idempotent(memory_factory):
-    store = InMemoryMemoryStore()
+def test_exact_create_replay_is_idempotent(memory_factory, store):
     m = memory_factory()
     rev = revision(m)
     src = source(m.id)
     store.create(m, rev, src)
     store.create(m, rev, src)
     assert store.get(m.id, scope_id=m.scope_id, subject_id=m.subject_id) == m
-    assert len(store.revisions(m.id)) == 1
+    assert revision_count(store, m.id) == 1
 
 
-def test_find_active_duplicate_is_scope_subject_and_type_scoped(memory_factory):
-    store = InMemoryMemoryStore()
+def test_find_active_duplicate_is_scope_subject_and_type_scoped(memory_factory, store):
     memory = memory_factory()
     store.create(memory, revision(memory), source(memory.id))
     key = DedupKey.from_memory(memory)
@@ -96,9 +125,8 @@ def test_find_active_duplicate_is_scope_subject_and_type_scoped(memory_factory):
     ) is None
 
 
-def test_find_active_duplicate_is_status_based_not_validity_based(memory_factory):
+def test_find_active_duplicate_is_status_based_not_validity_based(memory_factory, store):
     """Expiry is handled by the save-path sweep, not by the dedup lookup."""
-    store = InMemoryMemoryStore()
     expired = memory_factory(
         id="m-expired", valid_until=NOW - timedelta(seconds=1),
     )
