@@ -2,8 +2,8 @@
 
 Localized from Star Feather's ``preflight.py``. The generic checks are kept;
 tarot assets / bilingual README checks are replaced with Weave's version
-holders (metadata.yaml, pyproject.toml, README badge/alt) and an optional
-public-distribution surface check.
+holders (metadata.yaml, pyproject.toml, README badge/alt). The public surface
+is enforced by the tracked tree itself; no extra marker/flag is used.
 """
 
 from __future__ import annotations
@@ -28,12 +28,6 @@ DEV_ONLY_FILES = {
     "AGENTS.md", "CLAUDE.md", "AGENTS.generic.md",
     "scripts/preflight.py",  # contains the detection regexes themselves
 }
-PUBLIC_FORBIDDEN = (
-    "docs", "decisions", "eval", "tests/evaluation",
-    "scripts/build_astrbot_plugin.py", "scripts/sync_runtime.py",
-    "scripts/check_hygiene.py", "scripts/evaluate_v14.py",
-    "scripts/evaluate_v15_extraction.py", "scripts/injection_rubric.py",
-)
 
 SECRET_PATTERNS = (
     (r"ghp_[A-Za-z0-9]{20,}", "GitHub token"),
@@ -145,45 +139,6 @@ def check_versions(root: Path) -> bool:
     return True
 
 
-def _tracked_paths(root: Path) -> set[str] | None:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "ls-files"],
-            capture_output=True, text=True, timeout=10, check=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return set(result.stdout.splitlines())
-
-
-def check_public_surface(root: Path) -> bool:
-    marker = root / ".public-repo"
-    if not marker.exists():
-        return True
-    tracked = _tracked_paths(root)
-    if tracked is None:
-        hits = [path for path in PUBLIC_FORBIDDEN if (root / path).exists()]
-    else:
-        hits = [
-            path for path in PUBLIC_FORBIDDEN
-            if any(item == path or item.startswith(path + "/") for item in tracked)
-        ]
-    if hits:
-        print("[公开面] 发现不应分发的内容：")
-        for path in hits:
-            print(f"   x {path}")
-        return False
-    required = ("main.py", "metadata.yaml", "_conf_schema.json", "requirements.txt", "README.md")
-    missing = [path for path in required if not (root / path).exists()]
-    if missing:
-        print("[公开面] 缺少必要文件：")
-        for path in missing:
-            print(f"   x {path}")
-        return False
-    print("[公开面] 通过")
-    return True
-
-
 def check_git(dev: Path | None, repo: Path | None) -> bool:
     ok = True
     heads: dict[str, str] = {}
@@ -251,7 +206,6 @@ def main() -> int:
     ok &= check_junk(target)
     ok &= check_content(target)
     ok &= check_versions(target)
-    ok &= check_public_surface(target)
     if not args.ci:
         ok &= check_git(args.dev, args.repo)
         if args.dev and args.run:
