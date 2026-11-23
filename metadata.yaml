@@ -1,7 +1,7 @@
 # 运行环境要求：Python 3.12+（与 AstrBot 最低要求一致）；AstrBot 版本范围在下方 astrbot_version 正式声明
 name: astrbot_plugin_weave_memory
 display_name: 织忆
-desc: 本地优先的 AstrBot 记忆引擎：默认登记、可随时关闭，支持 Personal Agent 只读工具、命令写入与管理、SQLite+FTS5 检索、私聊与群聊上下文注入
+desc: 本地优先的 AstrBot 记忆引擎：默认登记、可随时关闭，支持 Personal Agent 读写工具、命令管理、SQLite+FTS5 检索、私聊与群聊上下文注入
 short_desc: 默认登记、可关闭的本地记忆引擎
 help: |
   [默认] 个人记忆默认开启；首次私聊自动登记并给一次告知
