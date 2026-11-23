@@ -1,0 +1,2 @@
+# 公开分发标记：preflight 据此拒绝 docs/、decisions/、eval/ 等开发侧目录
+public-repo-marker-v1

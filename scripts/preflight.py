@@ -145,11 +145,29 @@ def check_versions(root: Path) -> bool:
     return True
 
 
+def _tracked_paths(root: Path) -> set[str] | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files"],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return set(result.stdout.splitlines())
+
+
 def check_public_surface(root: Path) -> bool:
     marker = root / ".public-repo"
     if not marker.exists():
         return True
-    hits = [path for path in PUBLIC_FORBIDDEN if (root / path).exists()]
+    tracked = _tracked_paths(root)
+    if tracked is None:
+        hits = [path for path in PUBLIC_FORBIDDEN if (root / path).exists()]
+    else:
+        hits = [
+            path for path in PUBLIC_FORBIDDEN
+            if any(item == path or item.startswith(path + "/") for item in tracked)
+        ]
     if hits:
         print("[公开面] 发现不应分发的内容：")
         for path in hits:

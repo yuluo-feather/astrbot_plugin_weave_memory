@@ -142,3 +142,12 @@ changelogs/unreleased.md
 
 # 开发侧核对/审查报告（判据留档；不进 repos 与市场包）
 audits/
+
+# 开发侧内部资料：保留在本地工作树，不进 dev/repos/GitHub 跟踪树
+/docs/
+/decisions/
+/eval/
+/tests/evaluation/
+/scripts/evaluate_v14.py
+/scripts/evaluate_v15_extraction.py
+/scripts/injection_rubric.py
