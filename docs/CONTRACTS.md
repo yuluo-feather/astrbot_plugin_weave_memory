@@ -196,7 +196,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 
 ### Core 端口与返回类型
 
-- `GroupScopeStore`：在 V1.0 `ScopeStore` 基础上提供 `get_group_scope`、`set_enabled`、`set_admin_metadata`、`delete_group_scope`；不暴露 SQL。
+- `GroupScopeStore`：在 V1.0 `ScopeStore` 基础上提供 `get_scope`（继承）、`get_admin_metadata`、`set_admin_metadata`、`enable_scope`、`disable_group_scope`、`backup_group_scope`、`delete_group_scope`、`count_active`；生命周期开关由 `enable_scope` / `disable_group_scope` 分别承担 consent 追加语义，不合并为单一 `set_enabled`；不暴露 SQL。本清单与 `core/ports/__init__.py` 的 Protocol 同步，由 `tests/contract` 的结构性测试机械对账。
 - `AdminResolver`：`resolve(identity, sender_id) -> AdminDecision`；`AdminDecision = {source: PLATFORM_ROLE|EXPLICIT_CONFIG|NONE, admin_ids: tuple[str,...], allowed: bool, admin_available: bool}`。
 - `GroupScopeStore`/`AdminResolver` 只处理平台无关的 Identity/Scope；AstrBot 角色 API 在 Adapter 实现。
 - `GroupMemoryService` 复用 V1.0 `MemoryStore`、`WriteCoordinator`、`SearchIndex`；不新增群专用正文表。
@@ -214,7 +214,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - `disable(scope, operation_id)`：`is_enabled=0` + `GROUP_DISABLE` 审计 → 追加 `group_memory=REVOKED`；保留数据；撤销追加失败返回 `GroupConsentRevocationPending`，Scope 保持 disabled；同一 operation ID 重试补齐。
 - `clear(scope, operation_id)`：只清当前群；要求 `确认`；enabled/disabled 都可执行；写 `CLEAR_MEMORY`/`CLEAR_SCOPE` 审计；物理擦除沿用 ADR-0008；不改变 consent/enabled。
 - `destroy(scope, operation_id) -> DestroyReceipt`：仅管理员、必须先 `群关闭`、必须 `确认`；服务内调用 SQLite backup API 生成唯一备份并校验目标群 Scope/记忆/consent，写 sidecar manifest（operation ID/scope ID/路径/sha256/行数/时间）；备份或校验失败立即中止。
-- `destroy` 使用专用 `destroy_group_scope` 事务，不调用会自行提交的 `clear_scope`；单事务删除：群记忆及关联 → consent 历史 → operations 审计 → scope，并同时标记 FTS dirty 与 `secure_purge_pending`。
+- `destroy` 使用专用 `delete_group_scope` 事务，不调用会自行提交的 `clear_scope`；单事务删除：群记忆及关联 → consent 历史 → operations 审计 → scope，并同时标记 FTS dirty 与 `secure_purge_pending`。
 - 提交后先重建/清理群 FTS（或由启动恢复重建），再 secure purge；FTS 未恢复时不得清 pending；purge 失败保留 pending，不回滚 Scope 删除；已有 pending 不阻止销毁。
 - 备份语义：`群关闭→群销毁` 备份包含群记忆；`群清空→群销毁` 备份是清空后快照；要保留群记忆必须先关闭直接销毁。
 - `DestroyReceipt = {operation_id, scope_id, backup_path, backup_sha256, affected_count, purged}`；`affected_count` 是删除的群记忆数；sidecar 另记各子表行数。

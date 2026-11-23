@@ -20,7 +20,7 @@
 ## 2. 已由计划书明确的规则
 
 - 候选按独立 workflow TTL 过期后转为 `ARCHIVED`；不得把候选 TTL 与语义 `valid_until` 混用。`EXPIRED` 只用于 `ACTIVE` 的 `valid_until` 到期。
-- `REJECTED` 保留拒绝原因/来源元数据；正文默认不保留可恢复副本；允许重新提交为新候选。
+- `REJECTED` 保留拒绝原因/来源元数据；正文是否保留按配置，默认不保留可恢复副本；允许重新提交为新候选。
 - `SUPERSEDED` 只能由用户/管理员显式操作恢复为 `ACTIVE`，并生成 Revision。
 - `DELETED` 保留最小审计元数据；彻底删除不得保留可恢复正文；不可恢复。
 - 状态只能由 Lifecycle Service 修改。

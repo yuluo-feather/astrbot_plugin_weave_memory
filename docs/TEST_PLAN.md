@@ -237,7 +237,7 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 ## 13. V1.0 独立验收状态
 当前结论为条件通过（开发验收）。专用测试 Scope 的真实宿主 `/织忆 清空 确认` 已通过，主测试 Scope 未受影响；临时 TextPart 已补对象级 dump 与目标版本源码契约证据；具体 Provider token 级抓包未执行。正式发布签署与最终确认待主人完成。详见 `V1.0_ACCEPTANCE_EVIDENCE_20261123.md` 与 `V1.0_INDEPENDENT_ACCEPTANCE_REVIEW_20261123.md`。
 
-## 14. V1.1 Group shared 测试矩阵（M0 契约，未实现）
+## 14. V1.1 Group shared 测试矩阵（M0 契约；V1.1 已实现，矩阵持续执行）
 
 ### 身份与隔离
 

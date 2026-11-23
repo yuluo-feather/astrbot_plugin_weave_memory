@@ -17,7 +17,7 @@ V1.0 只有 `personal_memory` consent，Scope 关闭是永久的。V1.1 需要�
 6. `群销毁 确认`（管理员，V1.1 新增）：仅用于 V1.0 回滚/彻底移除群数据。
    - 前置：必须先 `群关闭`（`is_enabled=0` 且 `group_memory=REVOKED`）；enabled 状态直接拒绝（`InvalidTransition`）。
    - 备份：`destroy` 在删除前自行调用 SQLite backup API 生成唯一备份文件（包含 operation ID/scope ID/时间戳），打开备份校验目标群 Scope/记忆/consent 可见，并写 sidecar JSON manifest（operation ID、scope ID、备份路径、sha256、行数、时间）；备份或校验失败立即中止，不执行任何删除。
-   - 删除顺序（单事务，使用 destroy 专用 `destroy_group_scope`，不调用会自行提交的 `clear_scope`）：群记忆及关联（memories/revisions/sources/tags/relations）→ 删除该群 `group_memory` consent 历史 → 删除该群 `memory_operations` 审计 → 删除群 `memory_scopes` 行；事务内同时标记 FTS dirty 与 `secure_purge_pending='1'`。
+   - 删除顺序（单事务，使用 destroy 专用 `delete_group_scope`，不调用会自行提交的 `clear_scope`）：群记忆及关联（memories/revisions/sources/tags/relations）→ 删除该群 `group_memory` consent 历史 → 删除该群 `memory_operations` 审计 → 删除群 `memory_scopes` 行；事务内同时标记 FTS dirty 与 `secure_purge_pending='1'`。
    - 事务提交后先重建/清理群 FTS（或由启动恢复重建），再执行 secure purge；FTS 未恢复时不得把 pending 置 0；purge 失败只保留 pending，不恢复群 Scope。
    - 备份语义：`群关闭→群销毁` 的备份包含群记忆；`群清空→群销毁` 的备份是清空后的快照，不含已清空记忆。要保留群记忆必须先 `群关闭→群销毁`，不要先清空。
    - 幂等：事务提交后 Scope 不存在视为已销毁；崩溃在事务前/中则整体回滚；重试不得重复删除或覆盖已有备份。
