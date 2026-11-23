@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -47,6 +47,10 @@ def _time_dump(value: datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
+def _content_hash(text: str) -> str:
+    return sha256(text.encode("utf-8")).hexdigest()
+
+
 def _time_load(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -78,8 +82,17 @@ def _json_load(value: str) -> dict[str, Any]:
 
 
 class SQLiteMemoryStore:
-    def __init__(self, database: SQLiteDatabase) -> None:
+    def __init__(self, database: SQLiteDatabase, *,
+                 vector_outbox: Callable[
+                     [sqlite3.Connection, str, str, str], None,
+                 ] | None = None) -> None:
         self.db = database
+        self._vector_outbox = vector_outbox
+
+    def _enqueue_vector(self, conn: sqlite3.Connection, memory_id: str,
+                        operation: str, content_hash: str) -> None:
+        if self._vector_outbox is not None:
+            self._vector_outbox(conn, memory_id, operation, content_hash)
 
     def create_scope(self, scope: Scope) -> None:
         identity = scope.identity
@@ -362,6 +375,11 @@ class SQLiteMemoryStore:
                 self._insert_revision(conn, revision)
                 self._insert_source(conn, source)
                 self._mark_fts_dirty(conn, memory.id)
+                if memory.status is MemoryStatus.ACTIVE:
+                    self._enqueue_vector(
+                        conn, memory.id, "UPSERT",
+                        _content_hash(memory.normalized_content),
+                    )
         except (AuthorizationDenied, Conflict, NotFound, ValidationError):
             raise
         except sqlite3.IntegrityError as exc:
@@ -434,6 +452,16 @@ class SQLiteMemoryStore:
                         metadata=operation.metadata,
                     )
                 self._mark_fts_dirty(conn, memory.id)
+                if memory.status is MemoryStatus.ACTIVE:
+                    self._enqueue_vector(
+                        conn, memory.id, "UPSERT",
+                        _content_hash(memory.normalized_content),
+                    )
+                else:
+                    self._enqueue_vector(
+                        conn, memory.id, "DELETE",
+                        _content_hash(memory.normalized_content),
+                    )
         except (AuthorizationDenied, Conflict, NotFound, ValidationError):
             raise
         except sqlite3.IntegrityError as exc:
@@ -537,6 +565,29 @@ class SQLiteMemoryStore:
             ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError("could not list active memories") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
+
+    def get_any(self, memory_id: str) -> MemoryEntity:
+        """Internal index-worker lookup; never used for user-facing reads."""
+        try:
+            row = self.db.connection.execute(
+                "SELECT * FROM memories WHERE id=?", (memory_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read memory for indexing") from exc
+        if row is None:
+            raise NotFound("memory not found")
+        return self._row_to_memory(row)
+
+    def list_active_all(self) -> tuple[MemoryEntity, ...]:
+        try:
+            rows = self.db.connection.execute(
+                """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                   WHERE m.status='ACTIVE' AND s.is_enabled=1
+                   ORDER BY m.created_at, m.id""",
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list active memories for rebuild") from exc
         return tuple(self._row_to_memory(row) for row in rows)
 
     def list_for_export(
@@ -905,7 +956,7 @@ class SQLiteMemoryStore:
                     raise Conflict("operation id already belongs to another operation")
                 row = conn.execute(
                     """SELECT id, memory_type, source_type, current_revision,
-                       db_lineage_id, creation_seq
+                       normalized_content, db_lineage_id, creation_seq
                     FROM memories WHERE id=? AND scope_id=? AND subject_id=?""",
                     (memory_id, scope_id, subject_id),
                 ).fetchone()
@@ -930,6 +981,10 @@ class SQLiteMemoryStore:
                               "creation_seq": int(row["creation_seq"])},
                 )
                 self._mark_fts_dirty(conn, memory_id)
+                self._enqueue_vector(
+                    conn, memory_id, "DELETE",
+                    _content_hash(row["normalized_content"]),
+                )
                 conn.execute(
                     "DELETE FROM memory_relations WHERE source_memory_id=? OR target_memory_id=?",
                     (memory_id, memory_id),
@@ -984,7 +1039,7 @@ class SQLiteMemoryStore:
                     raise Conflict("operation id already belongs to another operation")
                 row = conn.execute(
                     """SELECT id, memory_type, source_type, current_revision, status,
-                       archive_reason, db_lineage_id, creation_seq
+                       normalized_content, archive_reason, db_lineage_id, creation_seq
                     FROM memories WHERE id=? AND scope_id=? AND subject_id=?""",
                     (memory_id, scope_id, subject_id),
                 ).fetchone()
@@ -1012,6 +1067,10 @@ class SQLiteMemoryStore:
                               "creation_seq": int(row["creation_seq"])},
                 )
                 self._mark_fts_dirty(conn, memory_id)
+                self._enqueue_vector(
+                    conn, memory_id, "DELETE",
+                    _content_hash(row["normalized_content"]),
+                )
                 conn.execute(
                     "DELETE FROM memory_relations WHERE source_memory_id=? OR target_memory_id=?",
                     (memory_id, memory_id),
@@ -1048,6 +1107,14 @@ class SQLiteMemoryStore:
                 if cursor.rowcount != 1:
                     return False
                 self._mark_fts_dirty(conn, memory_id)
+                content = conn.execute(
+                    "SELECT normalized_content FROM memories WHERE id=?", (memory_id,),
+                ).fetchone()
+                if content is not None:
+                    self._enqueue_vector(
+                        conn, memory_id, "DELETE",
+                        _content_hash(content["normalized_content"]),
+                    )
                 return True
         except sqlite3.IntegrityError as exc:
             raise Conflict("archive replay violates a storage constraint") from exc
@@ -1069,6 +1136,14 @@ class SQLiteMemoryStore:
                 if cursor.rowcount != 1:
                     return False
                 self._mark_fts_dirty(conn, memory_id)
+                content = conn.execute(
+                    "SELECT normalized_content FROM memories WHERE id=?", (memory_id,),
+                ).fetchone()
+                if content is not None:
+                    self._enqueue_vector(
+                        conn, memory_id, "UPSERT",
+                        _content_hash(content["normalized_content"]),
+                    )
                 return True
         except sqlite3.IntegrityError as exc:
             raise Conflict("restore replay conflicts with an active duplicate") from exc
@@ -1130,6 +1205,10 @@ class SQLiteMemoryStore:
                     metadata=operation.metadata,
                 )
                 self._mark_fts_dirty(conn, memory.id)
+                self._enqueue_vector(
+                    conn, memory.id, "DELETE",
+                    _content_hash(memory.normalized_content),
+                )
                 if purge_body:
                     conn.execute(
                         "DELETE FROM memory_relations WHERE source_memory_id=? OR target_memory_id=?",
@@ -1175,7 +1254,7 @@ class SQLiteMemoryStore:
                     raise NotFound("scope not found")
                 if boundaries is None:
                     rows = conn.execute(
-                        """SELECT id, db_lineage_id, creation_seq FROM memories
+                        """SELECT id, normalized_content, db_lineage_id, creation_seq FROM memories
                         WHERE scope_id=? ORDER BY id""",
                         (scope_id,),
                     ).fetchall()
@@ -1187,7 +1266,7 @@ class SQLiteMemoryStore:
                     for lineage, boundary in boundaries.items():
                         params.extend((lineage, boundary))
                     rows = conn.execute(
-                        f"""SELECT id, db_lineage_id, creation_seq FROM memories
+                        f"""SELECT id, normalized_content, db_lineage_id, creation_seq FROM memories
                         WHERE scope_id=? AND ({clauses}) ORDER BY id""",
                         tuple(params),
                     ).fetchall()
@@ -1205,6 +1284,10 @@ class SQLiteMemoryStore:
                                   "creation_seq": int(row["creation_seq"])},
                     )
                     self._mark_fts_dirty(conn, row["id"])
+                    self._enqueue_vector(
+                        conn, row["id"], "DELETE",
+                        _content_hash(row["normalized_content"]),
+                    )
                 self._insert_operation(
                     conn, operation_id=operation_id, scope_id=scope_id,
                     memory_id=None, operation_type="CLEAR_SCOPE",
@@ -1467,14 +1550,17 @@ class SQLiteMemoryStore:
                     return 0
                 if row["scope_type"] != "GROUP":
                     raise Conflict("delete_group_scope requires a GROUP scope")
-                memory_ids = tuple(
-                    item["id"] for item in conn.execute(
-                        "SELECT id FROM memories WHERE scope_id=? ORDER BY id",
-                        (scope_id,),
-                    ).fetchall()
-                )
-                for memory_id in memory_ids:
-                    self._mark_fts_dirty(conn, memory_id)
+                rows = conn.execute(
+                    "SELECT id, normalized_content FROM memories WHERE scope_id=? ORDER BY id",
+                    (scope_id,),
+                ).fetchall()
+                memory_ids = tuple(item["id"] for item in rows)
+                for item in rows:
+                    self._mark_fts_dirty(conn, item["id"])
+                    self._enqueue_vector(
+                        conn, item["id"], "DELETE",
+                        _content_hash(item["normalized_content"]),
+                    )
                 conn.execute(
                     """DELETE FROM memory_relations
                        WHERE source_memory_id IN (SELECT id FROM memories WHERE scope_id=?)

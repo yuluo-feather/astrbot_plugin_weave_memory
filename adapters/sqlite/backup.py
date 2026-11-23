@@ -47,7 +47,9 @@ from ...core.ports import (
 )
 
 BACKUP_FORMAT = "weave-memory-backup-v1"
-MANIFEST_SCHEMA = 1
+MANIFEST_SCHEMA = 2
+MANIFEST_MIN_READER = 2
+KNOWN_SECTIONS = frozenset({"core", "archive"})
 BACKUP_ROOT_PARTS = ("backups", "v1.8")
 JOURNAL_NAME = "restore_journal.json"
 # Restore rewrites authoritative tables directly, bypassing the store's dirty
@@ -246,11 +248,7 @@ class BackupService:
             self._database.backup_to(main_path)
             self._verify_file(main_path)
             row_counts = self._table_row_counts(main_path)
-            payload = {
-                "format": BACKUP_FORMAT,
-                "manifest_schema": MANIFEST_SCHEMA,
-                "backup_id": backup_id,
-                "created_at": now.isoformat(),
+            core_section = {
                 "schema_version": self._schema_version(main_path),
                 "db_lineage_id": lineage,
                 "ledger_id": ledger_store.ledger_id(),
@@ -261,6 +259,18 @@ class BackupService:
                 "size": main_path.stat().st_size,
                 "table_row_counts": row_counts,
                 "config_redacted": True,
+            }
+            payload = {
+                "format": BACKUP_FORMAT,
+                "manifest_schema": MANIFEST_SCHEMA,
+                "min_reader_version": MANIFEST_MIN_READER,
+                "backup_id": backup_id,
+                "created_at": now.isoformat(),
+                **core_section,
+                "sections": {
+                    "core": core_section,
+                    "archive": self._archive_section(main_path),
+                },
             }
             (temp_dir / "sidecar.json").write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
@@ -321,6 +331,22 @@ class BackupService:
             raise StorageError("backup sidecar is invalid") from exc
         if not isinstance(payload, dict) or payload.get("format") != BACKUP_FORMAT:
             raise ValidationError("backup format is not supported")
+        try:
+            manifest_schema = int(payload.get("manifest_schema", 1))
+            min_reader = int(payload.get("min_reader_version", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("backup manifest version is invalid") from exc
+        if manifest_schema not in (1, 2):
+            raise ValidationError("backup manifest schema is not supported")
+        if min_reader > MANIFEST_SCHEMA:
+            raise ValidationError("backup requires a newer reader")
+        sections = payload.get("sections")
+        if sections is not None:
+            if not isinstance(sections, dict) or "core" not in sections:
+                raise ValidationError("backup manifest sections are invalid")
+            unknown = set(sections) - KNOWN_SECTIONS
+            if unknown:
+                raise ValidationError("backup manifest contains an unknown section")
         return payload, directory
 
     # ----------------------------------------------------------------- verify
@@ -1248,6 +1274,30 @@ class BackupService:
         }
 
     # ---------------------------------------------------------------- helpers
+    @staticmethod
+    def _archive_section(path: Path) -> dict[str, object]:
+        with _readonly(path) as connection:
+            row = connection.execute(
+                """SELECT count(*) AS count, min(purge_after) AS min_after,
+                          max(purge_after) AS max_after
+                   FROM memories WHERE status='ARCHIVED'""",
+            ).fetchone()
+            reasons = {
+                str(item["archive_reason"]): int(item["count"])
+                for item in connection.execute(
+                    """SELECT archive_reason, count(*) AS count FROM memories
+                       WHERE status='ARCHIVED' AND archive_reason IS NOT NULL
+                       GROUP BY archive_reason""",
+                ).fetchall()
+            }
+        return {
+            "archive_schema": 1,
+            "archived_count": int(row["count"]) if row is not None else 0,
+            "purge_after_min": row["min_after"] if row is not None else None,
+            "purge_after_max": row["max_after"] if row is not None else None,
+            "archive_reason_counts": reasons,
+        }
+
     def _table_row_counts(self, path: Path) -> dict[str, int]:
         counts: dict[str, int] = {}
         with _readonly(path) as connection:

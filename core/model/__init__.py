@@ -55,6 +55,29 @@ class ArchiveReason(StrEnum):
     LIFECYCLE = "LIFECYCLE"
 
 
+class IndexTarget(StrEnum):
+    VECTOR = "VECTOR"
+
+
+class IndexOperation(StrEnum):
+    UPSERT = "UPSERT"
+    DELETE = "DELETE"
+
+
+class IndexJobStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+
+
+class IndexStateStatus(StrEnum):
+    HEALTHY = "HEALTHY"
+    STALE = "STALE"
+    REBUILDING = "REBUILDING"
+    FAILED = "FAILED"
+
+
 class SourceType(StrEnum):
     EXPLICIT = "EXPLICIT"
     INFERRED = "INFERRED"
@@ -305,6 +328,43 @@ class MemoryEntity:
         if self.status is not MemoryStatus.SUPERSEDED and self.superseded_by is not None:
             raise ValidationError("superseded_by is only valid for SUPERSEDED memory")
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+
+
+@dataclass(frozen=True, slots=True)
+class IndexJob:
+    id: str
+    memory_id: str
+    target: IndexTarget
+    operation: IndexOperation
+    content_hash: str
+    status: IndexJobStatus
+    attempts: int
+    created_at: datetime
+    updated_at: datetime
+    last_error: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("id", "memory_id", "content_hash"):
+            if not getattr(self, name).strip():
+                raise ValidationError(f"{name} must be non-empty")
+        if self.attempts < 0:
+            raise ValidationError("attempts must be >= 0")
+        for name in ("created_at", "updated_at"):
+            object.__setattr__(self, name, require_aware_utc(getattr(self, name), name))
+
+
+@dataclass(frozen=True, slots=True)
+class IndexStateRecord:
+    target: IndexTarget
+    status: IndexStateStatus
+    updated_at: datetime
+    dim: int | None = None
+    config_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.dim is not None and self.dim < 1:
+            raise ValidationError("index dimension must be >= 1")
+        object.__setattr__(self, "updated_at", require_aware_utc(self.updated_at, "updated_at"))
 
 
 class ExtractionJobStatus(StrEnum):

@@ -92,6 +92,13 @@ class WriteCoordinator:
             self._ensure_open()
             return operation()
 
+    async def run_serialized(self, operation: Callable[[], T]) -> T:
+        """Run a short synchronous DB operation under the same write lease."""
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                return operation()
+
     def run_metadata_serialized(self, operation: Callable[[], T], *,
                                 ledger_event_type: LedgerEventType | None = None,
                                 payload: dict[str, object] | None = None,
@@ -116,13 +123,6 @@ class WriteCoordinator:
             if intent is not None and ledger is not None:
                 ledger.record_committed(intent)
             return result
-
-    async def run_serialized(self, operation: Callable[[], T]) -> T:
-        """Run a synchronous multi-step write under the coordinator locks."""
-        async with self._lock:
-            with self._write_lock:
-                self._ensure_open()
-                return operation()
 
     def run_write_locked(self, operation: Callable[[], T]) -> T:
         """Synchronous maintenance write (backup/restore) under the write lease."""

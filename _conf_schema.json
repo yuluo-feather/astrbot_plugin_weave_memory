@@ -65,6 +65,139 @@
     "default": 3600,
     "hint": "启动后先清理一次，之后按该间隔在后台清理；范围 60–86400。"
   },
+  "hybrid_retrieval_enabled": {
+    "description": "混合检索总开关（默认关闭）",
+    "type": "bool",
+    "default": false,
+    "hint": "关闭时行为与 V1.8 FTS 完全一致；开启后才启用分类器、向量通道与 RRF。"
+  },
+  "vector_index_enabled": {
+    "description": "向量派生索引（默认关闭）",
+    "type": "bool",
+    "default": false,
+    "hint": "需要配置 embedding_provider_id 且显式 opt-in；向量表可随时重建，不进入权威备份。"
+  },
+  "rerank_enabled": {
+    "description": "可选重排（默认关闭）",
+    "type": "bool",
+    "default": false,
+    "hint": "需要 rerank_provider_id 与外部 provider opt-in；失败时保持 RRF 顺序。"
+  },
+  "query_classifier_mode": {
+    "description": "查询分类模式",
+    "type": "string",
+    "default": "rules",
+    "hint": "rules 使用规则分类并写入 trace；off 关闭分类。不调用 LLM。"
+  },
+  "vector_candidate_limit": {
+    "description": "向量通道候选数",
+    "type": "int",
+    "default": 20,
+    "hint": "每次向量检索返回的候选上限；范围 1–100。"
+  },
+  "hybrid_candidate_limit": {
+    "description": "混合融合候选数",
+    "type": "int",
+    "default": 24,
+    "hint": "RRF 后进入 Admission 的候选上限；范围 1–100。"
+  },
+  "embedding_provider_id": {
+    "description": "Embedding Provider ID",
+    "type": "string",
+    "default": "",
+    "hint": "留空表示 local-only/关闭向量。必须填写 AstrBot 已注册的 embedding provider ID。"
+  },
+  "embedding_model": {
+    "description": "Embedding 模型",
+    "type": "string",
+    "default": "",
+    "hint": "留空时读取 provider 自身配置或 get_model()。"
+  },
+  "embedding_batch_size": {
+    "description": "Embedding 批大小",
+    "type": "int",
+    "default": 50,
+    "hint": "单次批请求文本数；413 时自动减半。范围 1–256。"
+  },
+  "embedding_cache_mb": {
+    "description": "Embedding 缓存上限（MB）",
+    "type": "int",
+    "default": 100,
+    "hint": "按向量字节数估算的 LRU 上限；范围 1–1024。"
+  },
+  "embedding_cache_ttl_minutes": {
+    "description": "Embedding 缓存有效期（分钟）",
+    "type": "int",
+    "default": 30,
+    "hint": "缓存项过期时间；范围 1–1440。"
+  },
+  "embedding_timeout_seconds": {
+    "description": "Embedding 调用超时（秒）",
+    "type": "int",
+    "default": 5,
+    "hint": "超时按失败处理并回退 FTS；范围 1–30。"
+  },
+  "embedding_max_text_chars": {
+    "description": "单条 Embedding 最大字符数",
+    "type": "int",
+    "default": 1200,
+    "hint": "发送前截断，避免超长文本与 token 限制；范围 200–8000。"
+  },
+  "rerank_provider_id": {
+    "description": "Rerank Provider ID",
+    "type": "string",
+    "default": "",
+    "hint": "留空时即使 rerank_enabled=true 也跳过重排。"
+  },
+  "rerank_model": {
+    "description": "Rerank 模型",
+    "type": "string",
+    "default": "",
+    "hint": "可选；留空由 provider 决定。"
+  },
+  "rerank_timeout_seconds": {
+    "description": "Rerank 调用超时（秒）",
+    "type": "int",
+    "default": 5,
+    "hint": "超时/失败保持 RRF 顺序；范围 1–30。"
+  },
+  "provider_failure_cooldown_seconds": {
+    "description": "Provider 失败冷却（秒）",
+    "type": "int",
+    "default": 60,
+    "hint": "失败后冷却期内不重复调用；0 表示不冷却。范围 0–3600。"
+  },
+  "external_provider_opt_in": {
+    "description": "允许外部 Provider（默认关闭）",
+    "type": "bool",
+    "default": false,
+    "hint": "关闭时外部 Embedding/Rerank 调用次数必须为 0；开启后仍需白名单。"
+  },
+  "external_provider_allowlist": {
+    "description": "外部 Provider 白名单",
+    "type": "list",
+    "items": { "type": "string" },
+    "default": [],
+    "hint": "匹配 provider_id、model 或 provider_id/model；空列表表示拒绝所有外部调用。"
+  },
+  "provider_call_audit_retention_days": {
+    "description": "Provider 审计保留天数",
+    "type": "int",
+    "default": 90,
+    "hint": "provider_call_audit 只保留 provider/model/scope 哈希/字段类别/结果/延迟，不含正文。"
+  },
+  "index_job_max_attempts": {
+    "description": "向量索引任务重试上限",
+    "type": "int",
+    "default": 5,
+    "hint": "达到上限后任务标记 FAILED，不再重试；范围 1–100。"
+  },
+  "index_worker_interval_seconds": {
+    "description": "向量索引 worker 轮询间隔（秒）",
+    "type": "int",
+    "default": 15,
+    "hint": "仅 vector_index_enabled=true 时运行；范围 1–3600。"
+  },
   "rejected_keep_body": {
     "description": "拒绝候选时保留正文",
     "type": "bool",

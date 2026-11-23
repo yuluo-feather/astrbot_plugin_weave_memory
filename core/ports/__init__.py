@@ -17,6 +17,11 @@ from ..model import (
     ExtractionWindow,
     Identity,
     ImportJob,
+    IndexJob,
+    IndexJobStatus,
+    IndexStateRecord,
+    IndexStateStatus,
+    IndexTarget,
     LedgerEvent,
     LedgerEventType,
     LedgerState,
@@ -31,6 +36,7 @@ from ..model import (
     Scope,
 )
 from ..policy.dedup import DedupKey
+from ..provider import ProviderCallRecord
 
 
 class Clock(Protocol):
@@ -78,6 +84,10 @@ class MemoryStore(Protocol):
                          purge_body: bool) -> None: ...
 
     def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]: ...
+
+    def get_any(self, memory_id: str) -> MemoryEntity: ...
+
+    def list_active_all(self) -> tuple[MemoryEntity, ...]: ...
 
     def list_for_export(
         self, *, scope_id: str, subject_id: str,
@@ -234,6 +244,99 @@ class SearchIndex(Protocol):
         self, query: str, *, scope_id: str, subject_id: str, limit: int = 100,
         scope_type: str = "PERSONAL",
     ) -> tuple[SearchCandidate, ...]: ...
+
+
+class EmbeddingProvider(Protocol):
+    provider_id: str
+    model: str
+    dimension: int
+
+    async def embed_query(self, text: str) -> tuple[float, ...]: ...
+
+    async def embed_documents(
+        self, texts: tuple[str, ...],
+    ) -> tuple[tuple[float, ...], ...]: ...
+
+
+class RerankProvider(Protocol):
+    async def rerank(
+        self, query: str, documents: tuple[str, ...], top_n: int,
+    ) -> tuple[tuple[int, float], ...]: ...
+
+
+class ProviderCallAuditRepository(Protocol):
+    def record(self, record: ProviderCallRecord) -> None: ...
+
+    def ensure_available(self) -> bool: ...
+
+    def prune_before(self, cutoff: datetime) -> int: ...
+
+    def counts_since(self, since: datetime) -> dict[str, int]: ...
+
+
+class IndexJobStore(Protocol):
+    def create_or_get(self, job: IndexJob) -> tuple[IndexJob, bool]: ...
+
+    def claim_next(self, *, at: datetime) -> IndexJob | None: ...
+
+    def mark_done(self, job_id: str, *, at: datetime) -> None: ...
+
+    def mark_failed(self, job_id: str, *, error_code: str,
+                    max_attempts: int, at: datetime) -> IndexJobStatus: ...
+
+    def reset_running_to_pending(self, *, at: datetime) -> int: ...
+
+    def list_by_status(self, statuses: tuple[IndexJobStatus, ...],
+                       *, limit: int = 100) -> tuple[IndexJob, ...]: ...
+
+    def count_by_status(self) -> dict[str, int]: ...
+
+
+class IndexStateStore(Protocol):
+    def get(self, target: IndexTarget) -> IndexStateRecord | None: ...
+
+    def upsert(self, record: IndexStateRecord) -> None: ...
+
+    def set_status(self, target: IndexTarget, status: IndexStateStatus, *,
+                   dim: int | None = None, config_hash: str | None = None,
+                   at: datetime) -> IndexStateRecord: ...
+
+
+class VectorIndex(Protocol):
+    def is_healthy(self) -> bool: ...
+
+    def status(self) -> IndexStateRecord | None: ...
+
+    def search(self, vector: tuple[float, ...], *, scope_id: str,
+               subject_id: str, limit: int, at: datetime,
+               scope_type: str = "PERSONAL") -> tuple[SearchCandidate, ...]: ...
+
+    def search_diagnostics(
+        self, vector: tuple[float, ...], *, scope_id: str, subject_id: str,
+        limit: int, at: datetime, scope_type: str = "PERSONAL",
+    ) -> tuple[SearchCandidate, ...]: ...
+
+    def upsert(self, memory_id: str, vector: tuple[float, ...], *, dim: int,
+               provider: str, model: str, content_hash: str,
+               db_lineage_id: str, creation_seq: int, revision: int,
+               created_at: datetime) -> None: ...
+
+    def remove(self, memory_id: str) -> None: ...
+
+    def clear(self, *, scope_id: str | None = None,
+              subject_id: str | None = None) -> None: ...
+
+    def count(self, *, scope_id: str | None = None,
+              subject_id: str | None = None) -> int: ...
+
+    def mark_stale(self, *, at: datetime, dim: int | None = None,
+                   config_hash: str | None = None) -> None: ...
+
+    def mark_rebuilding(self, *, at: datetime) -> None: ...
+
+    def mark_healthy(self, *, at: datetime) -> None: ...
+
+    def mark_failed(self, *, at: datetime) -> None: ...
 
 
 class PlatformAdapter(Protocol):

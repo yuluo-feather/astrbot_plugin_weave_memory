@@ -1,5 +1,6 @@
 """FTS-backed, scope-filtered recall and fixed-budget context composition."""
 
+import inspect
 import unicodedata
 import uuid
 from dataclasses import dataclass
@@ -275,7 +276,7 @@ class MemoryContextComposer:
     )
     _SUFFIX = "\n</weave_memory_context>"
 
-    def __init__(self, recall: RecallService, *, max_tokens: int = 384,
+    def __init__(self, recall: Any, *, max_tokens: int = 384,
                  max_memories: int = 4, candidate_limit: int = 12) -> None:
         self._recall = recall
         self._max_tokens = max_tokens
@@ -283,9 +284,12 @@ class MemoryContextComposer:
         self._candidate_limit = candidate_limit
 
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
-        candidates, trace = self._recall.recall_with_trace(
+        result = self._recall.recall_with_trace(
             query, scope, limit=self._candidate_limit,
         )
+        if inspect.isawaitable(result):
+            result = await result
+        candidates, trace = result
         if not candidates:
             self._recall.record_diagnostics(trace)
             return None
