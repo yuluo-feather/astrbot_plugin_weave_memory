@@ -25,8 +25,8 @@
     "python": "3.12.10",
     "platform": "Windows-11-10.0.26300-SP0",
     "sqlite": "3.49.1",
-    "runtime_source_commit": "d51c5768005043d48b093918649bf9b801d0a44b",
-    "runtime_source_dirty": true,
+    "runtime_source_commit": "cc3ac42d91eb92d1597cdbdd3a364230445db05d",
+    "runtime_source_dirty": false,
     "fixed_clock": "2026-11-23T12:00:00+00:00",
     "random_seed": 1401
   },
@@ -65,8 +65,8 @@
       "retrieval_latency_ms": {
         "warmup_runs_per_query": 2,
         "measured_runs_per_query": 30,
-        "p50": 0.3600000636652112,
-        "p95": 0.7301350240595638,
+        "p50": 0.35829999251291156,
+        "p95": 0.7390200393274426,
         "measurement_count": 750
       },
       "wrong_scope_count": 0,
@@ -114,8 +114,8 @@
       "retrieval_latency_ms": {
         "warmup_runs_per_query": 2,
         "measured_runs_per_query": 30,
-        "p50": 0.4164499696344137,
-        "p95": 0.8203450764995064,
+        "p50": 0.40330004412680864,
+        "p95": 0.7326149905566124,
         "measurement_count": 750
       },
       "wrong_scope_count": 0,
@@ -253,7 +253,7 @@
       "query": "紧急联络频道 ops-alerts",
       "scope_type": "GROUP",
       "category": "exact_fact",
-      "trace_id": "b853da46c3af433d830f05ae67efd509",
+      "trace_id": "6f753a1e1fc443db8e328ef1946eef3b",
       "query_hash": "31f61fd3bbe84debd7a85a15c46eb3476c91b431d9550a149de83318d7472ef6",
       "expected_ids": [
         "g-fact-5"
@@ -293,7 +293,7 @@
       "query": "VOIDPERSON3",
       "scope_type": "PERSONAL",
       "category": "no_memory",
-      "trace_id": "3ce7f680cc604258a745c853dc561d95",
+      "trace_id": "28cba8b9e4dc4afb973daf6af112f412",
       "query_hash": "b592b16dee29ff9c3ab584eb792daf978264813778f8eb3c660c6fa55b6e7233",
       "expected_ids": [],
       "candidate_ids": [],
@@ -320,7 +320,7 @@
       "query": "DELETEDCODE1",
       "scope_type": "GROUP",
       "category": "expired_deleted",
-      "trace_id": "922f546a022b46c1a0930c8a4b6f233a",
+      "trace_id": "a4826bc5f41644d6adde38337a04396b",
       "query_hash": "f2bdc1898f9ce553b1659a8ab58294ef26074fb54071182c3d430ff8f074b952",
       "expected_ids": [],
       "candidate_ids": [],
@@ -347,7 +347,7 @@
       "query": "EXPIRYCODE1",
       "scope_type": "PERSONAL",
       "category": "expired_deleted",
-      "trace_id": "36587f113ef4430c98a896ab8eed0d99",
+      "trace_id": "d07e63d4347b42299f4550dbf0f33afe",
       "query_hash": "e9037a6175af4f00bfbb9668b6a192fc7934830e87a3d93a0d9670d6c6ef4dd0",
       "expected_ids": [],
       "candidate_ids": [],
@@ -381,7 +381,7 @@
       "query": "VOIDPERSON4",
       "scope_type": "PERSONAL",
       "category": "no_memory",
-      "trace_id": "a0a6a84cf0e240049f7e224c8b7e566d",
+      "trace_id": "75e7ce8483594051906954a5d5fb02fd",
       "query_hash": "560683bdb18c4e2a374bd9a12f659d7158afe1feca7e128fdcb95856a17facf0",
       "expected_ids": [],
       "candidate_ids": [],
@@ -408,7 +408,7 @@
       "query": "文档格式 Markdown",
       "scope_type": "PERSONAL",
       "category": "exact_fact",
-      "trace_id": "921654c0d9d5431da8b93b12f67f5bbc",
+      "trace_id": "0a9193dc3b544b59a860e6153dfcd783",
       "query_hash": "953dea8058acb9c8aa6b6591142bc5d39b3c810951e09ad75ca143f19d07fa1b",
       "expected_ids": [
         "p-fact-4"
@@ -448,7 +448,7 @@
       "query": "评测项目代号 ORBIT",
       "scope_type": "PERSONAL",
       "category": "exact_fact",
-      "trace_id": "b1f1276b836e484687c371639945afb1",
+      "trace_id": "b83f9c4addde405491a7550f1a4358dc",
       "query_hash": "b03ec9178d148e7b3eb960a287cdeb7ad7f8f990f063446db3e2a716e4ad3241",
       "expected_ids": [
         "p-fact-1"
@@ -498,7 +498,7 @@
       "query": "任务拆分 小步提交",
       "scope_type": "GROUP",
       "category": "preference",
-      "trace_id": "c68d5b9ee4f0419992186a727997bdb0",
+      "trace_id": "de27caaa60314f19a1d26be5c02d5148",
       "query_hash": "5ae992bfe542222793ba1d471d0290c23405cfc178f238ba593363cef46c7d0b",
       "expected_ids": [
         "g-pref-5"
@@ -538,7 +538,7 @@
       "query": "常用编辑器 Neovim",
       "scope_type": "PERSONAL",
       "category": "exact_fact",
-      "trace_id": "c3187867a908429c88ae256e6cbd545c",
+      "trace_id": "f18aa5b2ab9b4688bd3f5dabe4382adb",
       "query_hash": "1ebf9c3c4a821facbae5a22b33ad38293c2a54871ed961d426aa07eca04d9105",
       "expected_ids": [
         "p-fact-2"
@@ -578,7 +578,7 @@
       "query": "评审先看 风险 实现细节",
       "scope_type": "GROUP",
       "category": "preference",
-      "trace_id": "32ad5b8af0054c51bfbabd1a4722656a",
+      "trace_id": "392e584163454c0b95637e4845cd8466",
       "query_hash": "e8083eaa4fc6c9e1c6d22a192b8a60337a47e86f1ca67e3237f6ccd4f18db605",
       "expected_ids": [
         "g-pref-1"
@@ -628,7 +628,7 @@
       "query": "值班负责人 LANTERN",
       "scope_type": "GROUP",
       "category": "exact_fact",
-      "trace_id": "29a78df7d55140e3891f4eb92b56d3e0",
+      "trace_id": "bbcf39adbfec4a1683ebda54c2ef3fdb",
       "query_hash": "1fdc34e990c5a2e7915e8cc0429537b2e139eb41d60f54fd448ba9674028447b",
       "expected_ids": [
         "g-fact-3"
@@ -678,7 +678,7 @@
       "query": "本群例会 周三 15:00",
       "scope_type": "GROUP",
       "category": "exact_fact",
-      "trace_id": "ece06d2df7ec4d80887317b248ccd4eb",
+      "trace_id": "ea2a09e4cff6487fb770816998a94669",
       "query_hash": "0aaa628d98d849c85b6f41c0509b328b6533e1e1d0e47386fbe7d365baf228ec",
       "expected_ids": [
         "g-fact-1"
@@ -873,7 +873,7 @@
       "query": "示例优先 Python",
       "scope_type": "PERSONAL",
       "category": "preference",
-      "trace_id": "e17601ab6d02453f87de1ab3bf6af8d1",
+      "trace_id": "91cfd256ddad4bd0887c79fffd8af587",
       "query_hash": "879db32b48940b2edc9756bafba0019b24ce8d8ed0eb3e1b15e708e658961cd9",
       "expected_ids": [
         "p-pref-3"
@@ -913,7 +913,7 @@
       "query": "文档归档目录 /srv/team/archive",
       "scope_type": "GROUP",
       "category": "exact_fact",
-      "trace_id": "e780db9590ff44cca057b1cdf9cdee17",
+      "trace_id": "ec8fe97e80e3445586ef8d4afd358fa5",
       "query_hash": "d71f29be9ba92aa88dfb8741890657186b2d26ac2a6a97c1c57fc2671bface45",
       "expected_ids": [
         "g-fact-4"
@@ -953,7 +953,7 @@
       "query": "CROSSPERSON3",
       "scope_type": "GROUP",
       "category": "cross_scope",
-      "trace_id": "2c305f86aeac4897b29c6798a13a9ead",
+      "trace_id": "e93e89e3c2a14c7d866a399e1a362f2e",
       "query_hash": "373a500d0595b837cfead442b141726320185409b65d3a938771039fd6cf2109",
       "expected_ids": [
         "g-cross-target-3"
@@ -993,7 +993,7 @@
       "query": "最近推进 服务端日志轮转",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "d00a7a35c4a2421388d6b39cff8446e0",
+      "trace_id": "15910c51a22a44ffa1b37a81b1cca671",
       "query_hash": "207397e67395a059e91c6c28ece30178bae797deb81ad86b1b04a89a70a542c4",
       "expected_ids": [
         "g-rec-1"
@@ -1080,7 +1080,7 @@
       "query": "通知 避免 夜间发送",
       "scope_type": "GROUP",
       "category": "preference",
-      "trace_id": "432b6f11a6ef484ba5384f815db7f009",
+      "trace_id": "eb99b23930004965b18dd068765c3a17",
       "query_hash": "b857b285f7127eb41046ddb56237b96e72f9ac00db4de590fa73fab43fa2ee97",
       "expected_ids": [
         "g-pref-4"
@@ -1120,7 +1120,7 @@
       "query": "VOIDGROUP4",
       "scope_type": "GROUP",
       "category": "no_memory",
-      "trace_id": "a3fc44efd6b14f21bea7242ab7efd522",
+      "trace_id": "3838ac243a114c97a036772a3ee18d16",
       "query_hash": "562938b3a2cc6150e726545cbb1ecebc0913346219f5027c156beccb1469db9f",
       "expected_ids": [],
       "candidate_ids": [],
@@ -1147,7 +1147,7 @@
       "query": "VOIDGROUP3",
       "scope_type": "GROUP",
       "category": "no_memory",
-      "trace_id": "31ed5f91ac994bd592690913af293ecf",
+      "trace_id": "5d35517f94b1486b80a77f5aea5ef35b",
       "query_hash": "ecc1f80a06f288ce84a6cab82267a83c9b2cb1944eddfb45a02cf22794cfcfdd",
       "expected_ids": [],
       "candidate_ids": [],
@@ -1174,7 +1174,7 @@
       "query": "EXPIRYCODE3",
       "scope_type": "PERSONAL",
       "category": "expired_deleted",
-      "trace_id": "42cf8fb7c76846d99f60155221f709fa",
+      "trace_id": "047b84511ea848ba944f041420a019a7",
       "query_hash": "918c3c0050fa981d1bd8cec85a70a7bb5fc2b33b35c1b9e55a3b465ea5fc5a37",
       "expected_ids": [],
       "candidate_ids": [],
@@ -1208,7 +1208,7 @@
       "query": "喜欢 深色 终端主题",
       "scope_type": "PERSONAL",
       "category": "preference",
-      "trace_id": "40a54b71249e418a959e8957a457a41c",
+      "trace_id": "102c8c6be71f4019b607df5075bd4a6e",
       "query_hash": "7fa37ef7406746481f17b51aa9066ce64d50b628135affe378c224b1f7469bfb",
       "expected_ids": [
         "p-pref-2"
@@ -1248,7 +1248,7 @@
       "query": "VOIDPERSON2",
       "scope_type": "PERSONAL",
       "category": "no_memory",
-      "trace_id": "3ac7ac8bed764e2fa2a06ce533fed523",
+      "trace_id": "fc6d55dd642548c8b58c146022c80229",
       "query_hash": "b343a102b9d870dde59cb4981e61b1479912228f3b900ca6aaf9f26a531496c6",
       "expected_ids": [],
       "candidate_ids": [],
@@ -1275,7 +1275,7 @@
       "query": "测试机器人 小栖",
       "scope_type": "PERSONAL",
       "category": "exact_fact",
-      "trace_id": "bb24e53369b741dc9d7d285543228071",
+      "trace_id": "b7f03ac760e34aa7ae5806b1b51040aa",
       "query_hash": "a29c3cd0df0acc7628460180815690936ce1b5fd8830fa660f6024b354529f20",
       "expected_ids": [
         "p-fact-5"
@@ -1374,7 +1374,7 @@
       "query": "CROSSPERSON1",
       "scope_type": "GROUP",
       "category": "cross_scope",
-      "trace_id": "b4a0e26ac27e4cca8a7350a84613e0db",
+      "trace_id": "0c1674cbacc145cc8574e19b6be3ad34",
       "query_hash": "6f026faf4ca0517bf3173b6d105263369c5fb3b4ed574c5cf1559bb996980c8e",
       "expected_ids": [
         "g-cross-target-1"
@@ -1414,7 +1414,7 @@
       "query": "CROSSGROUP1",
       "scope_type": "PERSONAL",
       "category": "cross_scope",
-      "trace_id": "d49eec4ff452449198f18c83214aaaa7",
+      "trace_id": "b3fe7f5f45184470b3071b3adb006139",
       "query_hash": "5c0c6eaf76902baeaec1b9e26deb8115b36324aed8914d5f73e8fd1796b49a20",
       "expected_ids": [
         "p-cross-target-1"
@@ -1454,7 +1454,7 @@
       "query": "先给结论 再解释",
       "scope_type": "PERSONAL",
       "category": "preference",
-      "trace_id": "ef4858464ba74b69b40f84902f82305f",
+      "trace_id": "26a3be24f742435fbb5c51a525553ecb",
       "query_hash": "6ff3c1d933031a38b2433c11cb4859a361a5b7c94b08a7ae140416e0b7f2ed5b",
       "expected_ids": [
         "p-pref-4"
@@ -1494,7 +1494,7 @@
       "query": "最近准备 AstrBot 4.29.4 兼容性",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "0bfaafa9fa6647caadde90177f6968f3",
+      "trace_id": "de4ce8d907a44681b1959f7bbebf5310",
       "query_hash": "0a0c4862d3ea92f06694f4e347bd098db7ab5826e96086e47810ac5a0afddbeb",
       "expected_ids": [
         "p-rec-3"
@@ -1575,7 +1575,7 @@
       "query": "最近整理 插件 并发故障注入",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "ceedd6e09ee34e38abc053a487c1b2f8",
+      "trace_id": "bc4bd800504b4bf3a15babd48a0be09d",
       "query_hash": "9958d25c3821142ba0059dbf2ee4a985861c273de30554bb984f1f8c03eabcfc",
       "expected_ids": [
         "p-rec-1"
@@ -1656,7 +1656,7 @@
       "query": "会议纪要 Markdown",
       "scope_type": "GROUP",
       "category": "preference",
-      "trace_id": "884fa5db5785486faea5f0435f2f0dfd",
+      "trace_id": "a59d57f170ec4f34a483977a777ab677",
       "query_hash": "65b7afb7b22fbda10e9c0d7da3bed3ac73ebde2fd440bedae34d86ab9e2c8466",
       "expected_ids": [
         "g-pref-2"
@@ -1696,7 +1696,7 @@
       "query": "DELETEDCODE2",
       "scope_type": "GROUP",
       "category": "expired_deleted",
-      "trace_id": "3bb5715f95c54d889b3dfffae267d12e",
+      "trace_id": "e617bbec1b4f4a998c351bde3ee85dc0",
       "query_hash": "ba0ec75a61874f62aa74e0cee9100299ac70a73bbba613a4e4d07f2eced7b635",
       "expected_ids": [],
       "candidate_ids": [],
@@ -1723,7 +1723,7 @@
       "query": "最近整理 工具调用 审计链路",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "d2295dc369c64142af79dd7c72bf09e9",
+      "trace_id": "e47620e65d4544588af7b5361e495af7",
       "query_hash": "0aa49e2f585e751b24d43fda2655ca5b2d0bc5b52f28e323c65d25f43695bd43",
       "expected_ids": [
         "p-rec-5"
@@ -1804,7 +1804,7 @@
       "query": "最近讨论 CI 缓存失效",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "db612edeeec64ea4b541aa103ad0d945",
+      "trace_id": "536e861cf7024b5a80db5c68dd5ccc68",
       "query_hash": "36394c91c041d1f88c5eed7a5c85cef355a73956bf8d9f926e9fbff19801c7da",
       "expected_ids": [
         "g-rec-2"
@@ -1891,7 +1891,7 @@
       "query": "测试报告 未执行项目",
       "scope_type": "PERSONAL",
       "category": "preference",
-      "trace_id": "336cb0ca64b143b1987c065dd7e213b8",
+      "trace_id": "59cffd9aa79445f185ba319786f97047",
       "query_hash": "f0f2550d062af9c0ec7c3e7b7f8a627372a62b36f09207b5925c3665fd816151",
       "expected_ids": [
         "p-pref-5"
@@ -2002,7 +2002,7 @@
       "query": "最近评估 SQLite FTS 检索",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "22b1db066eb04708a48d8fe86b658a7a",
+      "trace_id": "09a9b20182f0474e885a1c777ecd02e2",
       "query_hash": "9979aafd2961d2f7d63fb5f748f00a17590eaddf9af8821be983913a006f0f8f",
       "expected_ids": [
         "p-rec-2"
@@ -2083,7 +2083,7 @@
       "query": "发布窗口 第二个周五",
       "scope_type": "GROUP",
       "category": "exact_fact",
-      "trace_id": "6f2c82063ce847b49dbbd323796d3831",
+      "trace_id": "071b0325d52c489688f7764063aa465a",
       "query_hash": "fc1eb3fc2ed1c196af546910506bd65d964fc2274f7b5f1f97cba32c6ca03621",
       "expected_ids": [
         "g-fact-2"
@@ -2133,7 +2133,7 @@
       "query": "CROSSPERSON2",
       "scope_type": "GROUP",
       "category": "cross_scope",
-      "trace_id": "291cc3a0aa1c45c1a2aa107c19d16470",
+      "trace_id": "d2a0463ad6934bbe8a740cd3c2924ff8",
       "query_hash": "0b4d69f789ebc764c0e6c853186a93b7d5ab4203c38f23f40f6e89d80fd65c1e",
       "expected_ids": [
         "g-cross-target-2"
@@ -2173,7 +2173,7 @@
       "query": "VOIDPERSON1",
       "scope_type": "PERSONAL",
       "category": "no_memory",
-      "trace_id": "958d22bdc8ba487d8bc84960ca5e1719",
+      "trace_id": "4a74461f690b4e1e8f2c76543fb1fb3b",
       "query_hash": "a35b152c0563a1be1f76b593c38f5c7aa2ec6733c5f344a753e4bd8924629814",
       "expected_ids": [],
       "candidate_ids": [],
@@ -2200,7 +2200,7 @@
       "query": "最近设计 离线 Golden Set",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "674d9c3097dd44e08534b01ab9b0045a",
+      "trace_id": "6aa1ec8c025d4b2b841d362eeb8dab21",
       "query_hash": "dc1131e605af7614108ec1332f29fcbefd2bb1ef03da43de0151b3cba6f803b3",
       "expected_ids": [
         "p-rec-4"
@@ -2281,7 +2281,7 @@
       "query": "最近更新 值班交接清单",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "d4a7e3fe69b04d56a102787c8daa74fc",
+      "trace_id": "96ada7ec63f84fc885dc59311f1fb40a",
       "query_hash": "c6df4fea55ec754af346e4f37a944d23fdf5993a94f073c816b6bcc1588a34c1",
       "expected_ids": [
         "g-rec-5"
@@ -2380,7 +2380,7 @@
       "query": "VOIDPERSON5",
       "scope_type": "PERSONAL",
       "category": "no_memory",
-      "trace_id": "cb15ff5ce47f47c0b966bae243d1e669",
+      "trace_id": "6b28c6e64b104636a505c1786838cc47",
       "query_hash": "ea811041c71041e880934a3049b576d2749ab872b257adcf3460ba0b83c5db5d",
       "expected_ids": [],
       "candidate_ids": [],
@@ -2407,7 +2407,7 @@
       "query": "代码评审 回归测试",
       "scope_type": "GROUP",
       "category": "preference",
-      "trace_id": "f041d1b8586f4f9eb366af299f50dbc6",
+      "trace_id": "8ccb7539b1714a23a33bbd9b3f593a42",
       "query_hash": "1af03b5a4683c89003eda44f95f28022122de5074bb7a72082e76ceb37c2be1b",
       "expected_ids": [
         "g-pref-3"
@@ -2494,7 +2494,7 @@
       "query": "VOIDGROUP1",
       "scope_type": "GROUP",
       "category": "no_memory",
-      "trace_id": "f0088e56d2404fa5b8e8ad561c879d87",
+      "trace_id": "6cd98d72b8134a0cbc8e7fa22329c2d4",
       "query_hash": "b3cdc242595bdf810479b0035ad8af0b22519e3a7c9bb66ed1b133fa61b70067",
       "expected_ids": [],
       "candidate_ids": [],
@@ -2521,7 +2521,7 @@
       "query": "EXPIRYCODE2",
       "scope_type": "PERSONAL",
       "category": "expired_deleted",
-      "trace_id": "ade6f4e319974c6f8cd7d3096f0699f4",
+      "trace_id": "c8b322399c494407aebcbc315fb9e9f9",
       "query_hash": "c4e356d2d6f217f920d8f9cd53d8a406e9c9eeb29d4196ca54c84e5ce2e82ba4",
       "expected_ids": [],
       "candidate_ids": [],
@@ -2555,7 +2555,7 @@
       "query": "最近安排 灰度发布演练",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "05752e0d37a0413693ff38213db2adce",
+      "trace_id": "613884696b384749a256f4b167ab394a",
       "query_hash": "a2c0222b368fd5cbce6dfc1a9116bf2917d896ca8ed3d1e1a1fc4d690a641119",
       "expected_ids": [
         "g-rec-3"
@@ -2666,7 +2666,7 @@
       "query": "CROSSGROUP2",
       "scope_type": "PERSONAL",
       "category": "cross_scope",
-      "trace_id": "ad41253bbdc3467d9ddc19882839e010",
+      "trace_id": "35ec6158839c46789189a3bf22675311",
       "query_hash": "1c26c09b3af98ace2f5deb51a6cf38da362f20e62e57b7690e033bec33ad2d0e",
       "expected_ids": [
         "p-cross-target-2"
@@ -2706,7 +2706,7 @@
       "query": "偏好 简洁 变更日志",
       "scope_type": "PERSONAL",
       "category": "preference",
-      "trace_id": "2c1080b77d384061b0491dd13f13bc0b",
+      "trace_id": "ddbbe7b61ab3466ba45fb58bce4c48f4",
       "query_hash": "ff5f871c535d29957812e6fce4a918b8c144f01116fec24f9556b38118b55392",
       "expected_ids": [
         "p-pref-1"
@@ -2765,7 +2765,7 @@
       "query": "VOIDGROUP5",
       "scope_type": "GROUP",
       "category": "no_memory",
-      "trace_id": "9e7d2ff37d424597a23354ebf019bd2a",
+      "trace_id": "b1c713771fc84aba952184df069118f8",
       "query_hash": "e46badb07c0111ac1a7f0195563b1e6ae2e86ab161dbfb0016a45767e791d44e",
       "expected_ids": [],
       "candidate_ids": [],
@@ -2792,7 +2792,7 @@
       "query": "演示环境 Debian",
       "scope_type": "PERSONAL",
       "category": "exact_fact",
-      "trace_id": "f24094368e59444e963760cec92e6d70",
+      "trace_id": "717369998f0a4b86834041d6448f4189",
       "query_hash": "5a83949d0d67aecf89ca4268ea254d849f1d88b77f4846f47fbff4944170e254",
       "expected_ids": [
         "p-fact-3"
@@ -2832,7 +2832,7 @@
       "query": "最近复盘 数据库迁移耗时",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "9aaa74cfa3cc444b969c073840188a0b",
+      "trace_id": "ec0414139df145e38f64d17dab99a101",
       "query_hash": "86383b731df77a1efcc1cca16015aae27e4377aeaefca333b0137a58e0967376",
       "expected_ids": [
         "g-rec-4"
@@ -2919,7 +2919,7 @@
       "query": "VOIDGROUP2",
       "scope_type": "GROUP",
       "category": "no_memory",
-      "trace_id": "7a8191fd37204cf2a3f0d53a317f4512",
+      "trace_id": "d20086618f8f4981aff5dee57b329772",
       "query_hash": "b0e822b791403288f291b48a7c756879790c821a20be3e64d0e820fd2226fdae",
       "expected_ids": [],
       "candidate_ids": [],
