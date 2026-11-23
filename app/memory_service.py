@@ -16,6 +16,7 @@ from ..core.model import (
     SourceType,
 )
 from ..core.normalization import normalize_content
+from ..core.policy.dedup import DedupKey
 from ..core.ports import Clock, IdGenerator, MemoryStore
 from .consent_service import ConsentService, PersonalConsentType
 from .export import build_export
@@ -52,6 +53,20 @@ class MemoryApplicationService:
                     # Another writer expired, deleted, or cleared it first.
                     pass
 
+    def _reject_candidate_collision(
+        self, scope: Scope, memory_type: MemoryType, normalized: str,
+    ) -> None:
+        candidate = self._store.find_candidate_duplicate(
+            DedupKey(
+                scope.id, scope.identity.subject_id, memory_type.value, normalized,
+            ),
+        )
+        if candidate is not None:
+            raise Conflict(
+                f"已存在同内容候选记忆 {candidate.id}；"
+                f"请先 /织忆 候选 确认 {candidate.id} 或 /织忆 候选 拒绝 {candidate.id}"
+            )
+
     async def save_explicit(self, scope: Scope, content: str, *,
                             operator_id: str,
                             memory_type: MemoryType = MemoryType.FACT) -> tuple[MemoryEntity, WriteReceipt]:
@@ -59,6 +74,7 @@ class MemoryApplicationService:
         normalized = normalize_content(content)
         now = self._clock.now()
         await self._expire_overdue_duplicate(scope, memory_type, normalized, now)
+        self._reject_candidate_collision(scope, memory_type, normalized)
         memory_id = self._ids.new_id("memory")
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
@@ -102,6 +118,7 @@ class MemoryApplicationService:
         normalized = normalize_content(content)
         now = self._clock.now()
         await self._expire_overdue_duplicate(scope, memory_type, normalized, now)
+        self._reject_candidate_collision(scope, memory_type, normalized)
         memory_id = self._ids.new_id("memory")
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,

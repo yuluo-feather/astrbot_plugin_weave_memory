@@ -188,6 +188,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - `delete` / `clear_scope` 在权威事务内写 `memory_meta.secure_purge_pending = '1'`。
 - 仅当 FTS 同步/重建成功、索引 `HEALTHY` 后，才执行 `wal_checkpoint(TRUNCATE)` → `VACUUM` → `wal_checkpoint(TRUNCATE)`；两次 checkpoint 都校验 `busy` 与 `log`，`busy != 0` 或 `log > 0` 时保留 pending 并返回 `purged=False`；`log < 0` 表示非 WAL 模式，继续 VACUUM。
 - 成功后清 pending 并写 `secure_purge_baseline_done='1'`；启动时若 baseline 缺失，执行一次全库基线擦除，清理升级前的旧残留。
+- 启动时的基线擦除与 pending 重试会同步执行 `VACUUM`；大库可能短暂阻塞事件循环，失败保留 pending，下次启动重试。
 - 索引未恢复或擦除失败时保留标记；插件下次启动完成 FTS 恢复后重试。
 - 命令层在擦除未完成时提示「将在下次插件启动时自动重试」，不得把逻辑删除误报为失败。
 - 有条件保证：应用自身连接、`secure_delete=ON`、无其他连接持有 WAL 读快照、checkpoint 成功时，SQLite 主库与 WAL 不保留可恢复正文；只读连接/备份快照/backup API 会令 checkpoint busy，此时状态为 pending。

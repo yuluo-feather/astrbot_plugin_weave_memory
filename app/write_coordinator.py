@@ -77,7 +77,6 @@ class WriteCoordinator:
 
     def _index_state(self) -> IndexState:
         try:
-            self._index.integrity_check()
             healthy = self._index.is_healthy()
         except IndexUnavailable:
             return IndexState.PENDING_REBUILD

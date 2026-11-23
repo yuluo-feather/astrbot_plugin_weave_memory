@@ -12,6 +12,7 @@ from ...app.group_recall_service import GroupRecallService
 from ...app.scope_service import GroupScopeService
 from ...core.errors import (
     AuthorizationDenied,
+    Conflict,
     GroupAdminUnavailable,
     GroupConsentRevocationPending,
     GroupNotAdmin,
@@ -98,6 +99,8 @@ class AstrBotGroupCommands:
             return f"{action}失败：请先关闭群记忆再执行该操作。"
         if isinstance(exc, IndexUnavailable):
             return f"{action}失败：检索索引暂不可用，正文数据不会因此丢失。"
+        if isinstance(exc, Conflict):
+            return f"{action}失败：{exc}。"
         if isinstance(exc, ValidationError):
             return (
                 f"{action}失败：第一个参数必须是 "

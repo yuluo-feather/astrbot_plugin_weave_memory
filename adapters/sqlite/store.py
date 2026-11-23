@@ -960,6 +960,12 @@ class SQLiteMemoryStore:
     @staticmethod
     def _row_to_memory(row: sqlite3.Row) -> MemoryEntity:
         from ...core.model import MemoryType, SourceType
+        stored_version = int(row["normalization_version"])
+        if stored_version != NORMALIZATION_VERSION:
+            raise StorageError(
+                f"memory {row['id']} uses normalization version {stored_version}; "
+                f"expected {NORMALIZATION_VERSION}"
+            )
         return MemoryEntity(
             id=row["id"], scope_id=row["scope_id"], subject_id=row["subject_id"],
             memory_type=MemoryType(row["memory_type"]), content=row["content"],

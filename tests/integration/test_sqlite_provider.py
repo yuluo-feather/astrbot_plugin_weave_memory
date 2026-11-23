@@ -14,6 +14,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     Conflict,
     IndexUnavailable,
     NotFound,
+    StorageError,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     AdminSource,
@@ -565,3 +566,13 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
         db.rollback_to_v05()
     assert db.schema_version() == 4
     db.close()
+
+
+def test_read_rejects_unknown_normalization_version(sqlite_stack):
+    db, store, _, scope = sqlite_stack
+    memory = add_memory(store, scope)
+    db.connection.execute(
+        "UPDATE memories SET normalization_version=999 WHERE id=?", (memory.id,),
+    )
+    with pytest.raises(StorageError, match="normalization version 999"):
+        store.get(memory.id, scope_id=scope.id, subject_id="user-1")

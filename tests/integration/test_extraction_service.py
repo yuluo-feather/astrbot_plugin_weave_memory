@@ -29,6 +29,9 @@ from data.plugins.astrbot_plugin_weave_memory.app.extraction_service import (
 from data.plugins.astrbot_plugin_weave_memory.app.lifecycle_service import (
     LifecycleService,
 )
+from data.plugins.astrbot_plugin_weave_memory.app.memory_service import (
+    MemoryApplicationService,
+)
 from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
     WriteCoordinator,
 )
@@ -364,3 +367,21 @@ def test_candidate_write_rechecks_consent_gate(extraction_stack, monkeypatch):
     job = _submit(stack, "我喜欢黑咖啡")
     assert job is not None and job.status is ExtractionJobStatus.FAILED
     assert stack["service"].list_candidates(stack["scope"])[1] == 0
+
+
+def test_explicit_save_rejects_same_content_candidate_with_friendly_message(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡"),
+    )
+    _submit(stack, "我喜欢黑咖啡")
+    app = MemoryApplicationService(
+        stack["store"], stack["coordinator"], stack["consent"],
+        stack["service"]._lifecycle, stack["clock"], stack["ids"],
+    )
+    with pytest.raises(Conflict, match="已存在同内容候选记忆"):
+        asyncio.run(app.save_explicit(
+            stack["scope"], "用户喜欢黑咖啡", operator_id="u1",
+            memory_type=MemoryType.PREFERENCE,
+        ))
