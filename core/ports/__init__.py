@@ -125,7 +125,8 @@ class GroupScopeStore(ScopeStore, Protocol):
 
 
 class ConsentRepository(Protocol):
-    def record(self, consent: MemoryConsent) -> None: ...
+    def record(self, consent: MemoryConsent,
+               *, allow_disabled_grant: bool = False) -> None: ...
     def current(self, *, subject_id: str, scope_id: str,
                 consent_type: str) -> MemoryConsent | None: ...
     def is_granted(self, *, subject_id: str, scope_id: str,

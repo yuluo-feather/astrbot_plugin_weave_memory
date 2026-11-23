@@ -264,6 +264,37 @@ def test_group_clear_then_destroy_rolls_back_and_remigrates(group_stack):
     assert db.schema_version() == 5
 
 
+def test_group_enable_does_not_enable_when_grant_fails(group_stack, monkeypatch):
+    identity = group_identity()
+    scope, decision = make_scope(group_stack, identity)
+
+    def fail(*args, **kwargs):
+        raise StorageError("consent write failed")
+
+    monkeypatch.setattr(group_stack["consent"], "grant", fail)
+    with pytest.raises(StorageError):
+        asyncio.run(group_stack["lifecycle"].enable(
+            scope, decision, operator_id="admin-1",
+        ))
+    assert group_stack["store"].is_scope_enabled(scope.id) is False
+
+
+def test_group_multiple_admins_can_manage(group_stack):
+    group_stack["admins"].admin_ids = ("admin-1", "admin-2")
+    identity = group_identity()
+    first = group_stack["scopes"].admin_decision(identity, "admin-1")
+    second = group_stack["scopes"].admin_decision(identity, "admin-2")
+    assert first.allowed is True
+    assert second.allowed is True
+    scope = group_stack["scopes"].ensure_scope(identity, first)
+    asyncio.run(group_stack["lifecycle"].enable(scope, first, operator_id="admin-1"))
+    asyncio.run(group_stack["memories"].save_group(
+        scope, "管理员二写入", group_label="topic",
+        operator_id="admin-2", decision=second,
+    ))
+    assert group_stack["scopes"].admin_decision(identity, "member").allowed is False
+
+
 def test_group_member_cannot_manage_or_write(group_stack):
     identity = group_identity()
     scopes = group_stack["scopes"]

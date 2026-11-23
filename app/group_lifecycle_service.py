@@ -72,17 +72,18 @@ class GroupLifecycleService:
                 scope.id, decision.admin_ids, decision.source,
             ),
         )
+        # Contract order: grant consent first; if GRANT fails, the scope stays
+        # disabled. A later enable failure keeps GRANT but leaves the scope
+        # disabled, retryable with the same operation ID.
+        self._consent.grant(
+            scope, GroupConsentType.GROUP_MEMORY, operator_id=operator_id,
+            allow_disabled_scope=True,
+        )
         changed = self._coordinator.write_metadata(
             lambda: self._store.enable_scope(
                 scope.id, operation_id=op, operator_type=OperatorType.ADMIN,
                 operator_id=operator_id, occurred_at=self._clock.now(),
             ),
-        )
-        # Consent may only be granted to an enabled scope; this runs after the
-        # enable write. No await sits between the two, so readers cannot observe
-        # an enabled group without consent on the owning event loop.
-        self._consent.grant(
-            scope, GroupConsentType.GROUP_MEMORY, operator_id=operator_id,
         )
         return GroupLifecycleReceipt(op, changed)
 

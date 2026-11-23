@@ -28,7 +28,8 @@ class ConsentService:
         self._ids = ids
 
     def grant(self, scope: Scope, consent_type: ConsentType, *,
-              operator_id: str, source: str = "explicit_user_command") -> MemoryConsent:
+              operator_id: str, source: str = "explicit_user_command",
+              allow_disabled_scope: bool = False) -> MemoryConsent:
         now = self._clock.now()
         consent = MemoryConsent(
             id=self._ids.new_id("consent"), subject_id=scope.identity.subject_id,
@@ -36,7 +37,11 @@ class ConsentService:
             state=ConsentState.GRANTED, source=source, granted_at=now,
             metadata={"operator_id": operator_id},
         )
-        self._coordinator.write_metadata(lambda: self._repository.record(consent))
+        self._coordinator.write_metadata(
+            lambda: self._repository.record(
+                consent, allow_disabled_grant=allow_disabled_scope,
+            ),
+        )
         return consent
 
     def ensure_auto_enrolled(self, scope: Scope, consent_type: ConsentType, *,

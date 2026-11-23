@@ -14,7 +14,8 @@ class SQLiteConsentStore:
     def __init__(self, database: SQLiteDatabase) -> None:
         self.db = database
 
-    def record(self, consent: MemoryConsent) -> None:
+    def record(self, consent: MemoryConsent,
+               *, allow_disabled_grant: bool = False) -> None:
         try:
             with self.db.transaction() as conn:
                 scope = conn.execute(
@@ -25,7 +26,11 @@ class SQLiteConsentStore:
                     raise NotFound("consent scope not found")
                 if scope["subject_id"] != consent.subject_id:
                     raise Conflict("consent subject does not match scope identity")
-                if consent.state is ConsentState.GRANTED and scope["is_enabled"] != 1:
+                if (
+                    consent.state is ConsentState.GRANTED
+                    and scope["is_enabled"] != 1
+                    and not allow_disabled_grant
+                ):
                     raise AuthorizationDenied("cannot grant consent to a disabled scope")
                 existing = conn.execute(
                     "SELECT * FROM memory_consents WHERE id=?", (consent.id,)
