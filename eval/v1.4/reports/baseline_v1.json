@@ -3,7 +3,7 @@
   "project_version": "V1.4",
   "dataset_name": "weave-memory-v1.4-golden",
   "dataset_version": "1.0.0",
-  "dataset_sha256": "358f6ba38245fcaac74cba3901e1221058368e8ccadd96ae3e245ec050f82147",
+  "dataset_sha256": "1601b8c27989f238a2f4e95e49a1e250534ad6d5636a12935f4ca3ae6479894c",
   "split": "all",
   "parameter_experiment": false,
   "parameters": {
@@ -22,7 +22,7 @@
     "python": "3.12.10",
     "platform": "Windows-11-10.0.26300-SP0",
     "sqlite": "3.49.1",
-    "runtime_source_commit": "bde39d499dae7b5506798529b5ba8e87a6adb695",
+    "runtime_source_commit": "21b83806071e01432cf3074645ccca32289b3ed8",
     "fixed_clock": "2026-11-23T12:00:00+00:00",
     "random_seed": 1401
   },
@@ -61,8 +61,8 @@
       "retrieval_latency_ms": {
         "warmup_runs_per_query": 2,
         "measured_runs_per_query": 30,
-        "p50": 0.35565003054216504,
-        "p95": 0.7351950102020051,
+        "p50": 0.3627000260166824,
+        "p95": 0.7022849924396724,
         "measurement_count": 750
       },
       "wrong_scope_count": 0,
@@ -110,8 +110,8 @@
       "retrieval_latency_ms": {
         "warmup_runs_per_query": 2,
         "measured_runs_per_query": 30,
-        "p50": 0.4056000034324825,
-        "p95": 0.7426950673107058,
+        "p50": 0.402199977543205,
+        "p95": 0.8237699861638248,
         "measurement_count": 750
       },
       "wrong_scope_count": 0,

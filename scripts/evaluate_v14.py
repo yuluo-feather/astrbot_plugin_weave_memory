@@ -112,7 +112,8 @@ def parse_time(value: str | None) -> datetime | None:
 def load_dataset(path: Path) -> tuple[dict[str, Any], str]:
     raw = path.read_bytes()
     dataset = json.loads(raw)
-    digest = hashlib.sha256(raw).hexdigest()
+    # Normalize CRLF so the fingerprint is independent of the checkout's line endings.
+    digest = hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
     validate_dataset(dataset)
     return dataset, digest
 
@@ -184,7 +185,13 @@ def validate_dataset(dataset: dict[str, Any]) -> None:
         for memory_id in item["excluded_memory_ids"]:
             fixture = memory_by_id[memory_id]
             fixture_scope = dataset["scopes"][fixture["scope_key"]]
-            expired = fixture.get("valid_until") and parse_time(fixture["valid_until"]) <= parse_time(dataset["fixed_clock"])
+            valid_until = parse_time(fixture.get("valid_until"))
+            fixed_clock = parse_time(dataset["fixed_clock"])
+            expired = (
+                valid_until is not None
+                and fixed_clock is not None
+                and valid_until <= fixed_clock
+            )
             if fixture_scope["scope_id"] != sample_scope["scope_id"] or not (fixture["status"] == "DELETED" or expired):
                 raise ValueError(f"sample {item['sample_id']} excluded memory is not expired/deleted in-scope")
         if item["category"] == "cross_scope" and (not item["expected_memory_ids"] or not item["distractor_memory_ids"]):
