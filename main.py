@@ -274,10 +274,10 @@ class WeaveMemoryPlugin(Star):
             try:
                 registered = management_api.register(self.context)
             except Exception as exc:  # noqa: BLE001 - API must not block plugin startup
-                logger.warning(f"织忆只读管理 API 注册失败：{type(exc).__name__}")
+                logger.warning(f"织忆管理 API 注册失败：{type(exc).__name__}")
             else:
                 if registered:
-                    logger.info("织忆只读管理 API 已注册。")
+                    logger.info("织忆管理 API 已注册。")
             self._ready = True
         except (OSError, RuntimeError, ValueError, StorageError, IndexUnavailable) as exc:
             logger.error(f"织忆初始化失败，记忆功能暂不可用：{type(exc).__name__}")
