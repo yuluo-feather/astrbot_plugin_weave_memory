@@ -6,10 +6,10 @@
     "hint": "开启后，新用户或没有授权记录的私聊用户首次对话会自动登记个人记忆，并收到一次告知；用户可用 /织忆 关闭 停止。关闭后回到逐用户 /织忆 授权。"
   },
   "agent_write_enabled": {
-    "description": "允许模型工具写入个人记忆（实验性，默认关闭）",
+    "description": "允许模型工具写入个人记忆（默认开启，可关闭）",
     "type": "bool",
-    "default": false,
-    "hint": "默认关闭，避免模型把闲聊或临时情绪写成长期记忆。开启前应先补齐确定性触发、候选确认与每日限额；宿主若为人格设置了工具白名单，还需把 weave_memory_remember 加入白名单（AstrBot 只注入白名单工具）。"
+    "default": true,
+    "hint": "默认开启：用户明确提到长期偏好、背景或目标时，模型可保存一条记忆；可在配置关闭。确定性触发、候选确认与每日限额待后续补齐。宿主若为人格设置了工具白名单，必须把 weave_memory_remember 加入白名单（AstrBot 只注入白名单工具）。"
   },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",

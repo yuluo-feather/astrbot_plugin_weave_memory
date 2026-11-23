@@ -498,6 +498,20 @@ def test_plugin_agent_tool_saves_agent_source_and_respects_opt_out(monkeypatch, 
     asyncio.run(plugin.terminate())
 
 
+def test_plugin_agent_write_enabled_by_default(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    saved = asyncio.run(collect(plugin.memory_remember_tool(
+        FakeEvent(message="记住我对花生过敏"), "我对花生过敏", "PREFERENCE",
+    )))[0]
+    assert "已保存记忆" in saved
+    assert plugin._database.connection.execute(
+        "SELECT count(*) FROM memories",
+    ).fetchone()[0] == 1
+    asyncio.run(plugin.terminate())
+
+
 def test_plugin_agent_write_can_be_disabled(monkeypatch, tmp_path):
     import asyncio
 

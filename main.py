@@ -296,8 +296,8 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("关闭", exc))
 
-    # 默认关闭：确定性触发、候选确认与每日限额完成前，避免模型把闲聊或临时情绪写成
-    # ACTIVE 记忆。开启时还须把本工具加入宿主 persona 的工具白名单（AstrBot 只注入白名单工具）。
+    # 默认开启（可在配置关闭）。确定性触发、候选确认与每日限额留到后续版本增强。
+    # 宿主 persona 设置工具白名单时须加入本工具，否则 AstrBot 不会把它发给模型。
     @filter.llm_tool(name="weave_memory_remember")
     async def memory_remember_tool(self, event: AstrMessageEvent,
                                    content: str = "", memory_type: str = "FACT"):
@@ -311,7 +311,7 @@ class WeaveMemoryPlugin(Star):
             content(string): 要保存的事实。
             memory_type(string): PREFERENCE、FACT 或 EVENT，默认 FACT。
         """
-        if not self._config_bool("agent_write_enabled", False):
+        if not self._config_bool("agent_write_enabled", True):
             yield "未保存：织忆的模型记忆写入已关闭。"
             return
         try:

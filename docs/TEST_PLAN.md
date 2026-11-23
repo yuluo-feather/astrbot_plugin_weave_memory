@@ -181,7 +181,7 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - `auto_enroll=true` 时无 consent 记录的用户首次私聊自动 GRANTED，只发一次告知；第二次请求不再发送。
 - `auto_enroll=false` 时注入不创建 consent；显式 `/织忆 授权` 后恢复保存/检索/注入。
 - 已有 `REVOKED` 时 auto_enroll 不改写；撤销后注入与 agent 工具均拒绝。
-- agent 工具写入 `source_type=AGENT`；撤销/关闭后拒绝，群聊拒绝；`agent_write_enabled` 默认 false，测试中显式开启。
+- agent 工具写入 `source_type=AGENT`；撤销/关闭后拒绝，群聊拒绝；`agent_write_enabled` 默认 true，另有用例显式关闭验证拒绝。
 - 个人导出只含当前 scope 的 ACTIVE 记忆；删除后不出现；撤销后拒绝。
 - 群导出需管理员；disabled/跨群拒绝；只导当前群。
 - `memory_operations` 记录 `result=SUCCESS` 且不含正文；删除/清空/关闭后注入不复活。
