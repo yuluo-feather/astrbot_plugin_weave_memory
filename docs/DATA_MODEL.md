@@ -291,3 +291,48 @@ V1.0 该表没有 `scope_id` 列，也没有应用层写入/查询 API；跨 Sco
 - v8→v7 回滚守卫：`import_jobs` 为空；`DROP TABLE import_jobs` 与 evidence_ref 索引，不删除记忆。
 - 链式回滚在任何改动前统一预检，守卫失败时保持原 schema 版本。
 
+
+## 18. V1.8 谱系账本与备份恢复数据模型（ADR-0018）
+
+### memories 谱系列（schema v9）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `db_lineage_id` | TEXT NOT NULL | 行所属创建谱系；与 `memory_lineage_meta` 关联 |
+| `creation_seq` | INTEGER NOT NULL | 谱系内单调序号；唯一键 `(db_lineage_id, creation_seq)` |
+
+- `memory_meta.db_lineage_id`：当前新行使用的谱系；空库/存量库迁移时生成 32 位十六进制 ID。
+- `memory_lineage_meta(db_lineage_id PK, high_watermark)`：分配高水位，只增不减；下一次分配为 `high_watermark + 1`。
+- 所有创建路径在写租约内分配；恢复保留备份中的谱系与序号，并按最终表与 ledger 边界推进高水位。
+- `memories` 由迁移 `009_lineage_ledger.sql` 重建并回填：存量行按 `(created_at, id)` 赋 1..N；空库高水位为 0。
+- 回滚为特征级：保留列、索引与分配器，移除 v9 schema 标记；运行时 `ledger_first_enabled=false` 关闭 ledger-first 与备份/恢复。
+
+### memory_ledger.sqlite3（独立文件，不进备份包）
+
+| 列 | 说明 |
+|---|---|
+| `event_id` | 稳定 ID；intent/committed 共用 |
+| `state` | `intent` / `committed`；主键 `(event_id, state)` |
+| `seq` | 全局单调序号，唯一 |
+| `event_type` | `delete_memory` / `clear_scope` / `consent_change` / `remove_attachment` / `destroy_scope` |
+| `scope_id` / `subject_id` / `memory_id` | 定位字段 |
+| `source` | user/admin/system |
+| `occurred_at` | UTC ISO-8601 |
+| `payload_json` | 类型相关字段（谱系/序号/边界/consent/附件/备份身份） |
+
+- `ledger_meta` 持久化 `ledger_id`、`last_seq`、`earliest_retained_seq`、`base_seq`、`end_seq`。
+- 轮转把活动文件移入 `memory_ledger_segments/memory_ledger_<base>_<end>.sqlite3`；seq 全局连续，事件不裁剪；恢复读取全部分段。
+
+### 备份产物
+
+`<data_dir>/backups/v1.8/<utc-timestamp>-<db_lineage_id>/`：
+
+| 文件 | 内容 |
+|---|---|
+| `main.sqlite3` | 主库在线快照（全部主库表，含 tags/relations、谱系与序号） |
+| `sidecar.json` | manifest schema v1：格式、schema 版本、lineage/ledger 身份、水位、sha256/size、分表行数 |
+| `config.json` | 脱敏配置；token/API key/密码/密钥类键值替换为 `***` |
+| `README.txt` | 备份说明与恢复命令 |
+
+- `creation_seq_at_backup` 是当前谱系分配高水位；`lineage_high_watermarks` 是每个谱系的持久高水位。
+- 账本、群销毁备份与 `restore_snapshots/` 不进入恢复包。

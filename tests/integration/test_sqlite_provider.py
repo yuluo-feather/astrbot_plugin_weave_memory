@@ -58,9 +58,11 @@ def seed_v4_memory_row(db, *, scope_id: str, subject_id: str, memory_id: str,
             (id, scope_id, subject_id, memory_type, content, normalized_content,
              normalization_version, status, source_type, current_revision,
              valid_from, valid_until, superseded_by, created_at, updated_at,
-             last_accessed_at, metadata_json)
+             last_accessed_at, metadata_json, db_lineage_id, creation_seq)
             VALUES (?, ?, ?, 'PREFERENCE', ?, ?, 1, 'ACTIVE', 'EXPLICIT', 1,
-                    NULL, NULL, NULL, ?, ?, NULL, '{}')""",
+                    NULL, NULL, NULL, ?, ?, NULL, '{}',
+                    (SELECT value FROM memory_meta WHERE key='db_lineage_id'),
+                    (SELECT COALESCE(MAX(creation_seq), 0) + 1 FROM memories))""",
             (memory_id, scope_id, subject_id, content, normalize_content(content),
              _STAMP, _STAMP),
         )
@@ -212,14 +214,14 @@ def test_group_backup_destroy_and_rollback_path(tmp_path):
     db.rollback_to_v10()
     assert db.schema_version() == 4
     db.migrate()
-    assert db.schema_version() == 8
+    assert db.schema_version() == 9
     db.close()
 
 
 def test_migration_is_idempotent_and_creates_required_tables(sqlite_stack):
     db, _, _, _ = sqlite_stack
     assert db.connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
-    assert db.schema_version() == 8
+    assert db.schema_version() == 9
     db.migrate()
     tables = {row[0] for row in db.connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
@@ -332,7 +334,7 @@ def test_schema_can_roll_back_to_empty_and_reapply(tmp_path):
     db.rollback_to_zero()
     assert db.connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memories'").fetchone()[0] == 0
     db.migrate()
-    assert db.schema_version() == 8
+    assert db.schema_version() == 9
     db.close()
 
 
@@ -483,7 +485,7 @@ def test_v3_database_upgrades_to_v5_group_scopes(tmp_path):
     db.rollback_to_v05()
     assert db.schema_version() == 3
     db.migrate()
-    assert db.schema_version() == 8
+    assert db.schema_version() == 9
     assert db.connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone() is not None
@@ -510,7 +512,7 @@ def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
     assert backup_path is not None
     assert backup_path.exists()
     assert backup_path.parent.name == "migration_backups"
-    assert upgraded.schema_version() == 8
+    assert upgraded.schema_version() == 9
     assert upgraded.connection.execute(
         "SELECT content FROM memories WHERE id='mem-backup'",
     ).fetchone()[0] == "迁移前必须保留"
@@ -593,7 +595,7 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
         "SELECT content FROM memories WHERE id=?", (existing.id,),
     ).fetchone()[0] == "回滚后保留"
     db.migrate()
-    assert db.schema_version() == 8
+    assert db.schema_version() == 9
     assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
     db.rollback_to_v5()
     db.rollback_to_v10()

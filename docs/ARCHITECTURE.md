@@ -131,3 +131,13 @@ V0 目标为单进程、单实例、SQLite。写操作由应用层统一协调�
 - `adapters/astrbot/web_api.py`：在只读管理 API 上增加 `GET /v1/export` 与 `POST /v1/import`，使用独立的管理员 fail-closed 鉴权。
 - V1.7 不实现完整备份恢复（V1.8）、向量/混合检索（V2.0）与 WebUI。
 
+
+## 13. V1.8 账本与备份恢复边界（ADR-0018）
+
+- `core/ports`：新增 `LedgerStore`、`LedgerReplayStore`、`BackupPort`；事件与状态值对象在 `core/model`，不依赖 SQLite 或宿主。
+- `adapters/sqlite/ledger.py`：独立账本连接、intent/committed 追加、pending 查询、分段轮转与覆盖校验。
+- `app/ledger_service.py`：ledger-first 编排与 pending 重放；`WriteCoordinator` 在写租约内调用。
+- `adapters/sqlite/store.py`：`creation_seq` 分配、谱系查询、谓词删除/清空、附件删除与审计墓碑。
+- `adapters/sqlite/backup.py`：备份产物、水位、恢复三模式、合并过滤器、恢复前快照与 journal；app 层只依赖 `BackupPort`。
+- `adapters/astrbot/web_api.py` 与 `backup_commands.py`：维护端点与私聊命令只做参数/鉴权转换。
+- 备份/恢复在写租约内同步完成；读路径不新增缓存。V1.8 不做多实例、PostgreSQL、WebUI 或跨平台备份。

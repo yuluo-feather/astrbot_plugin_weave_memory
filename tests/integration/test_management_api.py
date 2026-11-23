@@ -74,7 +74,7 @@ class FakeService:
 
     def maintenance_status(self):
         self.calls.append(("maintenance_status", {}))
-        return {"schema_version": 8}
+        return {"schema_version": 9}
 
     def export_group_payload(self, **kwargs):
         self.calls.append(("export_group_payload", kwargs))
@@ -83,6 +83,18 @@ class FakeService:
     async def import_group_payload(self, **kwargs):
         self.calls.append(("import_group_payload", kwargs))
         return {"imported": 0, "total": 0}
+
+    def create_backup(self):
+        self.calls.append(("create_backup", {}))
+        return {"backup_id": "b1"}
+
+    def restore_backup(self, **kwargs):
+        self.calls.append(("restore_backup", kwargs))
+        return {"backup_id": kwargs.get("backup_id"), "dry_run": kwargs.get("dry_run")}
+
+    def reindex(self):
+        self.calls.append(("reindex", {}))
+        return {"rebuilt": True, "documents": 1}
 
 
 def make_api(*, username="admin", query=None, body=None,
@@ -100,7 +112,7 @@ def test_register_all_management_routes():
     api, _ = make_api()
     context = FakeContext()
     assert api.register(context) is True
-    assert len(context.routes) == 11
+    assert len(context.routes) == 14
     routes = {route: methods for route, _, methods, _ in context.routes}
     assert routes["/astrbot_plugin_weave_memory/v1/overview"] == ["GET"]
     assert routes["/astrbot_plugin_weave_memory/v1/retrieval/debug"] == ["POST"]
@@ -238,6 +250,67 @@ def test_retrieval_debug_body_and_personal_rejection():
 def test_settings_and_maintenance_are_read_only():
     api, service = make_api()
     assert asyncio.run(api.h_settings())["data"] == {"candidate_ttl_days": 7}
-    assert asyncio.run(api.h_maintenance_status())["data"] == {"schema_version": 8}
+    assert asyncio.run(api.h_maintenance_status())["data"] == {"schema_version": 9}
     methods = {name for name, _ in service.calls}
     assert methods == {"settings", "maintenance_status"}
+
+
+def test_maintenance_backup_requires_admin_and_confirm():
+    api, service = make_api(username="admin", body={"confirm": True})
+    payload, status = asyncio.run(api.h_maintenance_backup())
+    assert status == 403
+    assert service.calls == []
+
+    api, service = make_api(
+        username="admin", admin_usernames=("admin",), body={},
+    )
+    payload, status = asyncio.run(api.h_maintenance_backup())
+    assert status == 400
+    assert payload["error"] == "ValidationError"
+
+    api, service = make_api(
+        username="admin", admin_usernames=("admin",), body={"confirm": True},
+    )
+    assert asyncio.run(api.h_maintenance_backup())["status"] == "ok"
+    assert service.calls == [("create_backup", {})]
+
+
+def test_maintenance_restore_dry_run_and_confirm():
+    api, service = make_api(
+        username="admin", admin_usernames=("admin",),
+        body={"backup_id": "b1", "dry_run": True},
+    )
+    result = asyncio.run(api.h_maintenance_restore())
+    assert result["status"] == "ok"
+    assert service.calls[-1] == ("restore_backup", {
+        "backup_id": "b1", "mode": "merge", "dry_run": True, "confirm": False,
+    })
+
+    api, service = make_api(
+        username="admin", admin_usernames=("admin",),
+        body={"backup_id": "b1"},
+    )
+    payload, status = asyncio.run(api.h_maintenance_restore())
+    assert status == 400
+
+    api, service = make_api(
+        username="admin", admin_usernames=("admin",),
+        body={"backup_id": "b1", "mode": "revert", "confirm": True},
+    )
+    assert asyncio.run(api.h_maintenance_restore())["status"] == "ok"
+    assert service.calls[-1][1]["mode"] == "revert"
+    assert service.calls[-1][1]["confirm"] is True
+
+
+def test_maintenance_reindex_requires_confirm():
+    api, service = make_api(username="admin", admin_usernames=("admin",))
+    payload, status = asyncio.run(api.h_maintenance_reindex())
+    assert status == 400
+    assert service.calls == []
+
+    api, service = make_api(
+        username="admin", admin_usernames=("admin",), body={"confirm": True},
+    )
+    assert asyncio.run(api.h_maintenance_reindex())["data"] == {
+        "rebuilt": True, "documents": 1,
+    }

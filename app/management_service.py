@@ -27,7 +27,7 @@ from ..core.model import (
     ScopeType,
     SubjectType,
 )
-from ..core.ports import ManagementRepository, MemoryStore, SearchIndex
+from ..core.ports import BackupPort, ManagementRepository, MemoryStore, SearchIndex
 from .consent_service import ConsentService, GroupConsentType
 from .group_memory_service import GroupMemoryService
 from .group_recall_service import (
@@ -77,7 +77,8 @@ class ManagementService:
                  group_recall: GroupRecallService, consent: ConsentService,
                  imports: ImportService, group_memories: GroupMemoryService,
                  settings: Mapping[str, object], group_max_tokens: int = 192,
-                 group_max_memories: int = 2) -> None:
+                 group_max_memories: int = 2,
+                 backup: BackupPort | None = None) -> None:
         self._repository = repository
         self._store = store
         self._index = index
@@ -89,6 +90,7 @@ class ManagementService:
         self._settings = dict(settings)
         self._group_max_tokens = group_max_tokens
         self._group_max_memories = group_max_memories
+        self._backup = backup
 
     def _index_status(self) -> dict[str, object]:
         try:
@@ -322,3 +324,32 @@ class ManagementService:
             dry_run=dry_run is True,
         )
         return self._import_summary(result)
+
+    def create_backup(self) -> dict[str, object]:
+        return self._require_backup().create_backup()
+
+    def list_backups(self) -> dict[str, object]:
+        return {"items": self._require_backup().list_backups()}
+
+    def restore_backup(self, *, backup_id: object, mode: object = "merge",
+                       dry_run: object = False,
+                       confirm: object = False) -> dict[str, object]:
+        backup = self._require_backup()
+        backup_text = _required_text(backup_id, "backup_id")
+        mode_text = str(mode or "merge")
+        return backup.restore(
+            backup_text, mode=mode_text, dry_run=dry_run is True,
+            confirm=confirm is True,
+        )
+
+    def reindex(self) -> dict[str, object]:
+        try:
+            count = self._index.rebuild()
+        except IndexUnavailable as exc:
+            raise StorageError("could not rebuild the search index") from exc
+        return {"rebuilt": True, "documents": count}
+
+    def _require_backup(self) -> BackupPort:
+        if self._backup is None:
+            raise StorageError("backup service is not available")
+        return self._backup

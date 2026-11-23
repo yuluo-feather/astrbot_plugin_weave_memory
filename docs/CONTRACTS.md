@@ -442,3 +442,34 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - v8→v7 回滚守卫：`import_jobs` 为空；回滚不删除任何记忆。
 - 链式回滚在改动前统一预检全部守卫，守卫拒绝时数据库保持原版本。
 
+
+## 16. V1.8 ledger-first 与备份恢复契约（ADR-0018）
+
+### ledger-first
+
+- 所有 delete/clear/consent/remove_attachment/destroy_scope 先以 `synchronous=FULL` 追加 ledger `intent`，再执行主库变更，提交后追加 `committed`；主库失败时 intent 保持 pending，启动/备份前重放。
+- `delete_memory` 按 `(db_lineage_id, memory_id, creation_seq)` 幂等删除；事件缺少任一项 fail closed。
+- `clear_scope` 在写租约内读取每个谱系的 `memory_lineage_meta.high_watermark`，payload 记录 `lineage_boundaries`；删除按 `scope_id + db_lineage_id + creation_seq <= boundary`。
+- `consent_change` 统一记录 `consent_type`、`old_state`、`new_state`、`source`；恢复按 seq 取最新状态。
+- `remove_attachment` 记录 `attachment_type`、`memory_id`、`db_lineage_id`、`creation_seq`、`attachment_key`；恢复时排除对应 source/tag/relation。
+- `destroy_scope` 记录 `scope_id`、`backup_mode`、备份路径/哈希与 operation ID；恢复时排除该 scope 的全部行。
+
+### 备份
+
+- 产物布局与 manifest schema 见 `DATA_MODEL` §18；账本不进备份包。
+- 备份在写租约内 drain → 快照 → 采集水位；无法取得租约或 drain 失败则中止。
+- 保留默认最近 5 份且 30 天，不删除最新一份。
+
+### 恢复
+
+- 模式：`merge`（默认，保新合并）、`revert`（同 ID 覆盖）、`disaster-rebuild`（空目标 + 新当前谱系）。
+- 校验：备份哈希/schema、`ledger_id`、分段连续与 seq 覆盖；`merge`/`revert` 要求当前 `db_lineage_id` 等于备份；任一失败 fail closed。
+- 先合并/覆盖全部表，再按 `seq > ledger_seq_at_backup` 重放排除；被排除的行在合并阶段即跳过。
+- 恢复前快照 + 原子 `restore_journal.json`；启动先重做未完成 journal，损坏/缺失拒绝启动。
+- 恢复后重建 FTS、推进高水位、清理导入任务中的失效 memory ID。
+
+### 入口
+
+- 命令：`/织忆 备份 [列表]`、`/织忆 恢复 <备份ID> [merge|revert|disaster-rebuild] 确认`（私聊；无“确认”即 dry-run）。
+- 管理 API：`POST /v1/maintenance/backup|restore|reindex`；要求非空 `api_admin_usernames` 且 `confirm=true`。
+- 配置：`ledger_first_enabled`（默认 true）、`ledger_rotate_events`（默认 0）、`backup_keep_last`（5）、`backup_retention_days`（30）。

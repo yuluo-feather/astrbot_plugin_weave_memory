@@ -286,9 +286,11 @@ def _seed_v6_candidate(db, *, scope_id: str = "scope-v6",
             (id, scope_id, subject_id, memory_type, content, normalized_content,
              normalization_version, status, source_type, current_revision,
              valid_from, valid_until, superseded_by, created_at, updated_at,
-             last_accessed_at, metadata_json)
+             last_accessed_at, metadata_json, db_lineage_id, creation_seq)
             VALUES (?, ?, ?, 'PREFERENCE', ?, ?, 1, 'CANDIDATE', 'INFERRED', 1,
-                    NULL, NULL, NULL, ?, ?, NULL, '{}')""",
+                    NULL, NULL, NULL, ?, ?, NULL, '{}',
+                    (SELECT value FROM memory_meta WHERE key='db_lineage_id'),
+                    (SELECT COALESCE(MAX(creation_seq), 0) + 1 FROM memories))""",
             (memory_id, scope_id, subject_id, content,
              normalize_content(content), _STAMP, _STAMP),
         )
@@ -301,7 +303,7 @@ def test_v7_migration_backfills_candidate_expiry(tmp_path):
     assert db.schema_version() == 6
     _seed_v6_candidate(db)
     db.migrate()
-    assert db.schema_version() == 8
+    assert db.schema_version() == 9
     store = SQLiteMemoryStore(db)
     memory = store.get("mem-v6", scope_id="scope-v6", subject_id="u6")
     assert memory.status is MemoryStatus.CANDIDATE
@@ -317,7 +319,7 @@ def test_v7_rollback_requires_no_candidates(tmp_path):
     db.migrate()
     with pytest.raises(StorageError):
         db.rollback_to_v6()
-    assert db.schema_version() == 8
+    assert db.schema_version() == 9
     db.connection.execute("DELETE FROM memories WHERE id='mem-v6'")
     db.rollback_to_v6()
     assert db.schema_version() == 6
@@ -326,5 +328,5 @@ def test_v7_rollback_requires_no_candidates(tmp_path):
     }
     assert "candidate_expires_at" not in columns
     db.migrate()
-    assert db.schema_version() == 8
+    assert db.schema_version() == 9
     db.close()

@@ -47,7 +47,7 @@
 - 🧾 **更新有版本号**：`/织忆 更新` 需要同时提供记忆 ID 与当前 revision，版本不匹配就拒绝覆盖，不静默合并。
 - 🧹 **删除是真的删**：删除/清空先写不含正文的墓碑审计，再物理删除正文与关联数据；应用连接启用 `secure_delete`，并在索引健康后执行 checkpoint + VACUUM。
 - 🛡 **故障隔离**：索引、存储或注入链路出问题时不阻塞宿主聊天；注入失败按「这一轮没有记忆」处理，正文不会因此丢失。
-- 🚧 **边界明确**：后台自动提取仍只产候选，不会自动变成用户事实。V1.7 已提供导入导出、dry-run、断点续跑与回滚；WebUI/向量检索仍留给后续版本。
+- 🚧 **边界明确**：后台自动提取仍只产候选，不会自动变成用户事实。V1.7 已提供导入导出、dry-run、断点续跑与回滚；V1.8 已提供 ledger-first 删除/清空与可回滚备份恢复；WebUI/向量检索仍留给后续版本。
 - 🧾 **检索调试不落原文**：日志记录查询哈希、scope、候选 ID、BM25 分数、过滤原因、最终注入 ID 与 Token 估算，不记录查询原文或记忆正文。
 
 ## 🗂 命令手册
@@ -79,6 +79,8 @@
 | 🧪 提取状态 | `/织忆 提取 状态` | 查看有效授权、缺失条件、提取任务计数与待确认候选数 |
 | 🧪 敏感白名单 | `/织忆 提取 敏感 <类别...>` | 允许进入候选的敏感类别；`清空` 恢复默认不保存 |
 | 📝 候选管理 | `/织忆 候选 列表` / `确认 <ID>` / `拒绝 <ID> [原因]` | 候选不参与检索/注入；确认后转 ACTIVE，拒绝记录原因 |
+| 🗃 备份（V1.8） | `/织忆 备份` / `/织忆 备份 列表` | 创建/查看实例级主库快照；备份不含账本，恢复不会复活已删除/撤销授权内容 |
+| ♻️ 恢复（V1.8） | `/织忆 恢复 <备份ID> [merge\|revert\|disaster-rebuild] 确认` | 不带“确认”为 dry-run；旧备份按 ledger 重放排除 |
 | ❓ 帮助 | `/织忆 帮助` | 查看个人记忆命令说明 |
 
 ### 群共享记忆（仅群聊生效，V1.1）
@@ -103,7 +105,7 @@
 
 群保存的类型映射：`topic → FACT`、`agreement / atmosphere → PREFERENCE`、`experience → EVENT`。
 
-## 🧭 管理 API（V1.6 只读 + V1.7 群导入导出）
+## 🧭 管理 API（V1.6 只读 + V1.7 群导入导出 + V1.8 维护）
 
 通过 AstrBot 的 `register_web_api` 注册管理 JSON API，宿主暴露在
 `/api/v1/plugins/extensions/astrbot_plugin_weave_memory/v1/...`（旧版宿主为 `/api/plug/...`）：
@@ -119,9 +121,13 @@
 | `GET /v1/settings`、`GET /v1/maintenance/status` | 只读配置与维护状态 |
 | `GET /v1/export` | V1.7 群导出；`all=1` 附带其他状态元数据 |
 | `POST /v1/import` | V1.7 群导入；body 为 v2 导出 JSON，`dry_run=1` 只预演 |
+| `POST /v1/maintenance/backup` | V1.8 创建实例备份；要求 `confirm=true` |
+| `POST /v1/maintenance/restore` | V1.8 恢复；body `{backup_id, mode, confirm}`，`dry_run=true` 只输出将复活/不会复活清单 |
+| `POST /v1/maintenance/reindex` | V1.8 重建 FTS；要求 `confirm=true` |
 
 - 只读端点要求 dashboard 登录用户名；配置 `api_admin_usernames` 后只允许名单内用户。
-- `GET /v1/export` 与 `POST /v1/import` 是唯一的管理 API 写/读正文入口：必须显式配置非空 `api_admin_usernames` 且用户命中（fail-closed），只支持群作用域，要求群 `enabled=1` 且 `group_memory=GRANTED`；个人 scope 一律拒绝。
+- `GET /v1/export` 与 `POST /v1/import` 是 V1.7 的管理 API 写/读正文入口：必须显式配置非空 `api_admin_usernames` 且用户命中（fail-closed），只支持群作用域，要求群 `enabled=1` 且 `group_memory=GRANTED`；个人 scope 一律拒绝。
+- `POST /v1/maintenance/backup|restore|reindex` 是 V1.8 的实例级维护入口：同样要求非空 `api_admin_usernames` 与 `confirm=true`；备份/恢复在写租约内完成。
 - 群作用域只读端点同样要求 `enabled=1` 且 `group_memory=GRANTED`；个人正文不经 API。
 - 检索调试不返回正文、不更新访问时间、不写诊断；候选确认/拒绝与群开关仍走命令。
 - 部署者带外工具：`python scripts/weave_admin.py candidates|expire-candidates|maintenance-status ...`。
@@ -165,6 +171,10 @@ Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal S
 | `group_max_memories` | int | `2` | 群记忆注入的最大条数。 |
 | `group_candidate_limit` | int | `8` | 群检索候选上限。 |
 | `group_max_active` | int | `200` | 单个群 ACTIVE 记忆软上限；超过后提示管理员清理。V1.1 只告警，不自动淘汰。 |
+| `ledger_first_enabled` | bool | `true` | V1.8 ledger-first 删除/清空/consent/群销毁与备份恢复开关。关闭后回溯到 V1.7 删除语义，备份/恢复同时禁用；schema v9 的谱系与 `creation_seq` 分配保留。 |
+| `ledger_rotate_events` | int | `0` | 账本多少事件后轮转到新分段；0 为不自动轮转。只移动文件，不裁剪事件。 |
+| `backup_keep_last` | int | `5` | 至少保留最近 N 份备份；不删除最新一份。 |
+| `backup_retention_days` | int | `30` | 备份保留天数；与份数条件同时生效。 |
 
 示例（键里的三段依次是平台、平台实例、群 ID）：
 
@@ -226,10 +236,10 @@ python scripts/build_astrbot_plugin.py
 - **身份与授权**：身份键为 `platform + tenant_id + scope_type + scope_external_id + subject_type + subject_id`；先做身份、授权、状态与有效期过滤，再检索、排序和注入，不把跨作用域候选交给上层。
 - **注入不可信文本**：记忆正文按不可信参考文本处理并做转义，不得覆盖系统或开发者指令；注入使用临时 `TextPart`，不修改持久会话历史。
 - **删除与物理擦除**：删除/清空在同一权威事务内写不含正文的最小墓碑审计、标记 FTS dirty 并物理删除正文关联数据；所有应用连接启用 `PRAGMA secure_delete = ON`；索引恢复健康后执行 `wal_checkpoint(TRUNCATE)` → `VACUUM` → `wal_checkpoint(TRUNCATE)`。checkpoint busy 时保留 pending，下次启动重试。该保证以应用自身连接、无其他读快照、checkpoint 成功为条件，不承诺 SSD、操作系统缓存、文件系统空闲块或备份层面的取证级擦除，也不等同于数据库加密。
-- **SQLite schema v8**：V1.0 为 v4（`memory_relations` 预留表），V1.1 升到 v5（群 Scope/admin 字段），V1.5 升到 v6（`extraction_jobs`），V1.6 升到 v7（`memories.candidate_expires_at`），V1.7 升到 v8（`import_jobs` 与 `memory_sources.evidence_ref` 索引）。从任意旧版本升级前，插件会在数据目录的 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移。升级前仍建议自行备份整个插件数据目录。有群数据/候选/提取任务/导入任务时对应回滚会被拒绝；降级前对每个群执行 `群关闭 → 群销毁`（想保留群记忆就不要先做 `群清空`，否则备份只是清空后的快照），或按 `群关闭 → 群清空 → 群销毁` 处理。
+- **SQLite schema v9**：V1.0 为 v4（`memory_relations` 预留表），V1.1 升到 v5（群 Scope/admin 字段），V1.5 升到 v6（`extraction_jobs`），V1.6 升到 v7（`memories.candidate_expires_at`），V1.7 升到 v8（`import_jobs` 与 `memory_sources.evidence_ref` 索引），V1.8 升到 v9（`memories.db_lineage_id` / `creation_seq`、`memory_lineage_meta`）。从任意旧版本升级前，插件会在数据目录的 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移。升级前仍建议自行备份整个插件数据目录。有群数据/候选/提取任务/导入任务时对应回滚会被拒绝；降级前对每个群执行 `群关闭 → 群销毁`（想保留群记忆就不要先做 `群清空`，否则备份只是清空后的快照），或按 `群关闭 → 群清空 → 群销毁` 处理。
 - **群生命周期**：群开启/关闭/清空/销毁均写操作审计；群关闭可逆，个人关闭永久；群销毁必须已经关闭，服务内自动备份并写 sidecar manifest，删除顺序为记忆/关联 → consent 历史 → operations 审计 → scope，提交后先恢复 FTS 再 secure purge。
 - **按作用域导出与导入（V1.7）**：`export_personal` / `export_group` 默认只导当前 scope 的 ACTIVE 记忆，格式为 `weave-memory-export-v2`，带 `export_id` / `source_platform` / `source_memory_id` / `source_revision` 幂等四元组；导入只创建新记忆、走 WriteCoordinator、保留有效期，非 ACTIVE 状态只写不含正文的审计；支持 dry-run、断点续跑与按任务回滚。`memory_operations` 写入 `result=SUCCESS` 与操作元数据，不含正文；注入无缓存，删除/清空/关闭后下一次请求重新检索。
-- **测试与 CI**：本地 `dev`（2026-11-23）完整测试 `305 passed`（Python 3.12.10）；ruff、mypy、`mypy .`、compileall 与插件包构建通过。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
+- **测试与 CI**：本地 `dev`（2026-11-23）完整测试 `332 passed`（Python 3.12.10）；ruff、mypy、`mypy .`、compileall 与插件包构建通过。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
 
 ## 📜 版本与验收
 
@@ -244,6 +254,7 @@ python scripts/build_astrbot_plugin.py
 | V1.5「添线」 | 核心实现：schema v6、分层 consent、单条/批量私聊捕获、敏感前置过滤、候选确认/拒绝、任务恢复与离线指标 harness；默认关闭，真实宿主模型调用与质量采集待补 |
 | V1.6「候线」 | 核心实现：schema v7、候选 TTL/惰性归档、确认/拒绝/过期审计、拒绝默认清正文、只读管理 JSON API 与 `weave_admin` 候选/维护命令；真实宿主管理 API 烟测已通过 |
 | V1.7「接线」 | 核心实现：schema v8、导出格式 v2、导入/导出/回滚/dry-run/断点续跑、群导入导出命令与管理 API 端点；宿主真机导入导出烟测待补 |
+| V1.8「归档」 | 核心实现：schema v9 谱系/序号、独立 ledger-first 删除/清空/consent/群销毁、备份产物与三模式恢复、restore journal、维护 API 与私聊命令；真实宿主备份恢复烟测待补 |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 
 已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响。

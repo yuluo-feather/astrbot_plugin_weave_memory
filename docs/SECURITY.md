@@ -153,3 +153,14 @@ Recall 候选查找与上下文注入之间可能发生 Consent revoke 或 Scope
 - 管理 API 的 `GET /v1/export` 与 `POST /v1/import` 是 V1.6 只读边界外的受控写/读端点：`api_admin_usernames` 为空即拒绝（fail-closed），个人 scope 一律拒绝，群正文不经未授权用户。
 - 导出默认只含 ACTIVE 正文；`all` 的其他状态只含元数据。不导出 DELETED、CANDIDATE 或内部序号。
 
+
+## 15. V1.8 账本与备份恢复安全边界（ADR-0018）
+
+- `memory_ledger.sqlite3` 与主库同目录但独立文件；备份包不包含账本，恢复不覆盖当前账本。
+- 删除/清空/consent/群销毁的意图先落账本；主库失败时保持 pending，不向用户报告“已删除”。
+- 备份配置 `config.json` 递归脱敏：键名含 token/api_key/apikey/password/secret/credential 的值替换为 `***`；不导出账本、群销毁备份或恢复前快照。
+- 恢复要求显式确认；命令仅私聊，管理 API 要求非空 `api_admin_usernames` 白名单且 `confirm=true`。
+- 恢复按 ledger 排除删除/清空/撤销授权/附件删除/群销毁；旧备份不能复活这些内容。V1.8 之前的旧备份缺少 `destroy_scope`/`remove_attachment` 事件，文档显式声明不保证。
+- 备份哈希/schema/`ledger_id`/seq 覆盖任一校验失败即拒绝恢复；journal 损坏或缺失 fail closed，不产生半恢复可读窗口。
+- 恢复前快照用于失败回滚；恢复全程在写租约内完成，读/检索/注入不与本进程恢复并发。
+- 物理擦除仍为 SQLite 级（`secure_delete` + checkpoint/VACUUM），不是 SSD 取证级保证；账本与主库同盘同时丢失时无法保证旧备份排除删除。

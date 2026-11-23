@@ -55,6 +55,7 @@ from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
     SQLiteDatabase,
 )
 from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.fts import SQLiteFTSIndex
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.ledger import SQLiteLedger
 from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
     SQLiteMemoryStore,
 )
@@ -69,6 +70,7 @@ from data.plugins.astrbot_plugin_weave_memory.app.extraction_service import (
 from data.plugins.astrbot_plugin_weave_memory.app.group_lifecycle_service import (
     GroupLifecycleService,
 )
+from data.plugins.astrbot_plugin_weave_memory.app.ledger_service import LedgerService
 from data.plugins.astrbot_plugin_weave_memory.app.lifecycle_service import (
     LifecycleService,
 )
@@ -99,14 +101,18 @@ def _database(data_dir: str) -> SQLiteDatabase:
 def _lifecycle(db: SQLiteDatabase, data_dir: str):
     store = SQLiteMemoryStore(db)
     index = SQLiteFTSIndex(db)
-    coordinator = WriteCoordinator(store, index)
     clock = SystemClock()
     ids = UUID4IdGenerator()
-    consent = ConsentService(SQLiteConsentStore(db), coordinator, clock, ids)
+    ledger_store = SQLiteLedger(Path(data_dir) / "memory_ledger.sqlite3")
+    ledger = LedgerService(ledger_store, clock, ids)
+    coordinator = WriteCoordinator(store, index, ledger)
+    consent_repository = SQLiteConsentStore(db)
+    consent = ConsentService(consent_repository, coordinator, clock, ids)
     lifecycle = LifecycleService(coordinator, store, consent)
+    ledger.drain_pending(store, consent_repository)
     group_lifecycle = GroupLifecycleService(
         store, coordinator, consent, index, clock, ids,
-        Path(data_dir) / "group_backups",
+        Path(data_dir) / "group_backups", ledger=ledger,
     )
     return store, group_lifecycle, lifecycle
 

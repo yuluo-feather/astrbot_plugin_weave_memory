@@ -18,9 +18,16 @@ from ..core.errors import (
     StorageError,
     ValidationError,
 )
-from ..core.model import AdminDecision, OperatorType, Scope, ScopeType
+from ..core.model import (
+    AdminDecision,
+    LedgerEventType,
+    OperatorType,
+    Scope,
+    ScopeType,
+)
 from ..core.ports import Clock, GroupScopeStore, IdGenerator, SearchIndex
 from .consent_service import ConsentService, GroupConsentType
+from .ledger_service import LedgerService
 from .write_coordinator import OperationReceipt, WriteCoordinator
 
 logger = logging.getLogger(__name__)
@@ -46,7 +53,8 @@ class GroupDestroyReceipt:
 class GroupLifecycleService:
     def __init__(self, store: GroupScopeStore, coordinator: WriteCoordinator,
                  consent: ConsentService, index: SearchIndex,
-                 clock: Clock, ids: IdGenerator, backup_dir: str | Path) -> None:
+                 clock: Clock, ids: IdGenerator, backup_dir: str | Path,
+                 ledger: LedgerService | None = None) -> None:
         self._store = store
         self._coordinator = coordinator
         self._consent = consent
@@ -54,6 +62,7 @@ class GroupLifecycleService:
         self._clock = clock
         self._ids = ids
         self._backup_dir = Path(backup_dir)
+        self._ledger = ledger
 
     @staticmethod
     def _require_group(scope: Scope) -> None:
@@ -145,32 +154,58 @@ class GroupLifecycleService:
         self._backup_dir.mkdir(parents=True, exist_ok=True)
         stamp = self._clock.now().strftime("%Y%m%dT%H%M%S%f")
         backup_path = self._backup_dir / f"group-{scope.id}-{op}-{stamp}.sqlite3"
-        digest = ""
-        if with_backup:
-            existing = sorted(self._backup_dir.glob(f"group-{scope.id}-{op}-*.sqlite3"))
-            if existing:
-                backup_path = existing[0]
-                digest = _sha256_file(backup_path)
-            else:
-                digest = self._store.backup_group_scope(scope.id, str(backup_path))
-        row_counts = self._store.group_row_counts(scope.id)
+        occurred_at = self._clock.now()
 
-        def destroy_operation() -> tuple[int, bool]:
+        def destroy_operation() -> tuple[int, bool, str, Path, dict[str, int]]:
+            digest = ""
+            if with_backup:
+                existing = sorted(self._backup_dir.glob(f"group-{scope.id}-{op}-*.sqlite3"))
+                if existing:
+                    chosen = existing[0]
+                    digest = _sha256_file(chosen)
+                else:
+                    chosen = backup_path
+                    digest = self._store.backup_group_scope(scope.id, str(chosen))
+            else:
+                chosen = backup_path
+            row_counts = self._store.group_row_counts(scope.id)
+            ledger = self._ledger
+            intent = None
+            if ledger is not None and ledger.enabled:
+                intent = ledger.record_intent(
+                    LedgerEventType.DESTROY_SCOPE,
+                    payload={
+                        "scope_id": scope.id,
+                        "backup_mode": "REQUIRED" if with_backup else "SKIPPED",
+                        "backup_path": str(chosen) if with_backup else None,
+                        "backup_sha256": digest if with_backup else None,
+                        "operation_id": op,
+                        "operator_id": operator_id,
+                        "occurred_at": occurred_at.isoformat(),
+                    },
+                    source="admin", occurred_at=occurred_at,
+                    scope_id=scope.id,
+                )
             removed = self._store.delete_group_scope(
                 scope.id, operation_id=op, operator_type=OperatorType.ADMIN,
-                operator_id=operator_id, occurred_at=self._clock.now(),
+                operator_id=operator_id, occurred_at=occurred_at,
             )
+            if intent is not None and ledger is not None:
+                ledger.record_committed(intent)
             try:
                 self._index.rebuild()
             except IndexUnavailable:
-                return removed, False
+                return removed, False, digest, chosen, row_counts
             try:
                 self._store.purge_deleted_payload()
             except StorageError:
-                return removed, False
-            return removed, True
+                return removed, False, digest, chosen, row_counts
+            return removed, True, digest, chosen, row_counts
 
-        affected, purged = await self._coordinator.run_serialized(destroy_operation)
+        affected, purged, digest, chosen, row_counts = await self._coordinator.run_serialized(
+            destroy_operation,
+        )
+        backup_path = chosen
         manifest = backup_path.with_suffix(".json")
         temp = manifest.with_suffix(manifest.suffix + ".tmp")
         payload = json.dumps({

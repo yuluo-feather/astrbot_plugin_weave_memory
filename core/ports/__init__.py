@@ -16,6 +16,9 @@ from ..model import (
     ExtractionWindow,
     Identity,
     ImportJob,
+    LedgerEvent,
+    LedgerEventType,
+    LedgerState,
     MemoryConsent,
     MemoryEntity,
     MemoryOperation,
@@ -112,17 +115,88 @@ class MemoryStore(Protocol):
 
     def delete(self, memory_id: str, *, scope_id: str, subject_id: str,
                operation_id: str, operator_type: OperatorType, operator_id: str,
-               occurred_at: datetime) -> None: ...
+               occurred_at: datetime,
+               expected_lineage: str | None = None,
+               expected_creation_seq: int | None = None,
+               idempotent: bool = False) -> bool: ...
 
     def clear_scope(self, scope_id: str, *, operation_id: str,
                     operator_type: OperatorType, operator_id: str,
-                    occurred_at: datetime) -> tuple[str, ...]: ...
+                    occurred_at: datetime,
+                    boundaries: Mapping[str, int] | None = None,
+                    ) -> tuple[str, ...]: ...
 
     def disable_scope(self, scope_id: str, *, operation_id: str,
                       operator_type: OperatorType, operator_id: str,
                       occurred_at: datetime) -> bool: ...
 
     def purge_deleted_payload(self) -> None: ...
+
+    def get_lineage(self, memory_id: str, *, scope_id: str,
+                    subject_id: str) -> tuple[str, int]: ...
+
+    def current_lineage_id(self) -> str: ...
+
+    def lineage_high_watermarks(self) -> dict[str, int]: ...
+
+    def scope_lineage_boundaries(self, scope_id: str) -> dict[str, int]: ...
+
+    def remove_attachment(self, *, memory_id: str, scope_id: str,
+                          subject_id: str, attachment_type: str,
+                          attachment_key: str) -> bool: ...
+
+
+class BackupPort(Protocol):
+    """Instance-level backup/restore surface (V1.8)."""
+
+    def create_backup(self) -> dict[str, object]: ...
+
+    def list_backups(self) -> list[dict[str, object]]: ...
+
+    def restore(self, backup_id: str, *, mode: str = "merge",
+                confirm: bool = False, dry_run: bool = False,
+                operator_id: str = "admin") -> dict[str, object]: ...
+
+    def recover_if_needed(self) -> dict[str, object] | None: ...
+
+
+RESTORE_MODES: tuple[str, ...] = ("merge", "revert", "disaster-rebuild")
+
+
+class LedgerReplayStore(MemoryStore, Protocol):
+    """Main-database writes needed to replay a pending ledger intent."""
+
+    def delete_group_scope(self, scope_id: str, *, operation_id: str,
+                           operator_type: OperatorType, operator_id: str,
+                           occurred_at: datetime) -> int: ...
+
+
+class LedgerStore(Protocol):
+    """Append-only intent ledger kept outside the backup package (V1.8)."""
+
+    def ledger_id(self) -> str: ...
+
+    def last_seq(self) -> int: ...
+
+    def earliest_retained_seq(self) -> int: ...
+
+    def append(self, *, event_id: str, event_type: LedgerEventType,
+               state: LedgerState, source: str, occurred_at: datetime,
+               payload: Mapping[str, object],
+               scope_id: str | None = None, subject_id: str | None = None,
+               memory_id: str | None = None) -> LedgerEvent: ...
+
+    def events_after(self, seq: int) -> tuple[LedgerEvent, ...]: ...
+
+    def all_events(self) -> tuple[LedgerEvent, ...]: ...
+
+    def pending_intents(self) -> tuple[LedgerEvent, ...]: ...
+
+    def segment_report(self) -> tuple[dict[str, object], ...]: ...
+
+    def rotate(self) -> str | None: ...
+
+    def close(self) -> None: ...
 
 
 class SearchIndex(Protocol):
@@ -232,6 +306,8 @@ class GroupScopeStore(ScopeStore, Protocol):
                            operator_type: OperatorType, operator_id: str,
                            occurred_at: datetime) -> int: ...
     def count_active(self, scope_id: str) -> int: ...
+    def group_row_counts(self, scope_id: str) -> dict[str, int]: ...
+    def purge_deleted_payload(self) -> None: ...
 
 
 class ConsentRepository(Protocol):

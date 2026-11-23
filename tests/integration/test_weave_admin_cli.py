@@ -154,10 +154,13 @@ def _seed_expired_personal_candidate(admin_env) -> str:
             (id, scope_id, subject_id, memory_type, content, normalized_content,
              normalization_version, status, source_type, current_revision,
              valid_from, valid_until, candidate_expires_at, superseded_by,
-             created_at, updated_at, last_accessed_at, metadata_json)
+             created_at, updated_at, last_accessed_at, metadata_json,
+             db_lineage_id, creation_seq)
             VALUES (?, ?, 'u1', 'PREFERENCE', '过期候选', '过期候选', 1,
                     'CANDIDATE', 'INFERRED', 1, NULL, NULL,
-                    '2020-01-02T00:00:00.000000Z', NULL, ?, ?, NULL, '{}')""",
+                    '2020-01-02T00:00:00.000000Z', NULL, ?, ?, NULL, '{}',
+                    (SELECT value FROM memory_meta WHERE key='db_lineage_id'),
+                    (SELECT COALESCE(MAX(creation_seq), 0) + 1 FROM memories))""",
             (memory_id, scope_id, stamp, stamp),
         )
     return memory_id
@@ -200,6 +203,6 @@ def test_cli_maintenance_status_reports_schema_and_index(admin_env):
     result = _run("maintenance-status", "--data-dir", str(admin_env["data_dir"]))
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["schema_version"] == 8
+    assert payload["schema_version"] == 9
     assert payload["index"]["healthy"] is True
     assert payload["secure_purge_pending"] is False

@@ -145,6 +145,8 @@ class AstrBotMemoryCommands:
             "/织忆 提取 开启 <capture|auto_extract|external_model|store_candidate|全部> —— 分层授权私聊自动提取（默认全关）\n"
             "/织忆 提取 关闭 <能力> / 提取 状态 —— 关闭单项能力；查看有效授权、缺失条件与任务\n"
             "/织忆 候选 列表 / 确认 <ID> / 拒绝 <ID> [原因] —— 管理提取候选\n"
+            "/织忆 备份 [列表] —— 创建/查看实例级主库快照（不含账本）\n"
+            "/织忆 恢复 <备份ID> [merge|revert|disaster-rebuild] 确认 —— 按账本重放恢复\n"
             "模型工具写入仅应在用户明确要求时发生；写入来源记录插件侧 evidence_ref（message/session + 内容哈希），不冒充宿主 tool_call_id。"
         )
 

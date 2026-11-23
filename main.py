@@ -9,6 +9,7 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.agent.message import TextPart
 
+from .adapters.astrbot.backup_commands import AstrBotBackupCommands
 from .adapters.astrbot.commands import AstrBotMemoryCommands
 from .adapters.astrbot.extraction import (
     AstrBotExtractionCapture,
@@ -22,11 +23,13 @@ from .adapters.astrbot.injection import AstrBotMemoryInjector
 from .adapters.astrbot.recall_diagnostics import JsonlRecallDiagnostics
 from .adapters.astrbot.tool_call_binding import AstrBotToolCallBinding
 from .adapters.astrbot.web_api import AstrBotManagementApi
+from .adapters.sqlite.backup import BackupService
 from .adapters.sqlite.consents import SQLiteConsentStore
 from .adapters.sqlite.database import SQLiteDatabase
 from .adapters.sqlite.extraction_jobs import SQLiteExtractionJobStore
 from .adapters.sqlite.fts import SQLiteFTSIndex
 from .adapters.sqlite.import_jobs import SQLiteImportJobStore
+from .adapters.sqlite.ledger import SQLiteLedger
 from .adapters.sqlite.store import SQLiteMemoryStore
 from .adapters.system import SystemClock, UUID4IdGenerator
 from .app.consent_service import ConsentService
@@ -35,6 +38,7 @@ from .app.group_lifecycle_service import GroupLifecycleService
 from .app.group_memory_service import GroupMemoryService
 from .app.group_recall_service import GroupContextComposer, GroupRecallService
 from .app.import_service import ImportService
+from .app.ledger_service import LedgerService
 from .app.lifecycle_service import LifecycleService
 from .app.management_service import ManagementService
 from .app.memory_service import MemoryApplicationService
@@ -92,10 +96,12 @@ class WeaveMemoryPlugin(Star):
         self._config = config or {}
         self._ready = False
         self._database: SQLiteDatabase | None = None
+        self._ledger_store: SQLiteLedger | None = None
         self._coordinator: WriteCoordinator | None = None
         self._commands: AstrBotMemoryCommands | None = None
         self._group_commands: AstrBotGroupCommands | None = None
         self._extraction_commands: AstrBotExtractionCommands | None = None
+        self._backup_commands: AstrBotBackupCommands | None = None
         self._extraction_capture: AstrBotExtractionCapture | None = None
         self._injector: AstrBotMemoryInjector | None = None
         self._group_injector: AstrBotGroupMemoryInjector | None = None
@@ -114,16 +120,20 @@ class WeaveMemoryPlugin(Star):
                 logger.info(f"织忆数据库迁移前备份：{backup_path}")
             store = SQLiteMemoryStore(self._database)
             index = SQLiteFTSIndex(self._database)
-            StartupRecoveryService(self._database, index).run()
-            try:
-                self._database.secure_purge_if_pending()
-            except StorageError as exc:
-                logger.warning(f"织忆启动时的物理擦除未完成：{type(exc).__name__}")
 
             clock = SystemClock()
             ids = UUID4IdGenerator()
             consent_repository = SQLiteConsentStore(self._database)
-            coordinator = WriteCoordinator(store, index)
+            ledger_enabled = self._config_bool("ledger_first_enabled", True)
+            ledger_store = SQLiteLedger(data_dir / "memory_ledger.sqlite3")
+            self._ledger_store = ledger_store
+            ledger = LedgerService(
+                ledger_store, clock, ids, enabled=ledger_enabled,
+                rotate_events=self._config_non_negative_int(
+                    "ledger_rotate_events", 0,
+                ),
+            )
+            coordinator = WriteCoordinator(store, index, ledger)
             scopes = PersonalScopeService(store, coordinator, clock)
             consent = ConsentService(consent_repository, coordinator, clock, ids)
             lifecycle = LifecycleService(coordinator, store, consent)
@@ -132,6 +142,30 @@ class WeaveMemoryPlugin(Star):
                 store, SQLiteImportJobStore(self._database), coordinator,
                 lifecycle, clock, ids,
             )
+            backup = BackupService(
+                database=self._database, store=store, index=index,
+                consents=consent_repository, coordinator=coordinator,
+                ledger=ledger, clock=clock, ids=ids, data_dir=data_dir,
+                config=self._config if hasattr(self._config, "items") else {},
+                enabled=ledger_enabled,
+                keep_last=self._config_int("backup_keep_last", 5),
+                retention_days=self._config_int("backup_retention_days", 30),
+            )
+            # Restore journal must be resolved before any read or write is served.
+            backup.recover_if_needed()
+            applied, failed = ledger.drain_pending(store, consent_repository)
+            if applied:
+                logger.info(f"织忆账本重放：{applied} 个 pending 事件已提交。")
+            if failed:
+                logger.warning(
+                    f"织忆账本仍有 {len(failed)} 个 pending 事件未完成，将在备份/下次启动重试。",
+                )
+            StartupRecoveryService(self._database, index).run()
+            try:
+                self._database.secure_purge_if_pending()
+            except StorageError as exc:
+                logger.warning(f"织忆启动时的物理擦除未完成：{type(exc).__name__}")
+
             diagnostics_enabled = self._config_bool("recall_diagnostics_enabled", True)
             diagnostics = None
             if diagnostics_enabled:
@@ -155,7 +189,7 @@ class WeaveMemoryPlugin(Star):
             group_scopes = GroupScopeService(store, group_admins, coordinator, clock)
             group_lifecycle = GroupLifecycleService(
                 store, coordinator, consent, index, clock, ids,
-                data_dir / "group_backups",
+                data_dir / "group_backups", ledger=ledger,
             )
             destroy_backup_retention = self._config_int(
                 "group_destroy_backup_retention_days", 30,
@@ -220,6 +254,7 @@ class WeaveMemoryPlugin(Star):
             self._extraction_commands = AstrBotExtractionCommands(
                 scopes, consent, extraction,
             )
+            self._backup_commands = AstrBotBackupCommands(backup)
             self._extraction_capture = AstrBotExtractionCapture(
                 scopes, extraction, enabled=extraction_enabled,
                 min_messages=self._config_int("extraction_min_messages", 5),
@@ -236,6 +271,7 @@ class WeaveMemoryPlugin(Star):
                 repository=store, store=store, index=index, groups=group_scopes,
                 group_recall=group_recall, consent=consent,
                 imports=imports, group_memories=group_memories,
+                backup=backup,
                 settings={
                     "auto_enroll": auto_enroll,
                     "agent_write_enabled": self._config_bool("agent_write_enabled", True),
@@ -264,6 +300,14 @@ class WeaveMemoryPlugin(Star):
                         "recall_diagnostics_include_query", False,
                     ),
                     "api_admin_whitelist_enabled": bool(api_admin_usernames),
+                    "ledger_first_enabled": ledger_enabled,
+                    "ledger_rotate_events": self._config_non_negative_int(
+                        "ledger_rotate_events", 0,
+                    ),
+                    "backup_keep_last": self._config_int("backup_keep_last", 5),
+                    "backup_retention_days": self._config_int(
+                        "backup_retention_days", 30,
+                    ),
                 },
                 group_max_tokens=self._config_int("group_max_tokens", 192),
                 group_max_memories=self._config_int("group_max_memories", 2),
@@ -284,6 +328,9 @@ class WeaveMemoryPlugin(Star):
             if self._database is not None:
                 self._database.close()
                 self._database = None
+            if self._ledger_store is not None:
+                self._ledger_store.close()
+                self._ledger_store = None
 
     def _command_service(self) -> AstrBotMemoryCommands:
         if not self._ready or self._commands is None:
@@ -299,6 +346,11 @@ class WeaveMemoryPlugin(Star):
         if not self._ready or self._extraction_commands is None:
             raise ServiceClosed("memory engine is not ready")
         return self._extraction_commands
+
+    def _backup_command_service(self) -> AstrBotBackupCommands:
+        if not self._ready or self._backup_commands is None:
+            raise ServiceClosed("memory engine is not ready")
+        return self._backup_commands
 
     @staticmethod
     def _explicit_group_admins(config: object) -> dict[tuple[str, str, str], tuple[str, ...]]:
@@ -362,6 +414,15 @@ class WeaveMemoryPlugin(Star):
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return default
+
+    def _config_non_negative_int(self, key: str, default: int) -> int:
+        if not hasattr(self._config, "get"):
+            return default
+        try:
+            value = int(self._config.get(key, default))  # type: ignore[union-attr]
+        except (TypeError, ValueError):
+            return default
+        return value if value >= 0 else default
 
     def _config_list(self, key: str) -> tuple[str, ...]:
         if not hasattr(self._config, "get"):
@@ -493,6 +554,22 @@ class WeaveMemoryPlugin(Star):
             yield event.plain_result(self._command_service().operations(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("操作记录", exc))
+
+    @memory.command("备份")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_backup(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._backup_command_service().backup(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("备份", exc))
+
+    @memory.command("恢复")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_restore(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._backup_command_service().restore(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("恢复", exc))
 
     @memory.command("导出")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
@@ -853,4 +930,10 @@ class WeaveMemoryPlugin(Star):
             except Exception as exc:  # noqa: BLE001 - shutdown must not raise
                 logger.warning(f"织忆关闭数据库失败：{type(exc).__name__}")
             self._database = None
+        if self._ledger_store is not None:
+            try:
+                self._ledger_store.close()
+            except Exception as exc:  # noqa: BLE001 - shutdown must not raise
+                logger.warning(f"织忆关闭账本失败：{type(exc).__name__}")
+            self._ledger_store = None
         self._ready = False

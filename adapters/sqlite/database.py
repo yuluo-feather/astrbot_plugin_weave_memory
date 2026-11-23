@@ -26,7 +26,7 @@ class SQLiteDatabase:
     multi-process write coordination.
     """
 
-    CURRENT_SCHEMA_VERSION = 8
+    CURRENT_SCHEMA_VERSION = 9
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -235,6 +235,16 @@ class SQLiteDatabase:
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (8, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("import_jobs",),
                     )
+                    version = 8
+                if version < 9:
+                    migration_v9 = (Path(__file__).parent / "migrations" / "009_lineage_ledger.sql").read_text(encoding="utf-8")
+                    for statement in migration_v9.split(";"):
+                        if statement.strip():
+                            conn.execute(statement)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, name, applied_at) VALUES (9, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        ("lineage_ledger",),
+                    )
         except sqlite3.Error as exc:
             raise StorageError("SQLite schema migration failed") from exc
         finally:
@@ -246,6 +256,9 @@ class SQLiteDatabase:
                                 no_extraction_jobs: bool = False) -> None:
         """Preflight the whole downgrade chain so a refused rollback changes nothing."""
         version = self.schema_version()
+        # V1.8 keeps its lineage columns and allocator; rolling back only removes
+        # the v9 marker and relies on ledger_first_enabled=false at runtime.
+        effective_version = 8 if version >= 9 else version
         checks: list[tuple[bool, int, str, str]] = [
             (no_import_jobs, 8, "import_jobs",
              "cannot roll back while import_jobs contains data"),
@@ -255,10 +268,24 @@ class SQLiteDatabase:
              "cannot roll back while extraction_jobs contains data"),
         ]
         for enabled, minimum, target, message in checks:
-            if not enabled or version < minimum:
+            if not enabled or effective_version < minimum:
                 continue
             if int(self.connection.execute(f"SELECT count(*) FROM {target}").fetchone()[0]):
                 raise StorageError(message)
+
+    def rollback_to_v8(self) -> None:
+        """Remove the v9 schema marker while keeping lineage columns.
+
+        SQLite cannot drop NOT NULL columns without rebuilding memories, and
+        V1.8 explicitly keeps the columns and allocator on rollback. The
+        application must also set ``ledger_first_enabled=false``.
+        """
+        self._ensure_open()
+        try:
+            with self.transaction() as conn:
+                conn.execute("DELETE FROM schema_migrations WHERE version=9")
+        except sqlite3.Error as exc:
+            raise StorageError("could not roll back V1.8 schema marker") from exc
 
     def rollback_to_v05(self) -> None:
         """Roll back the V1.0-only reserved relation table to the V0.5 schema.
@@ -271,6 +298,8 @@ class SQLiteDatabase:
         self._ensure_rollback_guards(
             no_import_jobs=True, no_candidates=True, no_extraction_jobs=True,
         )
+        if self.schema_version() >= 9:
+            self.rollback_to_v8()
         if self.schema_version() == 8:
             self.rollback_to_v7()
         if self.schema_version() == 7:
@@ -305,6 +334,8 @@ class SQLiteDatabase:
         self._ensure_rollback_guards(
             no_import_jobs=True, no_candidates=True, no_extraction_jobs=True,
         )
+        if self.schema_version() >= 9:
+            self.rollback_to_v8()
         if self.schema_version() == 8:
             self.rollback_to_v7()
         if self.schema_version() == 7:
@@ -330,6 +361,8 @@ class SQLiteDatabase:
         """Roll v7 back to v6 only when no candidate row depends on the TTL column."""
         self._ensure_open()
         self._ensure_rollback_guards(no_import_jobs=True, no_candidates=True)
+        if self.schema_version() >= 9:
+            self.rollback_to_v8()
         if self.schema_version() == 8:
             self.rollback_to_v7()
         try:
@@ -353,6 +386,14 @@ class SQLiteDatabase:
     def rollback_to_v7(self) -> None:
         """Roll v8 back to v7 only when no import job remains."""
         self._ensure_open()
+        version = self.schema_version()
+        if version >= 9:
+            jobs = int(self.connection.execute(
+                "SELECT count(*) FROM import_jobs",
+            ).fetchone()[0])
+            if jobs:
+                raise StorageError("cannot roll back while import_jobs contains data")
+            self.rollback_to_v8()
         try:
             with self.transaction() as conn:
                 version = int(conn.execute(
@@ -416,6 +457,8 @@ class SQLiteDatabase:
             and not group_scopes and not group_memories and not group_consents
             and not extraction_jobs and not candidates and not import_jobs
         )
+        if version >= 9:
+            can_rollback = False
         return {
             "schema_version": version,
             "group_scope_count": group_scopes,
@@ -451,6 +494,8 @@ class SQLiteDatabase:
         if dry_run:
             return self.rollback_preview()
         self._ensure_open()
+        if self.schema_version() >= 9:
+            self.rollback_to_v8()
         if self.schema_version() == 7:
             self.rollback_to_v6()
         if self.schema_version() == 6:
@@ -528,6 +573,7 @@ class SQLiteDatabase:
                 conn.execute("DROP TABLE IF EXISTS memory_fts")
                 for table in (
                     "import_jobs", "extraction_jobs",
+                    "memory_lineage_meta",
                     "memory_relations", "memory_consents", "memory_operations", "memory_tags", "memory_sources",
                     "memory_revisions", "memories", "memory_scopes",
                     "memory_meta", "schema_migrations",

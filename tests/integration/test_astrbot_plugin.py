@@ -211,7 +211,7 @@ def test_plugin_registers_management_api(monkeypatch, tmp_path):
     context = FakeContext()
     plugin, _ = load_plugin(monkeypatch, tmp_path, context=context)
     routes = {route: methods for route, _, methods, _ in context.routes}
-    assert len(context.routes) == 11
+    assert len(context.routes) == 14
     assert routes["/astrbot_plugin_weave_memory/v1/overview"] == ["GET"]
     assert routes["/astrbot_plugin_weave_memory/v1/retrieval/debug"] == ["POST"]
     assert routes["/astrbot_plugin_weave_memory/v1/export"] == ["GET"]

@@ -35,6 +35,8 @@ from ...core.normalization import NORMALIZATION_VERSION
 from ...core.policy.dedup import DedupKey
 from .database import SECURE_PURGE_KEY, SQLiteDatabase
 
+CURRENT_LINEAGE_KEY = "db_lineage_id"
+
 
 def _time_dump(value: datetime | None) -> str | None:
     if value is None:
@@ -137,6 +139,130 @@ class SQLiteMemoryStore:
             raise NotFound("scope not found")
         return row["is_enabled"] == 1
 
+    @staticmethod
+    def _current_lineage(conn: sqlite3.Connection) -> str:
+        row = conn.execute(
+            "SELECT value FROM memory_meta WHERE key=?", (CURRENT_LINEAGE_KEY,),
+        ).fetchone()
+        if row is None or not str(row["value"]).strip():
+            raise StorageError("current db_lineage_id is missing")
+        return str(row["value"])
+
+    @staticmethod
+    def _allocate_creation_seq(conn: sqlite3.Connection) -> tuple[str, int]:
+        """Allocate the next lineage-scoped creation_seq inside the write transaction."""
+        lineage = SQLiteMemoryStore._current_lineage(conn)
+        row = conn.execute(
+            "SELECT high_watermark FROM memory_lineage_meta WHERE db_lineage_id=?",
+            (lineage,),
+        ).fetchone()
+        if row is None:
+            next_seq = 1
+            conn.execute(
+                "INSERT INTO memory_lineage_meta(db_lineage_id, high_watermark) VALUES (?, ?)",
+                (lineage, next_seq),
+            )
+        else:
+            next_seq = int(row["high_watermark"]) + 1
+            conn.execute(
+                "UPDATE memory_lineage_meta SET high_watermark=? WHERE db_lineage_id=?",
+                (next_seq, lineage),
+            )
+        return lineage, next_seq
+
+    def current_lineage_id(self) -> str:
+        try:
+            return self._current_lineage(self.db.connection)
+        except sqlite3.Error as exc:
+            raise StorageError("could not read current db_lineage_id") from exc
+
+    def lineage_high_watermarks(self) -> dict[str, int]:
+        try:
+            rows = self.db.connection.execute(
+                "SELECT db_lineage_id, high_watermark FROM memory_lineage_meta",
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read lineage high watermarks") from exc
+        return {row["db_lineage_id"]: int(row["high_watermark"]) for row in rows}
+
+    def get_lineage(self, memory_id: str, *, scope_id: str,
+                    subject_id: str) -> tuple[str, int]:
+        try:
+            row = self.db.connection.execute(
+                """SELECT db_lineage_id, creation_seq FROM memories
+                WHERE id=? AND scope_id=? AND subject_id=?""",
+                (memory_id, scope_id, subject_id),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read memory lineage") from exc
+        if row is None:
+            raise NotFound("memory not found")
+        return str(row["db_lineage_id"]), int(row["creation_seq"])
+
+    def scope_lineage_boundaries(self, scope_id: str) -> dict[str, int]:
+        """Current high watermark for every lineage that has rows in this scope.
+
+        Reading the persisted allocator (not the maximum surviving row) keeps
+        the clear boundary stable after rows were deleted.
+        """
+        try:
+            lineages = [
+                row["db_lineage_id"] for row in self.db.connection.execute(
+                    "SELECT DISTINCT db_lineage_id FROM memories WHERE scope_id=?",
+                    (scope_id,),
+                ).fetchall()
+            ]
+            boundaries: dict[str, int] = {}
+            for lineage in lineages:
+                row = self.db.connection.execute(
+                    "SELECT high_watermark FROM memory_lineage_meta WHERE db_lineage_id=?",
+                    (lineage,),
+                ).fetchone()
+                if row is None:
+                    raise StorageError(
+                        f"missing high watermark for lineage {lineage}",
+                    )
+                boundaries[lineage] = int(row["high_watermark"])
+        except sqlite3.Error as exc:
+            raise StorageError("could not read scope lineage boundaries") from exc
+        return boundaries
+
+    def remove_attachment(self, *, memory_id: str, scope_id: str,
+                          subject_id: str, attachment_type: str,
+                          attachment_key: str) -> bool:
+        """Delete one non-cascading source/tag/relation while the memory stays alive."""
+        if attachment_type not in {"source", "tag", "relation"}:
+            raise ValidationError("attachment_type must be source, tag or relation")
+        try:
+            with self.db.transaction() as conn:
+                row = conn.execute(
+                    """SELECT 1 FROM memories WHERE id=? AND scope_id=? AND subject_id=?""",
+                    (memory_id, scope_id, subject_id),
+                ).fetchone()
+                if row is None:
+                    raise NotFound("memory not found")
+                if attachment_type == "source":
+                    cursor = conn.execute(
+                        "DELETE FROM memory_sources WHERE memory_id=? AND id=?",
+                        (memory_id, attachment_key),
+                    )
+                elif attachment_type == "tag":
+                    cursor = conn.execute(
+                        "DELETE FROM memory_tags WHERE memory_id=? AND tag=?",
+                        (memory_id, attachment_key),
+                    )
+                else:
+                    cursor = conn.execute(
+                        """DELETE FROM memory_relations
+                        WHERE id=? AND (source_memory_id=? OR target_memory_id=?)""",
+                        (attachment_key, memory_id, memory_id),
+                    )
+                return cursor.rowcount > 0
+        except (NotFound, ValidationError):
+            raise
+        except sqlite3.Error as exc:
+            raise StorageError("could not remove memory attachment") from exc
+
     def create(self, memory: MemoryEntity, revision: MemoryRevision,
                source: MemorySource) -> None:
         if memory.status not in {MemoryStatus.ACTIVE, MemoryStatus.CANDIDATE}:
@@ -213,8 +339,9 @@ class SQLiteMemoryStore:
                     (id, scope_id, subject_id, memory_type, content, normalized_content,
                      normalization_version, status, source_type, current_revision,
                      valid_from, valid_until, candidate_expires_at, superseded_by,
-                     created_at, updated_at, last_accessed_at, metadata_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     created_at, updated_at, last_accessed_at, metadata_json,
+                     db_lineage_id, creation_seq)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (memory.id, memory.scope_id, memory.subject_id, memory.memory_type.value,
                      memory.content, memory.normalized_content, NORMALIZATION_VERSION,
                      memory.status.value, memory.source_type.value, memory.current_revision,
@@ -222,7 +349,7 @@ class SQLiteMemoryStore:
                      _time_dump(memory.candidate_expires_at),
                      memory.superseded_by, _time_dump(memory.created_at),
                      _time_dump(memory.updated_at), _time_dump(memory.last_accessed_at),
-                     _json_dump(memory.metadata)),
+                     _json_dump(memory.metadata), *self._allocate_creation_seq(conn)),
                 )
                 self._insert_revision(conn, revision)
                 self._insert_source(conn, source)
@@ -750,7 +877,10 @@ class SQLiteMemoryStore:
 
     def delete(self, memory_id: str, *, scope_id: str, subject_id: str,
                operation_id: str, operator_type: OperatorType, operator_id: str,
-               occurred_at: datetime) -> None:
+               occurred_at: datetime,
+               expected_lineage: str | None = None,
+               expected_creation_seq: int | None = None,
+               idempotent: bool = False) -> bool:
         """Write a minimal tombstone audit record, then physically purge content."""
         try:
             with self.db.transaction() as conn:
@@ -760,15 +890,23 @@ class SQLiteMemoryStore:
                         prior["operator_type"], prior["operator_id"], prior["occurred_at"]) == (
                         scope_id, memory_id, "DELETE_MEMORY", operator_type.value,
                         operator_id, _time_dump(occurred_at)):
-                        return
+                        return False
                     raise Conflict("operation id already belongs to another operation")
                 row = conn.execute(
-                    """SELECT id, memory_type, source_type, current_revision
+                    """SELECT id, memory_type, source_type, current_revision,
+                       db_lineage_id, creation_seq
                     FROM memories WHERE id=? AND scope_id=? AND subject_id=?""",
                     (memory_id, scope_id, subject_id),
                 ).fetchone()
                 if row is None:
+                    if idempotent:
+                        return False
                     raise NotFound("memory not found")
+                if expected_lineage is not None and row["db_lineage_id"] != expected_lineage:
+                    raise Conflict("delete event lineage does not match the stored row")
+                if (expected_creation_seq is not None
+                        and int(row["creation_seq"]) != expected_creation_seq):
+                    raise Conflict("delete event creation_seq does not match the stored row")
                 self._insert_operation(
                     conn, operation_id=operation_id, scope_id=scope_id,
                     memory_id=memory_id, operation_type="DELETE_MEMORY",
@@ -776,7 +914,9 @@ class SQLiteMemoryStore:
                     occurred_at=occurred_at,
                     metadata={"status": "DELETED", "memory_type": row["memory_type"],
                               "source_type": row["source_type"],
-                              "last_revision": row["current_revision"]},
+                              "last_revision": row["current_revision"],
+                              "db_lineage_id": row["db_lineage_id"],
+                              "creation_seq": int(row["creation_seq"])},
                 )
                 self._mark_fts_dirty(conn, memory_id)
                 conn.execute(
@@ -788,6 +928,7 @@ class SQLiteMemoryStore:
                 conn.execute("DELETE FROM memory_revisions WHERE memory_id=?", (memory_id,))
                 conn.execute("DELETE FROM memories WHERE id=?", (memory_id,))
                 self._mark_secure_purge_pending(conn)
+                return True
         except (Conflict, NotFound, ValidationError):
             raise
         except sqlite3.IntegrityError as exc:
@@ -870,8 +1011,14 @@ class SQLiteMemoryStore:
 
     def clear_scope(self, scope_id: str, *, operation_id: str,
                     operator_type: OperatorType, operator_id: str,
-                    occurred_at: datetime) -> tuple[str, ...]:
-        """Atomically tombstone and purge every memory in one Personal scope."""
+                    occurred_at: datetime,
+                    boundaries: Mapping[str, int] | None = None,
+                    ) -> tuple[str, ...]:
+        """Atomically tombstone and purge scope memories.
+
+        With ``boundaries`` the deletion is lineage-scoped (V1.8); without it
+        the whole scope is cleared (V1.7 fallback when ledger-first is off).
+        """
         try:
             with self.db.transaction() as conn:
                 prior = conn.execute("SELECT * FROM memory_operations WHERE id=?", (operation_id,)).fetchone()
@@ -885,19 +1032,38 @@ class SQLiteMemoryStore:
                 scope = conn.execute("SELECT id FROM memory_scopes WHERE id=?", (scope_id,)).fetchone()
                 if scope is None:
                     raise NotFound("scope not found")
-                rows = conn.execute(
-                    "SELECT id FROM memories WHERE scope_id=? ORDER BY id", (scope_id,)
-                ).fetchall()
+                if boundaries is None:
+                    rows = conn.execute(
+                        """SELECT id, db_lineage_id, creation_seq FROM memories
+                        WHERE scope_id=? ORDER BY id""",
+                        (scope_id,),
+                    ).fetchall()
+                elif boundaries:
+                    clauses = " OR ".join(
+                        "(db_lineage_id=? AND creation_seq<=?)" for _ in boundaries
+                    )
+                    params: list[object] = [scope_id]
+                    for lineage, boundary in boundaries.items():
+                        params.extend((lineage, boundary))
+                    rows = conn.execute(
+                        f"""SELECT id, db_lineage_id, creation_seq FROM memories
+                        WHERE scope_id=? AND ({clauses}) ORDER BY id""",
+                        tuple(params),
+                    ).fetchall()
+                else:
+                    rows = []
                 memory_ids = tuple(row["id"] for row in rows)
-                for memory_id in memory_ids:
+                for row in rows:
                     self._insert_operation(
-                        conn, operation_id=f"{operation_id}:{memory_id}",
-                        scope_id=scope_id, memory_id=memory_id,
+                        conn, operation_id=f"{operation_id}:{row['id']}",
+                        scope_id=scope_id, memory_id=row["id"],
                         operation_type="CLEAR_MEMORY", operator_type=operator_type,
                         operator_id=operator_id, occurred_at=occurred_at,
-                        metadata={"status": "DELETED", "reason": "scope_clear"},
+                        metadata={"status": "DELETED", "reason": "scope_clear",
+                                  "db_lineage_id": row["db_lineage_id"],
+                                  "creation_seq": int(row["creation_seq"])},
                     )
-                    self._mark_fts_dirty(conn, memory_id)
+                    self._mark_fts_dirty(conn, row["id"])
                 self._insert_operation(
                     conn, operation_id=operation_id, scope_id=scope_id,
                     memory_id=None, operation_type="CLEAR_SCOPE",
@@ -910,10 +1076,22 @@ class SQLiteMemoryStore:
                         f"DELETE FROM memory_relations WHERE source_memory_id IN ({placeholders}) OR target_memory_id IN ({placeholders})",
                         (*memory_ids, *memory_ids),
                     )
-                conn.execute("DELETE FROM memory_tags WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)", (scope_id,))
-                conn.execute("DELETE FROM memory_sources WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)", (scope_id,))
-                conn.execute("DELETE FROM memory_revisions WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)", (scope_id,))
-                conn.execute("DELETE FROM memories WHERE scope_id=?", (scope_id,))
+                    conn.execute(
+                        f"DELETE FROM memory_tags WHERE memory_id IN ({placeholders})",
+                        memory_ids,
+                    )
+                    conn.execute(
+                        f"DELETE FROM memory_sources WHERE memory_id IN ({placeholders})",
+                        memory_ids,
+                    )
+                    conn.execute(
+                        f"DELETE FROM memory_revisions WHERE memory_id IN ({placeholders})",
+                        memory_ids,
+                    )
+                    conn.execute(
+                        f"DELETE FROM memories WHERE id IN ({placeholders})",
+                        memory_ids,
+                    )
                 self._mark_secure_purge_pending(conn)
                 return memory_ids
         except (Conflict, NotFound, ValidationError):

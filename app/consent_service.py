@@ -3,7 +3,12 @@
 from collections.abc import Mapping
 from enum import StrEnum
 
-from ..core.model import ConsentState, MemoryConsent, Scope
+from ..core.model import (
+    ConsentState,
+    LedgerEventType,
+    MemoryConsent,
+    Scope,
+)
 from ..core.policy.consent import ConsentPolicy
 from ..core.ports import Clock, ConsentRepository, IdGenerator
 from .write_coordinator import WriteCoordinator
@@ -39,7 +44,8 @@ class ConsentService:
     def grant(self, scope: Scope, consent_type: ConsentType, *,
               operator_id: str, source: str = "explicit_user_command",
               allow_disabled_scope: bool = False,
-              metadata: Mapping[str, object] | None = None) -> MemoryConsent:
+              metadata: Mapping[str, object] | None = None,
+              ledger_source: str = "user") -> MemoryConsent:
         now = self._clock.now()
         event_metadata: dict[str, object] = {"operator_id": operator_id}
         if metadata:
@@ -50,10 +56,19 @@ class ConsentService:
             state=ConsentState.GRANTED, source=source, granted_at=now,
             metadata=event_metadata,
         )
-        self._coordinator.write_metadata(
+        previous = self.current(scope, consent_type)
+        self._coordinator.run_metadata_serialized(
             lambda: self._repository.record(
                 consent, allow_disabled_grant=allow_disabled_scope,
             ),
+            ledger_event_type=LedgerEventType.CONSENT_CHANGE,
+            payload=self._consent_payload(
+                scope, consent, previous_state=(
+                    previous.state.value if previous is not None else None
+                ),
+            ),
+            source=ledger_source, occurred_at=now,
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
         )
         return consent
 
@@ -79,13 +94,23 @@ class ConsentService:
             )
             if history:
                 return False
+            intent = self._coordinator.ledger_intent(
+                LedgerEventType.CONSENT_CHANGE,
+                payload=self._consent_payload(
+                    scope, consent, previous_state=None,
+                ),
+                source="system", occurred_at=now, scope_id=scope.id,
+                subject_id=scope.identity.subject_id,
+            )
             self._repository.record(consent)
+            self._coordinator.ledger_committed(intent, occurred_at=now)
             return True
 
         return self._coordinator.write_metadata(operation)
 
     def revoke(self, scope: Scope, consent_type: ConsentType, *,
-               operator_id: str, source: str = "explicit_user_command") -> MemoryConsent:
+               operator_id: str, source: str = "explicit_user_command",
+               ledger_source: str = "user") -> MemoryConsent:
         now = self._clock.now()
         consent = MemoryConsent(
             id=self._ids.new_id("consent"), subject_id=scope.identity.subject_id,
@@ -93,8 +118,35 @@ class ConsentService:
             state=ConsentState.REVOKED, source=source, revoked_at=now,
             metadata={"operator_id": operator_id},
         )
-        self._coordinator.write_metadata(lambda: self._repository.record(consent))
+        previous = self.current(scope, consent_type)
+        self._coordinator.run_metadata_serialized(
+            lambda: self._repository.record(consent),
+            ledger_event_type=LedgerEventType.CONSENT_CHANGE,
+            payload=self._consent_payload(
+                scope, consent, previous_state=(
+                    previous.state.value if previous is not None else None
+                ),
+            ),
+            source=ledger_source, occurred_at=now,
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
         return consent
+
+    @staticmethod
+    def _consent_payload(scope: Scope, consent: MemoryConsent, *,
+                         previous_state: str | None) -> dict[str, object]:
+        return {
+            "scope_id": scope.id,
+            "subject_id": consent.subject_id,
+            "consent_type": consent.consent_type,
+            "old_state": previous_state,
+            "new_state": consent.state.value,
+            "source": consent.source,
+            "consent_id": consent.id,
+            "granted_at": consent.granted_at.isoformat() if consent.granted_at else None,
+            "revoked_at": consent.revoked_at.isoformat() if consent.revoked_at else None,
+            "metadata": dict(consent.metadata),
+        }
 
     def is_granted(self, scope: Scope, consent_type: ConsentType) -> bool:
         return self._repository.is_granted(

@@ -17,6 +17,8 @@ from ..core.errors import (
     StorageError,
 )
 from ..core.model import (
+    LedgerEvent,
+    LedgerEventType,
     MemoryEntity,
     MemoryOperation,
     MemoryRevision,
@@ -25,6 +27,7 @@ from ..core.model import (
 )
 from ..core.policy.dedup import DedupKey
 from ..core.ports import MemoryStore, SearchIndex
+from .ledger_service import LedgerService
 
 T = TypeVar("T")
 
@@ -70,9 +73,11 @@ class WriteCoordinator:
     the lock is held except lock acquisition itself.
     """
 
-    def __init__(self, store: MemoryStore, index: SearchIndex) -> None:
+    def __init__(self, store: MemoryStore, index: SearchIndex,
+                 ledger: LedgerService | None = None) -> None:
         self._store = store
         self._index = index
+        self._ledger = ledger
         self._lock = asyncio.Lock()
         self._write_lock = RLock()
         self._closed = False
@@ -87,12 +92,63 @@ class WriteCoordinator:
             self._ensure_open()
             return operation()
 
+    def run_metadata_serialized(self, operation: Callable[[], T], *,
+                                ledger_event_type: LedgerEventType | None = None,
+                                payload: dict[str, object] | None = None,
+                                source: str = "user",
+                                occurred_at: datetime | None = None,
+                                scope_id: str | None = None,
+                                subject_id: str | None = None,
+                                memory_id: str | None = None) -> T:
+        """Metadata write under the same lease, optionally wrapped in ledger events."""
+        with self._write_lock:
+            self._ensure_open()
+            ledger = self._ledger
+            intent = None
+            if ledger_event_type is not None and ledger is not None and ledger.enabled:
+                intent = ledger.record_intent(
+                    ledger_event_type, payload=payload or {},
+                    source=source, occurred_at=occurred_at,
+                    scope_id=scope_id, subject_id=subject_id,
+                    memory_id=memory_id,
+                )
+            result = operation()
+            if intent is not None and ledger is not None:
+                ledger.record_committed(intent)
+            return result
+
     async def run_serialized(self, operation: Callable[[], T]) -> T:
         """Run a synchronous multi-step write under the coordinator locks."""
         async with self._lock:
             with self._write_lock:
                 self._ensure_open()
                 return operation()
+
+    def run_write_locked(self, operation: Callable[[], T]) -> T:
+        """Synchronous maintenance write (backup/restore) under the write lease."""
+        with self._write_lock:
+            self._ensure_open()
+            return operation()
+
+    def ledger_intent(self, event_type: LedgerEventType, *,
+                      payload: dict[str, object], source: str,
+                      occurred_at: datetime, scope_id: str | None = None,
+                      subject_id: str | None = None,
+                      memory_id: str | None = None) -> LedgerEvent | None:
+        """Append an intent; callers must already hold the write lease."""
+        if self._ledger is None or not self._ledger.enabled:
+            return None
+        return self._ledger.record_intent(
+            event_type, payload=payload, source=source,
+            occurred_at=occurred_at, scope_id=scope_id,
+            subject_id=subject_id, memory_id=memory_id,
+        )
+
+    def ledger_committed(self, intent: LedgerEvent | None, *,
+                         occurred_at: datetime | None = None) -> None:
+        """Append the matching committed event; callers must hold the lease."""
+        if self._ledger is not None and intent is not None:
+            self._ledger.record_committed(intent, occurred_at=occurred_at)
 
     def _index_state(self) -> IndexState:
         try:
@@ -245,17 +301,45 @@ class WriteCoordinator:
         async with self._lock:
             with self._write_lock:
                 self._ensure_open()
-                self._store.delete(
+                ledger = self._ledger
+                lineage: str | None = None
+                creation_seq: int | None = None
+                intent = None
+                if ledger is not None and ledger.enabled:
+                    lineage, creation_seq = self._store.get_lineage(
+                        memory_id, scope_id=scope_id, subject_id=subject_id,
+                    )
+                    intent = ledger.record_intent(
+                        LedgerEventType.DELETE_MEMORY,
+                        payload={
+                            "db_lineage_id": lineage,
+                            "creation_seq": creation_seq,
+                            "memory_id": memory_id,
+                            "operation_id": operation_id,
+                            "operator_type": operator_type.value,
+                            "operator_id": operator_id,
+                            "occurred_at": occurred_at.isoformat(),
+                        },
+                        source=operator_type.value, occurred_at=occurred_at,
+                        scope_id=scope_id, subject_id=subject_id,
+                        memory_id=memory_id,
+                    )
+                deleted = self._store.delete(
                     memory_id, scope_id=scope_id, subject_id=subject_id,
                     operation_id=operation_id, operator_type=operator_type,
                     operator_id=operator_id, occurred_at=occurred_at,
+                    expected_lineage=lineage,
+                    expected_creation_seq=creation_seq,
+                    idempotent=intent is not None,
                 )
+                if intent is not None and ledger is not None:
+                    ledger.record_committed(intent)
                 state = self._sync_one(memory_id)
                 # VACUUM must follow a healthy index sync; otherwise the FTS row
                 # still holds the deleted text and a later rebuild would leave it
                 # behind. The durable marker lets startup retry either way.
                 purged = self._secure_purge() if state is IndexState.HEALTHY else False
-                return OperationReceipt(operation_id, 1, state, purged)
+                return OperationReceipt(operation_id, 1 if deleted else 0, state, purged)
 
     async def clear_scope(self, scope_id: str, *, operation_id: str,
                           operator_type: OperatorType, operator_id: str,
@@ -263,10 +347,38 @@ class WriteCoordinator:
         async with self._lock:
             with self._write_lock:
                 self._ensure_open()
+                ledger = self._ledger
+                boundaries: dict[str, int] | None = None
+                intent = None
+                if ledger is not None and ledger.enabled:
+                    # Read the persisted high watermark only after the lease.
+                    boundaries = self._store.scope_lineage_boundaries(scope_id)
+                    intent = ledger.record_intent(
+                        LedgerEventType.CLEAR_SCOPE,
+                        payload={
+                            "lineage_boundaries": [
+                                {
+                                    "db_lineage_id": lineage,
+                                    "clear_creation_seq": boundary,
+                                    "high_watermark": boundary,
+                                }
+                                for lineage, boundary in boundaries.items()
+                            ],
+                            "operation_id": operation_id,
+                            "operator_type": operator_type.value,
+                            "operator_id": operator_id,
+                            "occurred_at": occurred_at.isoformat(),
+                        },
+                        source=operator_type.value, occurred_at=occurred_at,
+                        scope_id=scope_id,
+                    )
                 deleted_ids = self._store.clear_scope(
-                    scope_id, operation_id=operation_id, operator_type=operator_type,
-                    operator_id=operator_id, occurred_at=occurred_at,
+                    scope_id, operation_id=operation_id,
+                    operator_type=operator_type, operator_id=operator_id,
+                    occurred_at=occurred_at, boundaries=boundaries,
                 )
+                if intent is not None and ledger is not None:
+                    ledger.record_committed(intent)
                 try:
                     self._index.rebuild()
                 except IndexUnavailable:
@@ -275,6 +387,43 @@ class WriteCoordinator:
                     state = self._index_state()
                 purged = self._secure_purge() if state is IndexState.HEALTHY else False
                 return OperationReceipt(operation_id, len(deleted_ids), state, purged)
+
+    async def remove_attachment(self, *, memory_id: str, scope_id: str,
+                                subject_id: str, attachment_type: str,
+                                attachment_key: str, operator_type: OperatorType,
+                                operator_id: str,
+                                occurred_at: datetime) -> bool:
+        """Delete one source/tag/relation under the ledger-first protocol."""
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                lineage, creation_seq = self._store.get_lineage(
+                    memory_id, scope_id=scope_id, subject_id=subject_id,
+                )
+                ledger = self._ledger
+                intent = None
+                if ledger is not None and ledger.enabled:
+                    intent = ledger.record_intent(
+                        LedgerEventType.REMOVE_ATTACHMENT,
+                        payload={
+                            "attachment_type": attachment_type,
+                            "attachment_key": attachment_key,
+                            "memory_id": memory_id,
+                            "db_lineage_id": lineage,
+                            "creation_seq": creation_seq,
+                        },
+                        source=operator_type.value, occurred_at=occurred_at,
+                        scope_id=scope_id, subject_id=subject_id,
+                        memory_id=memory_id,
+                    )
+                removed = self._store.remove_attachment(
+                    memory_id=memory_id, scope_id=scope_id,
+                    subject_id=subject_id, attachment_type=attachment_type,
+                    attachment_key=attachment_key,
+                )
+                if intent is not None and ledger is not None:
+                    ledger.record_committed(intent)
+                return removed
 
     async def disable_scope(self, scope_id: str, *, operation_id: str,
                             operator_type: OperatorType, operator_id: str,

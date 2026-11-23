@@ -76,6 +76,45 @@ class AdminSource(StrEnum):
     NONE = "NONE"
 
 
+class LedgerEventType(StrEnum):
+    DELETE_MEMORY = "delete_memory"
+    CLEAR_SCOPE = "clear_scope"
+    CONSENT_CHANGE = "consent_change"
+    REMOVE_ATTACHMENT = "remove_attachment"
+    DESTROY_SCOPE = "destroy_scope"
+
+
+class LedgerState(StrEnum):
+    INTENT = "intent"
+    COMMITTED = "committed"
+
+
+@dataclass(frozen=True, slots=True)
+class LedgerEvent:
+    """One append-only ledger record; intent/committed share one event_id."""
+
+    event_id: str
+    seq: int
+    event_type: LedgerEventType
+    state: LedgerState
+    source: str
+    occurred_at: datetime
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    scope_id: str | None = None
+    subject_id: str | None = None
+    memory_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.event_id.strip() or not self.source.strip():
+            raise ValidationError("ledger event identifiers must be non-empty")
+        if self.seq < 1:
+            raise ValidationError("ledger seq must be >= 1")
+        object.__setattr__(
+            self, "occurred_at", require_aware_utc(self.occurred_at, "occurred_at"),
+        )
+        object.__setattr__(self, "payload", MappingProxyType(dict(self.payload)))
+
+
 @dataclass(frozen=True, slots=True)
 class AdminDecision:
     source: AdminSource

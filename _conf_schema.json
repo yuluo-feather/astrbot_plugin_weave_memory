@@ -58,7 +58,31 @@
     "type": "list",
     "items": { "type": "string" },
     "default": [],
-    "hint": "为空表示任意 dashboard 登录用户可读实例级管理端点；非空时只允许名单内用户名。V1.7 的 GET /v1/export 与 POST /v1/import 要求非空名单且用户名命中（fail-closed），仅支持群作用域。"
+    "hint": "为空表示任意 dashboard 登录用户可读实例级管理端点；非空时只允许名单内用户名。V1.7 的 GET /v1/export 与 POST /v1/import、V1.8 的 maintenance/backup|restore|reindex 要求非空名单且用户名命中（fail-closed）。"
+  },
+  "ledger_first_enabled": {
+    "description": "启用 V1.8 ledger-first 删除/清空/consent 协议与备份恢复",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后删除/清空/consent/群销毁不再写 memory_ledger.sqlite3，备份/恢复同时禁用；schema v9 的谱系列与 creation_seq 分配仍保留。"
+  },
+  "ledger_rotate_events": {
+    "description": "账本多少事件后轮转到新分段（0 表示不自动轮转）",
+    "type": "int",
+    "default": 0,
+    "hint": "轮转只移动文件，不裁剪事件；seq 全局连续，恢复读取全部分段。"
+  },
+  "backup_keep_last": {
+    "description": "备份保留份数（至少保留最近 N 份）",
+    "type": "int",
+    "default": 5,
+    "hint": "与 backup_retention_days 同时生效；不会自动删除最近一份。"
+  },
+  "backup_retention_days": {
+    "description": "备份保留天数",
+    "type": "int",
+    "default": 30,
+    "hint": "超过保留份数且超过天数的备份会被清理；无法取得写租约或 drain 失败时备份中止。"
   },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",

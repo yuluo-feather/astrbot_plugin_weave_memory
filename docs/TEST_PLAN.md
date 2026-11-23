@@ -405,3 +405,28 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 | 管理 API | `/v1/export` 与 `/v1/import` 白名单 fail-closed；匿名/非白名单 403；管理员参数透传；禁用群拒绝 |
 
 验证口径（2026-11-23）：305 passed；`ruff check .`、`mypy`、`mypy .`、`compileall`、插件构建通过。宿主真机导入/导出烟测待补。
+
+## 20. V1.8 账本与备份恢复测试矩阵（已实现）
+
+| 项 | 覆盖 |
+|---|---|
+| schema v9 | 迁移后 `db_lineage_id`/`creation_seq` 非空、唯一、按 `(created_at, id)` 回填；高水位等于最大值 |
+| 序号分配 | 所有创建路径经写租约分配；同一谱系唯一单调；恢复/灾后重建后新分配不复用 |
+| ledger-first | delete/clear/consent/destroy 产生成对 intent/committed；主库失败保留 pending |
+| pending 重放 | 仅落 intent 时启动 drain 继续删除并补 committed；备份前 strict drain 失败即中止 |
+| clear 边界 | 按 `scope_id + db_lineage_id + creation_seq <= boundary` 删除；清空后新建保留；跨谱系隔离 |
+| 旧备份不复活 | 备份 → 删除/清空/撤销授权 → 恢复：删除/清空/REVOKED 仍生效 |
+| merge | 快照后新建保留；同 ID 以较新 revision/updated_at 为准 |
+| revert | 同 ID 当前版本被备份版本覆盖；备份中不存在的行不动 |
+| disaster-rebuild | 空目标才允许；生成新当前谱系；旧 lineage 备份的 merge 被拒绝 |
+| 附件 | `remove_attachment` 后恢复旧备份不复活 source/tag/relation |
+| 群销毁 | `destroy_scope` 后恢复旧备份不复活该群 memories/consents/operations/scope |
+| 账本分段 | 轮转后 seq 连续、`ledger_id` 不变、恢复读取全部分段 |
+| 校验失败 | 备份哈希/尺寸/schema/`ledger_id`/seq 覆盖/水位任一失败即拒绝，不半恢复 |
+| dry-run | 输出将复活/不会复活清单；不修改主库 |
+| journal | 合并阶段中断后重启按 journal 重做；损坏/缺失 fail closed |
+| 配置 | `config.json` 递归脱敏；关闭 `ledger_first_enabled` 后备份/恢复禁用 |
+| 高水位 | 恢复后推进到最终表最大值、备份水位与 ledger clear 边界之上 |
+| 入口 | 私聊备份/恢复命令；管理 API 管理员白名单 + `confirm=true` |
+
+验证口径（2026-11-23）：332 passed；`ruff check .`、`mypy`、`mypy .`、`compileall`、插件构建通过。真实宿主备份/恢复烟测待补。

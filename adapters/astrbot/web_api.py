@@ -144,6 +144,12 @@ class AstrBotManagementApi:
                  "Weave maintenance status")
         register(f"{prefix}/export", self.h_export, ["GET"], "Weave group export")
         register(f"{prefix}/import", self.h_import, ["POST"], "Weave group import")
+        register(f"{prefix}/maintenance/backup", self.h_maintenance_backup, ["POST"],
+                 "Weave backup")
+        register(f"{prefix}/maintenance/restore", self.h_maintenance_restore, ["POST"],
+                 "Weave restore")
+        register(f"{prefix}/maintenance/reindex", self.h_maintenance_reindex, ["POST"],
+                 "Weave reindex")
         return True
 
     async def h_overview(self) -> object:
@@ -234,4 +240,44 @@ class AstrBotManagementApi:
                 username=username, payload=body,
                 dry_run=self._flag(self._query("dry_run")),
             )
+        return await self._run_admin(operation)
+
+    async def _body(self) -> Mapping[str, object]:
+        body = await self._proxy().json(default={})
+        if body is None:
+            return {}
+        if not isinstance(body, Mapping):
+            raise ValidationError("request body must be a JSON object")
+        return body
+
+    async def h_maintenance_backup(self) -> object:
+        async def operation(_username: str) -> object:
+            body = await self._body()
+            if not self._flag(body.get("confirm", self._query("confirm"))):
+                raise ValidationError("backup requires confirm=true")
+            return self._service.create_backup()
+        return await self._run_admin(operation)
+
+    async def h_maintenance_restore(self) -> object:
+        async def operation(_username: str) -> object:
+            body = await self._body()
+            dry_run = self._flag(body.get("dry_run", self._query("dry_run")))
+            if not dry_run and not self._flag(
+                body.get("confirm", self._query("confirm")),
+            ):
+                raise ValidationError("restore requires confirm=true")
+            return self._service.restore_backup(
+                backup_id=body.get("backup_id", self._query("backup_id")),
+                mode=body.get("mode", self._query("mode", "merge")),
+                dry_run=dry_run,
+                confirm=not dry_run,
+            )
+        return await self._run_admin(operation)
+
+    async def h_maintenance_reindex(self) -> object:
+        async def operation(_username: str) -> object:
+            body = await self._body()
+            if not self._flag(body.get("confirm", self._query("confirm"))):
+                raise ValidationError("reindex requires confirm=true")
+            return self._service.reindex()
         return await self._run_admin(operation)
