@@ -72,6 +72,16 @@ class AstrBotMemoryCommands:
         self._clear_notice(event)
         return "\n\n" + AUTO_ENROLL_NOTICE
 
+    async def _send_pending_notice(self, event: Any) -> None:
+        if not self._notice_pending(event):
+            return
+        self._clear_notice(event)
+        try:
+            await event.send(event.plain_result(AUTO_ENROLL_NOTICE))
+        except Exception:
+            # A notice failure must not break the tool call.
+            pass
+
     @staticmethod
     def _tail(event: Any, subcommand: str) -> str:
         raw = event.message_str.strip().lstrip("/").strip()
@@ -174,6 +184,7 @@ class AstrBotMemoryCommands:
         if type(limit) is not int or limit < 1 or limit > 20:
             return "检索失败：limit 必须在 1～20 之间。"
         scope = self._scope(event)
+        await self._send_pending_notice(event)
         memories, trace = self._recall.recall_with_trace(query, scope, limit=limit)
         if not memories:
             self._recall.record_diagnostics(trace)
@@ -202,6 +213,7 @@ class AstrBotMemoryCommands:
 
     async def agent_get(self, event: Any, memory_id: str) -> str:
         scope = self._scope(event)
+        await self._send_pending_notice(event)
         memory = self._memories.get_memory(scope, memory_id)
         await self._recall.record_access((memory.id,), scope)
         return json.dumps(
@@ -254,7 +266,7 @@ class AstrBotMemoryCommands:
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已更新，索引待恢复"
         return f"已更新记忆：{memory.id}（revision {memory.current_revision}）\n{state}"
 
-    def agent_list(
+    async def agent_list(
         self, event: Any, *, offset: int = 0, limit: int = 20,
         memory_type: str = "",
     ) -> str:
@@ -265,6 +277,7 @@ class AstrBotMemoryCommands:
             except ValueError:
                 return "读取失败：memory_type 只能是 PREFERENCE、FACT 或 EVENT。"
         scope = self._scope(event)
+        await self._send_pending_notice(event)
         memories, total = self._memories.list_active_page(
             scope, limit=limit, offset=offset, memory_type=parsed_type,
         )
@@ -287,8 +300,9 @@ class AstrBotMemoryCommands:
             ensure_ascii=False,
         )
 
-    def agent_history(self, event: Any, memory_id: str) -> str:
+    async def agent_history(self, event: Any, memory_id: str) -> str:
         scope = self._scope(event)
+        await self._send_pending_notice(event)
         revisions, sources = self._memories.history(scope, memory_id)
         return json.dumps(
             {
@@ -334,9 +348,11 @@ class AstrBotMemoryCommands:
 
     def stats(self, event: Any) -> str:
         scope = self._scope(event)
-        return json.dumps(
-            self._memories.statistics(scope), ensure_ascii=False,
-        ) + self._take_notice(event)
+        stats = dict(self._memories.statistics(scope))
+        recent, _ = self._memories.operations(scope, limit=5, offset=0)
+        stats["scope_type"] = "PERSONAL"
+        stats["recent_operations"] = list(recent)
+        return json.dumps(stats, ensure_ascii=False) + self._take_notice(event)
 
     def operations(self, event: Any, *, limit: int = 20, offset: int = 0) -> str:
         scope = self._scope(event)

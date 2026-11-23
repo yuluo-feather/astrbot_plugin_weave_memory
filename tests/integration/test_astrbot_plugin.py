@@ -791,6 +791,9 @@ def test_v13_personal_management_commands_status_stats_operations_export(monkeyp
         message="/织忆 统计",
     ))))[0])
     assert stats["by_type"]["FACT"] == 1
+    assert stats["scope_type"] == "PERSONAL"
+    assert stats["recent_operations"] == []
+    assert "仅属于用户的测试正文" not in json.dumps(stats, ensure_ascii=False)
 
     deleted = asyncio.run(collect(plugin.memory_delete(FakeEvent(
         message=f"/织忆 删除 {memory_id} 确认",
@@ -802,6 +805,10 @@ def test_v13_personal_management_commands_status_stats_operations_export(monkeyp
     assert operations["total"] == 1
     assert operations["items"][0]["operation_type"] == "DELETE_MEMORY"
     assert "仅属于用户的测试正文" not in json.dumps(operations, ensure_ascii=False)
+    stats_after_delete = json.loads(asyncio.run(collect(plugin.memory_stats(FakeEvent(
+        message="/织忆 统计",
+    ))))[0])
+    assert stats_after_delete["recent_operations"][0]["operation_type"] == "DELETE_MEMORY"
 
     asyncio.run(collect(plugin.memory_save(FakeEvent(
         message="/织忆 保存 导出测试正文",
@@ -870,21 +877,43 @@ def test_plugin_close_works_after_revoke(monkeypatch, tmp_path):
     asyncio.run(plugin.terminate())
 
 
-def test_plugin_agent_tool_failure_does_not_escape(monkeypatch, tmp_path):
+def test_plugin_agent_read_tool_failure_does_not_escape(monkeypatch, tmp_path):
     import asyncio
 
-    plugin, _ = load_plugin(
-        monkeypatch, tmp_path, config={"agent_write_enabled": True},
-    )
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
 
     async def boom(*args, **kwargs):
         raise RuntimeError("boom")
 
-    plugin._commands.remember = boom
-    result = asyncio.run(collect(plugin.memory_remember_tool(
-        FakeEvent(message="记住我喜欢跑步"), "我喜欢跑步",
+    plugin._commands.agent_search = boom
+    event = FakeEvent(message="检索我的记忆")
+    bind_plugin_tool(
+        plugin, event, name="weave_memory_search", handler_name="memory_search_tool",
+        args={"query": "记忆", "limit": 8},
+    )
+    result = asyncio.run(collect(plugin.memory_search_tool(
+        event, "记忆", 8,
     )))[0]
-    assert "未保存" in result
+    assert "检索失败：记忆服务暂不可用。" in result
+    asyncio.run(plugin.terminate())
+
+
+def test_agent_read_tool_auto_enroll_notifies_user(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    event = FakeEvent(message="列出我的记忆")
+    bind_plugin_tool(
+        plugin, event, name="weave_memory_list", handler_name="memory_list_tool",
+        args={"offset": 0, "limit": 20, "memory_type": ""},
+    )
+    result = asyncio.run(collect(plugin.memory_list_tool(event, 0, 20, "")))[0]
+    assert '"total"' in result
+    assert any("默认开启" in item for item in event.sent)
+    rows = plugin._database.connection.execute(
+        "SELECT state, source FROM memory_consents ORDER BY rowid",
+    ).fetchall()
+    assert [(row["state"], row["source"]) for row in rows] == [("GRANTED", "auto_enroll")]
     asyncio.run(plugin.terminate())
 
 

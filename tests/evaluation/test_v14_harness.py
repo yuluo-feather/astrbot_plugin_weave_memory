@@ -22,6 +22,20 @@ def _args(**overrides):
     return argparse.Namespace(**values)
 
 
+def _subset_report(*sample_ids):
+    dataset, digest = evaluate_v14.load_dataset(evaluate_v14.DATASET)
+    subset = copy.deepcopy(dataset)
+    subset["samples"] = [
+        next(item for item in dataset["samples"] if item["sample_id"] == sample_id)
+        for sample_id in sample_ids
+    ]
+    return evaluate_v14.run_evaluation(subset, digest, _args())
+
+
+def _without_trace_id(rows):
+    return [{key: value for key, value in row.items() if key != "trace_id"} for row in rows]
+
+
 def test_golden_set_meets_v14_minimum_and_privacy_contract():
     dataset, _ = evaluate_v14.load_dataset(evaluate_v14.DATASET)
     assert len(dataset["samples"]) == 50
@@ -67,12 +81,30 @@ def test_same_synthetic_data_produces_same_retrieval_results():
     ]
     first = evaluate_v14.run_evaluation(subset, digest, _args())
     second = evaluate_v14.run_evaluation(subset, digest, _args())
-    assert first["samples"] == second["samples"]
+    # trace_id is a per-call UUID, so exclude only that field from the repeatability check.
+    assert _without_trace_id(first["samples"]) == _without_trace_id(second["samples"])
     assert first["parameters"] == second["parameters"]
     cross_scope = [row for row in first["samples"] if row["category"] == "cross_scope"]
     assert len(cross_scope) == 2
     assert all(row["candidate_recall"] == 1.0 for row in cross_scope)
     assert all(not row["foreign_distractor_hits"] for row in cross_scope)
+
+
+def test_report_records_fts_order_by():
+    report = _subset_report("P-EF-01")
+    order_by = report["parameters"]["fts"]["order_by"]
+    assert "bm25" in order_by
+
+
+def test_report_rows_include_trace_and_candidate_diagnostics():
+    report = _subset_report("P-EF-01", "G-EF-01")
+    for row in report["samples"]:
+        assert isinstance(row["trace_id"], str) and row["trace_id"]
+        assert isinstance(row["query_hash"], str) and row["query_hash"]
+        assert row["candidate_diagnostics"]
+        for item in row["candidate_diagnostics"]:
+            assert {"id", "rank", "bm25_score", "filter_reason"} <= item.keys()
+        assert isinstance(row["omitted_diagnostics"], list)
 
 
 def test_extraction_conversation_set_is_protocol_only_and_covers_gate_cases():
@@ -98,6 +130,14 @@ def test_committed_baseline_report_is_complete_and_safe():
     report = json.loads(path.read_text(encoding="utf-8"))
     assert report["dataset_sha256"] == digest
     assert len(report["samples"]) == len(dataset["samples"]) == 50
+    assert isinstance(report["environment"]["runtime_source_dirty"], bool)
+    assert isinstance(report["environment"]["runtime_source_commit"], str)
+    assert "bm25" in report["parameters"]["fts"]["order_by"]
+    for row in report["samples"]:
+        assert isinstance(row["trace_id"], str) and row["trace_id"]
+        assert isinstance(row["query_hash"], str) and row["query_hash"]
+        assert isinstance(row["candidate_diagnostics"], list)
+        assert isinstance(row["omitted_diagnostics"], list)
     for scope_type in ("PERSONAL", "GROUP"):
         metrics = report["scope_metrics"][scope_type]
         assert metrics["sample_count"] == 25

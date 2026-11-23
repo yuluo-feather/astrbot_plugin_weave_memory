@@ -478,7 +478,7 @@ class WeaveMemoryPlugin(Star):
             yield "读取失败：无法确认织忆插件的工具调用身份。"
             return
         try:
-            yield self._command_service().agent_list(
+            yield await self._command_service().agent_list(
                 event, offset=offset, limit=limit, memory_type=memory_type,
             )
         except _COMMAND_ERRORS as exc:
@@ -498,7 +498,7 @@ class WeaveMemoryPlugin(Star):
             yield "读取失败：无法确认织忆插件的工具调用身份。"
             return
         try:
-            yield self._command_service().agent_history(event, memory_id)
+            yield await self._command_service().agent_history(event, memory_id)
         except _COMMAND_ERRORS as exc:
             yield self._error_text("读取历史", exc)
         except Exception as exc:

@@ -151,6 +151,34 @@ def test_agent_save_update_and_history_record_host_tool_call_ids(app_stack):
     asyncio.run(stale_update())
 
 
+def test_explicit_update_marks_source_explicit_after_agent_update(app_stack):
+    _, store, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+
+    async def write_then_edit():
+        saved, _ = await memories.save_agent(
+            scope, "喜欢黑咖啡", operator_id="u1", tool_call_id="call-save-1",
+            memory_type=MemoryType.PREFERENCE,
+        )
+        _, _ = await memories.update_agent(
+            scope, saved.id, "喜欢无糖黑咖啡", expected_revision=1,
+            operator_id="u1", tool_call_id="call-update-1",
+        )
+        updated, _ = await memories.update_explicit(
+            scope, saved.id, "喜欢热黑咖啡", expected_revision=2,
+            operator_id="u1",
+        )
+        return saved, updated
+
+    saved, updated = asyncio.run(write_then_edit())
+    assert updated.source_type.value == "EXPLICIT"
+    _, sources = memories.history(scope, saved.id)
+    assert sources[-1].source_type.value == "EXPLICIT"
+    assert sources[-1].operator_type.value == "user"
+    assert store.get(saved.id, scope_id=scope.id, subject_id="u1") == updated
+
+
 def test_agent_get_hides_non_active_memory(app_stack):
     _, store, _, scopes, consent, memories, _, _ = app_stack
     scope = scopes.resolve(identity())

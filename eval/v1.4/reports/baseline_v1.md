@@ -3,16 +3,23 @@
 - 数据集：`weave-memory-v1.4-golden` v`1.0.0`
 - SHA-256：`1601b8c27989f238a2f4e95e49a1e250534ad6d5636a12935f4ca3ae6479894c`
 - Split：`all`；参数实验：`否`
-- 运行时代码基线 commit：`21b83806071e01432cf3074645ccca32289b3ed8`
+- 运行时代码基线 commit：`d51c5768005043d48b093918649bf9b801d0a44b`；工作区有未提交改动：`是`
 - Python / SQLite：`3.12.10` / `3.49.1`
 - 固定时间 / 随机种子：`2026-11-23T12:00:00+00:00` / `1401`
+
+## 参数
+
+- FTS ORDER BY：`bm25(memory_fts) ASC, COALESCE(m.last_accessed_at, m.created_at) DESC, CASE m.source_type WHEN 'EXPLICIT' THEN 0 ELSE 1 END ASC, m.memory_type ASC, m.created_at DESC, m.id ASC`
+- Personal：max_memories=`4`，max_tokens=`384`，candidate_limit=`12`
+- Group：max_memories=`2`，max_tokens=`192`，candidate_limit=`8`
+- JSON 逐样本行包含 `candidate_diagnostics` / `omitted_diagnostics`，用于定位 false positive 与漏召回。
 
 ## Scope 指标
 
 | Scope | 样本 | Candidate Recall@K | Candidate Precision@K | Candidate MRR | Injected Recall@K | Injected Precision@K | Injected MRR | 无记忆正确率 | 平均 Token | P50/P95 ms | 错误归属率 | 过期/删除召回率 | 跨 Scope 干扰命中 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| PERSONAL | 25 | 1.0000 | 0.0833 | 1.0000 | 1.0000 | 0.2500 | 1.0000 | 1.0000 | 75.9200 | 0.3627/0.7023 | 0.0000 | 0.0000 | 0 |
-| GROUP | 25 | 1.0000 | 0.1250 | 1.0000 | 1.0000 | 0.5000 | 1.0000 | 1.0000 | 69.8800 | 0.4022/0.8238 | 0.0000 | 0.0000 | 0 |
+| PERSONAL | 25 | 1.0000 | 0.0833 | 1.0000 | 1.0000 | 0.2500 | 1.0000 | 1.0000 | 75.9200 | 0.3600/0.7301 | 0.0000 | 0.0000 | 0 |
+| GROUP | 25 | 1.0000 | 0.1250 | 1.0000 | 1.0000 | 0.5000 | 1.0000 | 1.0000 | 69.8800 | 0.4164/0.8203 | 0.0000 | 0.0000 | 0 |
 
 ## 分类统计
 

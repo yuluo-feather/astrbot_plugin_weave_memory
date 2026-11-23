@@ -29,6 +29,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DATASET = ROOT / "eval" / "v1.4" / "datasets" / "golden_v1.json"
 REPORT_DIR = ROOT / "eval" / "v1.4" / "reports"
 PACKAGE = "data.plugins.astrbot_plugin_weave_memory"
+# The exact ORDER BY used by adapters.sqlite.fts.SQLiteFTSIndex for both search and
+# diagnostics. Recorded in the report so results can be read against the real ranking.
+FTS_ORDER_BY = (
+    "bm25(memory_fts) ASC, COALESCE(m.last_accessed_at, m.created_at) DESC, "
+    "CASE m.source_type WHEN 'EXPLICIT' THEN 0 ELSE 1 END ASC, "
+    "m.memory_type ASC, m.created_at DESC, m.id ASC"
+)
 
 
 def install_package_namespace() -> None:
@@ -338,17 +345,20 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
     def configured(value: int | None, default: int) -> int:
         return default if value is None else value
 
+    personal_params: dict[str, int] = {
+        "max_memories": configured(args.personal_max_memories, 4),
+        "max_tokens": configured(args.personal_max_tokens, 384),
+        "candidate_limit": configured(args.personal_candidate_limit, 12),
+    }
+    group_params: dict[str, int] = {
+        "max_memories": configured(args.group_max_memories, 2),
+        "max_tokens": configured(args.group_max_tokens, 192),
+        "candidate_limit": configured(args.group_candidate_limit, 8),
+    }
     params = {
-        "personal": {
-            "max_memories": configured(args.personal_max_memories, 4),
-            "max_tokens": configured(args.personal_max_tokens, 384),
-            "candidate_limit": configured(args.personal_candidate_limit, 12),
-        },
-        "group": {
-            "max_memories": configured(args.group_max_memories, 2),
-            "max_tokens": configured(args.group_max_tokens, 192),
-            "candidate_limit": configured(args.group_candidate_limit, 8),
-        },
+        "personal": personal_params,
+        "group": group_params,
+        "fts": {"order_by": FTS_ORDER_BY},
     }
     selected_samples = [s for s in dataset["samples"] if args.split == "all" or s["split"] == args.split]
     random.Random(dataset["fixed_random_seed"]).shuffle(selected_samples)
@@ -364,7 +374,7 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
                 scope_type = sample["scope"]["scope_type"]
                 service = runtime["personal"] if scope_type == "PERSONAL" else runtime["group"]
                 recall_method = service.recall_with_trace if scope_type == "PERSONAL" else service.recall_group_with_trace
-                config = params["personal"] if scope_type == "PERSONAL" else params["group"]
+                config = personal_params if scope_type == "PERSONAL" else group_params
 
                 for _ in range(2):
                     recall_method(sample["query"], scope, limit=config["candidate_limit"])
@@ -420,9 +430,13 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
                 result_rows.append({
                     "sample_id": sample["sample_id"], "split": sample["split"], "query": sample["query"],
                     "scope_type": scope_type, "category": sample["category"],
+                    "trace_id": diagnostic.get("trace_id"),
+                    "query_hash": diagnostic.get("query_hash"),
                     "expected_ids": expected, "candidate_ids": candidate_ids,
                     "injected_ids": injected_ids,
                     "false_positive_ids": sorted(set(candidate_ids) - set(expected)),
+                    "candidate_diagnostics": list(diagnostic.get("candidates", [])),
+                    "omitted_diagnostics": list(diagnostic.get("omitted", [])),
                     "candidate_recall": candidate_score["recall"],
                     "candidate_precision": candidate_score["precision"],
                     "candidate_mrr": candidate_score["mrr"],
@@ -498,6 +512,9 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
             "python": platform.python_version(), "platform": platform.platform(),
             "sqlite": sqlite3.sqlite_version,
             "runtime_source_commit": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
+            "runtime_source_dirty": bool(subprocess.check_output(
+                ["git", "-C", str(ROOT), "status", "--porcelain"], text=True,
+            ).strip()),
             "fixed_clock": dataset["fixed_clock"], "random_seed": dataset["fixed_random_seed"],
         },
         "scope_metrics": by_scope,
@@ -519,9 +536,22 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- 数据集：`{report['dataset_name']}` v`{report['dataset_version']}`",
         f"- SHA-256：`{report['dataset_sha256']}`",
         f"- Split：`{report['split']}`；参数实验：`{'是' if report['parameter_experiment'] else '否'}`",
-        f"- 运行时代码基线 commit：`{report['environment']['runtime_source_commit']}`",
+        f"- 运行时代码基线 commit：`{report['environment']['runtime_source_commit']}`；工作区有未提交改动：`{'是' if report['environment']['runtime_source_dirty'] else '否'}`",
         f"- Python / SQLite：`{report['environment']['python']}` / `{report['environment']['sqlite']}`",
         f"- 固定时间 / 随机种子：`{report['environment']['fixed_clock']}` / `{report['environment']['random_seed']}`", "",
+        "## 参数", "",
+        f"- FTS ORDER BY：`{report['parameters']['fts']['order_by']}`",
+        "- Personal：max_memories=`{}`，max_tokens=`{}`，candidate_limit=`{}`".format(
+            report["parameters"]["personal"]["max_memories"],
+            report["parameters"]["personal"]["max_tokens"],
+            report["parameters"]["personal"]["candidate_limit"],
+        ),
+        "- Group：max_memories=`{}`，max_tokens=`{}`，candidate_limit=`{}`".format(
+            report["parameters"]["group"]["max_memories"],
+            report["parameters"]["group"]["max_tokens"],
+            report["parameters"]["group"]["candidate_limit"],
+        ),
+        "- JSON 逐样本行包含 `candidate_diagnostics` / `omitted_diagnostics`，用于定位 false positive 与漏召回。", "",
         "## Scope 指标", "",
         "| Scope | 样本 | Candidate Recall@K | Candidate Precision@K | Candidate MRR | Injected Recall@K | Injected Precision@K | Injected MRR | 无记忆正确率 | 平均 Token | P50/P95 ms | 错误归属率 | 过期/删除召回率 | 跨 Scope 干扰命中 |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",

@@ -198,6 +198,7 @@ class MemoryApplicationService:
         now = self._clock.now()
         updated = replace(
             current, content=content, normalized_content=normalized,
+            source_type=SourceType.EXPLICIT,
             current_revision=current.current_revision + 1, updated_at=now,
         )
         revision = MemoryRevision(
