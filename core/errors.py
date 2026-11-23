@@ -43,3 +43,16 @@ class ConsentRevocationPending(StorageError):
 
 class GroupConsentRevocationPending(StorageError):
     """Group scope is disabled, but its group_memory REVOKED event needs retry."""
+
+
+class GroupNotAdmin(AuthorizationDenied):
+    """The sender is known but is not a group administrator."""
+
+
+class GroupAdminUnavailable(AuthorizationDenied):
+    """No administrator source could be resolved and group_admin_ids did not match."""
+
+
+class GroupNotCreated(NotFound):
+    """The group Scope has not been created yet."""
+

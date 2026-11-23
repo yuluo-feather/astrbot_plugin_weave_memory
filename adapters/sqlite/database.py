@@ -265,8 +265,58 @@ class SQLiteDatabase:
         except sqlite3.Error as exc:
             raise StorageError("could not roll back V1.5 schema to V1.4") from exc
 
-    def rollback_to_v10(self) -> None:
+    def rollback_preview(self) -> dict[str, object]:
+        """Return a read-only report of what a v5→v4 rollback would remove."""
+        self._ensure_open()
+        try:
+            version = self.schema_version()
+            group_scopes = int(self.connection.execute(
+                "SELECT count(*) FROM memory_scopes WHERE scope_type='GROUP'",
+            ).fetchone()[0])
+            group_memories = int(self.connection.execute(
+                """SELECT count(*) FROM memories m
+                   JOIN memory_scopes s ON s.id=m.scope_id
+                   WHERE s.scope_type='GROUP'""",
+            ).fetchone()[0])
+            group_consents = int(self.connection.execute(
+                "SELECT count(*) FROM memory_consents WHERE consent_type='group_memory'",
+            ).fetchone()[0])
+            group_rows = self.connection.execute(
+                """SELECT id, platform, tenant_id, scope_external_id, is_enabled
+                FROM memory_scopes WHERE scope_type='GROUP'
+                ORDER BY platform, tenant_id, scope_external_id""",
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not preview V1.1 rollback") from exc
+        can_rollback = (
+            version == 5
+            and not group_scopes and not group_memories and not group_consents
+        )
+        return {
+            "schema_version": version,
+            "group_scope_count": group_scopes,
+            "group_memory_count": group_memories,
+            "group_consent_count": group_consents,
+            "groups": [
+                {
+                    "scope_id": row["id"], "platform": row["platform"],
+                    "tenant_id": row["tenant_id"], "group_id": row["scope_external_id"],
+                    "enabled": bool(row["is_enabled"]),
+                }
+                for row in group_rows
+            ],
+            "can_rollback": can_rollback,
+            "steps": [
+                "关闭 → [清空 →] 销毁每个群（会写入备份）",
+                "确认无群 scope / 群记忆 / 群 consent",
+                "执行 rollback_to_v10() 回到 v4",
+            ],
+        }
+
+    def rollback_to_v10(self, *, dry_run: bool = False) -> dict[str, object] | None:
         """Roll v5 back to v4 only when no group data remains."""
+        if dry_run:
+            return self.rollback_preview()
         self._ensure_open()
         self.connection.execute("PRAGMA foreign_keys = OFF")
         try:
@@ -319,6 +369,7 @@ class SQLiteDatabase:
             raise StorageError("could not roll back V1.1 schema to V1.0") from exc
         finally:
             self.connection.execute("PRAGMA foreign_keys = ON")
+        return None
 
     def backup_to(self, destination: str | Path) -> None:
         """Create a consistent SQLite backup for migration, group destroy, or rollback."""

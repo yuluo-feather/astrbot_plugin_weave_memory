@@ -49,6 +49,7 @@ from .core.errors import (
     StorageError,
     ValidationError,
 )
+from .core.model import MemoryEntity
 
 _COMMAND_ERRORS = (
     AuthorizationDenied, Conflict, IndexUnavailable, InvalidTransition, NotFound,
@@ -148,6 +149,14 @@ class WeaveMemoryPlugin(Star):
                 store, coordinator, consent, index, clock, ids,
                 data_dir / "group_backups",
             )
+            destroy_backup_retention = self._config_int(
+                "group_destroy_backup_retention_days", 30,
+            )
+            removed_backups = group_lifecycle.cleanup_destroy_backups(
+                destroy_backup_retention,
+            )
+            if removed_backups:
+                logger.info(f"织忆清理超期群销毁备份：{removed_backups} 份")
             group_memories = GroupMemoryService(
                 store, store, coordinator, consent, clock, ids,
                 max_active=self._config_int("group_max_active", 200),
@@ -195,6 +204,8 @@ class WeaveMemoryPlugin(Star):
             )
             self._group_commands = AstrBotGroupCommands(
                 group_scopes, group_lifecycle, group_memories, group_recall,
+                retention_days=self._config_int("group_retention_days", 90),
+                backup_retention_days=destroy_backup_retention,
             )
             self._extraction_commands = AstrBotExtractionCommands(
                 scopes, consent, extraction,
@@ -202,6 +213,7 @@ class WeaveMemoryPlugin(Star):
             self._extraction_capture = AstrBotExtractionCapture(
                 scopes, extraction, enabled=extraction_enabled,
                 min_messages=self._config_int("extraction_min_messages", 5),
+                notifier=self._notify_extraction_candidates,
             )
             self._injector = AstrBotMemoryInjector(
                 scopes, consent, composer, auto_enroll=auto_enroll,
@@ -307,6 +319,28 @@ class WeaveMemoryPlugin(Star):
         if isinstance(exc, (Conflict, ValidationError)):
             return f"{action}失败：{exc}。"
         return f"{action}失败：{type(exc).__name__}。"
+
+    @staticmethod
+    async def _notify_extraction_candidates(
+        event: AstrMessageEvent, candidates: tuple[MemoryEntity, ...],
+    ) -> None:
+        if not candidates:
+            return
+        lines = [
+            f"{memory.id} · {memory.memory_type.value} · {memory.content[:80]}"
+            for memory in candidates
+        ]
+        text = (
+            "织忆提取到候选记忆：\n" + "\n".join(lines)
+            + "\n用 /织忆 候选 列表 查看；"
+            "/织忆 候选 确认 <ID> 或 /织忆 候选 拒绝 <ID> [原因]。"
+        )
+        try:
+            from astrbot.api.event import MessageChain
+            from astrbot.api.message_components import Plain
+            await event.send(MessageChain([Plain(text)]))
+        except Exception as exc:  # Notification is best-effort.
+            logger.warning(f"织忆候选通知发送失败：{type(exc).__name__}")
 
     @filter.command_group("织忆", alias={"/织忆"})
     def memory(self):

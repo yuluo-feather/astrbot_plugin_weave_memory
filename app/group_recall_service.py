@@ -34,6 +34,13 @@ class GroupRecallService:
         self._scopes = scopes
         self._diagnostics_writer = diagnostics_writer
         self._include_query_in_diagnostics = include_query_in_diagnostics
+        self._last_omitted: dict[str, int] = {}
+
+    def record_omitted(self, scope_id: str, count: int) -> None:
+        self._last_omitted[scope_id] = max(0, count)
+
+    def last_omitted_count(self, scope_id: str) -> int:
+        return self._last_omitted.get(scope_id, 0)
 
     @staticmethod
     def _require_group(scope: Scope) -> None:
@@ -159,6 +166,7 @@ class GroupContextComposer:
             query, scope, limit=self._candidate_limit,
         )
         if not candidates:
+            self._recall.record_omitted(scope.id, 0)
             self._recall.record_diagnostics(trace)
             return None
         lines: list[str] = []
@@ -168,7 +176,10 @@ class GroupContextComposer:
             if len(selected) >= self._max_memories:
                 omitted.append({"id": memory.id, "reason": "max_memories"})
                 continue
-            line = f"- [{memory.memory_type.value}] {self._escape_untrusted(memory.content)}"
+            line = (
+                f"- [{memory.memory_type.value}] {self._escape_untrusted(memory.content)}"
+                f"（{memory.created_at.date().isoformat()}）"
+            )
             candidate_content = self._PREFIX + "\n".join((*lines, line)) + self._SUFFIX
             if estimate_tokens(candidate_content) > self._max_tokens:
                 omitted.append({"id": memory.id, "reason": "token_budget"})
@@ -176,6 +187,7 @@ class GroupContextComposer:
             lines.append(line)
             selected.append(memory.id)
         if not lines:
+            self._recall.record_omitted(scope.id, len(omitted))
             self._recall.record_diagnostics(trace, omitted=tuple(omitted))
             return None
         content = self._PREFIX + "\n".join(lines) + self._SUFFIX
@@ -185,6 +197,7 @@ class GroupContextComposer:
             trace, injected_ids=tuple(selected), estimated_tokens=estimated_tokens,
             omitted=tuple(omitted),
         )
+        self._recall.record_omitted(scope.id, len(omitted))
         return MemoryContext(
             content=content, selected_memory_ids=tuple(selected),
             estimated_tokens=estimated_tokens, omitted_count=len(omitted),

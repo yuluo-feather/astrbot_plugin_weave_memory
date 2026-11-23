@@ -119,7 +119,7 @@ class AstrBotMemoryCommands:
             "织忆命令：\n"
             "默认已开启；首次私聊会自动登记并发送一次告知（auto_enroll=false 时需 /织忆 授权）。\n"
             "/织忆 授权 —— 显式开启或恢复个人记忆\n"
-            "/织忆 撤销授权 —— 停止保存、检索和注入（不删除已有数据，不会被自动登记复活）\n"
+            "/织忆 撤销授权 —— 可逆地停止保存、检索和注入（不删除已有数据，不会被自动登记复活）\n"
             "/织忆 保存 <内容> —— 显式保存一条事实\n"
             "/织忆 更新 <记忆ID> <当前revision> <新内容> —— 显式修订指定记忆\n"
             "/织忆 列表 —— 查看已保存记忆\n"
@@ -127,10 +127,10 @@ class AstrBotMemoryCommands:
             "/织忆 状态 —— 查看个人空间、授权和索引状态\n"
             "/织忆 统计 —— 查看记忆数量分布\n"
             "/织忆 操作记录 —— 查看不含正文的操作审计\n"
-            "/织忆 导出 [json|md] —— 导出当前个人空间的 ACTIVE 记忆\n"
+            "/织忆 导出 [json|md] —— 导出当前个人空间的 ACTIVE 记忆（导出不是备份，完整备份/恢复在 V1.8）\n"
             "/织忆 删除 <记忆ID> 确认 —— 二次确认后不可恢复地删除一条记忆\n"
             "/织忆 清空 确认 —— 不可恢复地清空个人记忆\n"
-            "/织忆 关闭 确认 —— 永久关闭个人记忆空间（当前版本不支持重新开启，数据保留）\n"
+            "/织忆 关闭 确认 —— 永久关闭个人记忆空间（不提供重新开启；只想停止功能请用 /织忆 撤销授权，可逆）\n"
             "/织忆 提取 开启 <capture|auto_extract|external_model|store_candidate|全部> —— 分层授权私聊自动提取（默认全关）\n"
             "/织忆 提取 关闭 <能力> / 提取 状态 —— 关闭单项能力；查看有效授权、缺失条件与任务\n"
             "/织忆 候选 列表 / 确认 <ID> / 拒绝 <ID> [原因] —— 管理提取候选\n"
@@ -375,12 +375,14 @@ class AstrBotMemoryCommands:
         scope = self._scope(event)
         stats = self._memories.statistics(scope)
         index = self._recall.index_status(scope)
+        consent_event = self._consent.current(scope, PersonalConsentType.PERSONAL_MEMORY)
         result = {
             "scope": "PERSONAL",
             "enabled": self._scopes.is_enabled(scope),
             "consent": "GRANTED" if self._consent.is_granted(
                 scope, PersonalConsentType.PERSONAL_MEMORY,
             ) else "NOT_GRANTED",
+            "consent_source": consent_event.source if consent_event is not None else "none",
             "memory": stats,
             "index": index,
         }

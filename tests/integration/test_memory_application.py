@@ -301,6 +301,7 @@ def test_recall_debug_logs_only_hash_ids_scores_and_filter_reasons(
     assert context is not None
     assert len(context.selected_memory_ids) == 1
     assert context.omitted_count == 1
+    assert "（2026-11-22）" in context.content
     assert len(records) == 2
     record = records[-1]
     assert record["trace_id"]

@@ -138,6 +138,7 @@ V0.5 使用 provider-neutral estimate：CJK 字符和标点各计 1，ASCII 字�
 - FTS 候选先完成 Scope/Subject/Consent/Scope enabled/status/validity 过滤，再按 BM25 相关性排序。
 - 相关性相同时，按 `COALESCE(last_accessed_at, created_at)` 倒序；再以 EXPLICIT 来源优先，最后以 MemoryType 字典序与 ID 稳定打破平局。MemoryType 当前只作确定性末级 tie-break，不代表已经校准的语义权重。
 - 上下文 Composer 只为最终通过 Token/条数预算的 `selected_memory_ids` 记录访问时间；未注入候选不更新 `last_accessed_at`。
+- 注入行格式为 `- [类型] 正文（YYYY-MM-DD）`；日期取 `created_at` 的 UTC 日期，用于给模型时间信号，不参与检索排序。
 - 手动查询同样记录实际返回记忆的访问时间。访问元数据由 WriteCoordinator 串行写入，不创建内容 Revision，不触发 FTS dirty。
 - `compose` 与 AstrBot Injector 为异步调用，以便访问元数据写入遵守统一写协调契约。
 
@@ -213,14 +214,16 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - `enable(scope, operation_id)`：解析管理员 → 追加 `group_memory=GRANTED` → `is_enabled=1` + `GROUP_ENABLE` 审计；GRANT 失败则不 enable；审计/enable 失败时保留 GRANT 但 disabled，可同 operation ID 重试补齐；同一 operation ID 重放幂等。
 - `disable(scope, operation_id)`：`is_enabled=0` + `GROUP_DISABLE` 审计 → 追加 `group_memory=REVOKED`；保留数据；撤销追加失败返回 `GroupConsentRevocationPending`，Scope 保持 disabled；同一 operation ID 重试补齐。
 - `clear(scope, operation_id)`：只清当前群；要求 `确认`；enabled/disabled 都可执行；写 `CLEAR_MEMORY`/`CLEAR_SCOPE` 审计；物理擦除沿用 ADR-0008；不改变 consent/enabled。
-- `destroy(scope, operation_id) -> DestroyReceipt`：仅管理员、必须先 `群关闭`、必须 `确认`；服务内调用 SQLite backup API 生成唯一备份并校验目标群 Scope/记忆/consent，写 sidecar manifest（operation ID/scope ID/路径/sha256/行数/时间）；备份或校验失败立即中止。
+- `destroy(scope, operation_id, with_backup=True) -> DestroyReceipt`：仅管理员、必须先 `群关闭`、必须 `确认`；默认服务内调用 SQLite backup API 生成唯一备份并校验目标群 Scope/记忆/consent，写 sidecar manifest（operation ID/scope ID/路径/sha256/行数/时间）；备份或校验失败立即中止。`with_backup=False` 时不生成 sqlite 备份，sidecar 记 `backup_mode=SKIPPED` 并写 warning 审计。
 - `destroy` 使用专用 `delete_group_scope` 事务，不调用会自行提交的 `clear_scope`；单事务删除：群记忆及关联 → consent 历史 → operations 审计 → scope，并同时标记 FTS dirty 与 `secure_purge_pending`。
 - 提交后先重建/清理群 FTS（或由启动恢复重建），再 secure purge；FTS 未恢复时不得清 pending；purge 失败保留 pending，不回滚 Scope 删除；已有 pending 不阻止销毁。
 - 备份语义：`群关闭→群销毁` 备份包含群记忆；`群清空→群销毁` 备份是清空后快照；要保留群记忆必须先关闭直接销毁。
-- `DestroyReceipt = {operation_id, scope_id, backup_path, backup_sha256, affected_count, purged}`；`affected_count` 是删除的群记忆数；sidecar 另记各子表行数。
+- `DestroyReceipt = {operation_id, scope_id, backup_path, backup_sha256, affected_count, purged, backup_mode}`；`affected_count` 是删除的群记忆数；sidecar 另记各子表行数。`backup_mode` 为 `REQUIRED` 或 `SKIPPED`。
+- 销毁备份默认保留 30 天，配置键 `group_destroy_backup_retention_days`；启动时清理超期备份并保留最新一份。被销毁 scope 不能从该备份恢复，备份只用于审计与其他 scope 的灾难恢复。
+- 带外入口：`python scripts/weave_admin.py group-destroy --data-dir <dir> --platform <p> --tenant <t> --group <g> --admin-id <id> --confirm [--no-backup]`；复用同一 `GroupLifecycleService`、备份与审计，不绕过 consent。
 - sidecar 写在插件数据目录下的备份同级文件，temp+fsync+rename 原子落盘；权限继承数据目录；备份/sidecar 不在 V1.1 自动清理。
 - 幂等：事务提交后 Scope 不存在视为已销毁；事务前/中崩溃整体回滚；重试不覆盖已有备份；`GROUP_DESTROY` tombstone 写 sidecar，不修改备份。
-- `DestroyReceipt = {operation_id, scope_id, backup_path, backup_sha256, affected_count, purged}`。
+- `DestroyReceipt = {operation_id, scope_id, backup_path, backup_sha256, affected_count, purged, backup_mode}`。
 - 群关闭可逆；个人关闭仍永久。`destroy` 只用于彻底移除群数据/回滚前置。
 
 ### AdminResolver / 管理员来源
@@ -248,7 +251,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 | `群保存` | 拒绝 | 允许（enabled + group_memory granted） | 不适用 |
 | `群列表/查询` | 允许（当前群、enabled + granted） | 允许（同左） | 不适用 |
 | `群状态` | 允许（可 disabled；不含正文/管理员列表） | 允许 | 不适用 |
-| `群开启/群关闭/群清空/群销毁` | 拒绝 | 允许（群销毁需先关闭 + 备份 + 确认） | 不适用 |
+| `群开启/群关闭/群清空/群销毁` | 拒绝 | 允许（群销毁需先关闭 + 默认备份 + 确认；`群销毁 无备份 确认` 需二次确认） | 不适用 |
 | 个人命令 | 不适用 | 不适用 | 仅本人 |
 
 ### 错误与配置

@@ -204,9 +204,25 @@ def validate_dataset(dataset: dict[str, Any]) -> None:
             if fixture["content"] != expected_content:
                 raise ValueError(f"sample {item['sample_id']} expected content does not match fixture")
         for memory_id in item["distractor_memory_ids"]:
-            fixture_scope = dataset["scopes"][memory_by_id[memory_id]["scope_key"]]
-            if fixture_scope["scope_id"] == sample_scope["scope_id"]:
+            fixture = memory_by_id[memory_id]
+            fixture_scope = dataset["scopes"][fixture["scope_key"]]
+            same_scope = fixture_scope["scope_id"] == sample_scope["scope_id"]
+            if item["category"] == "cross_scope":
+                if same_scope:
+                    raise ValueError(f"sample {item['sample_id']} distractor must be outside its scope")
+            elif item["category"] == "conflict_temporal":
+                if not same_scope or fixture["status"] != "ACTIVE":
+                    raise ValueError(
+                        f"sample {item['sample_id']} conflict distractor must be an ACTIVE in-scope memory"
+                    )
+            elif same_scope:
                 raise ValueError(f"sample {item['sample_id']} distractor must be outside its scope")
+        if item["category"] == "conflict_temporal" and (
+            len(item["expected_memory_ids"]) != 1 or len(item["distractor_memory_ids"]) != 1
+        ):
+            raise ValueError(
+                f"conflict_temporal sample {item['sample_id']} needs exactly one old and one new memory"
+            )
         for memory_id in item["excluded_memory_ids"]:
             fixture = memory_by_id[memory_id]
             fixture_scope = dataset["scopes"][fixture["scope_key"]]
@@ -450,7 +466,18 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
                     fixture_scope = dataset["scopes"][fixture["scope_key"]]
                     if fixture_scope["scope_id"] != sample["scope"]["scope_id"] or fixture_scope["subject_id"] != sample["subject_id"]:
                         wrong_scope += 1
-                foreign_hits = sorted(set(candidate_ids) & set(sample["distractor_memory_ids"]))
+                foreign_hits = (
+                    sorted(set(candidate_ids) & set(sample["distractor_memory_ids"]))
+                    if sample["category"] == "cross_scope" else []
+                )
+                conflict_hits = (
+                    sorted(set(candidate_ids) & set(sample["distractor_memory_ids"]))
+                    if sample["category"] == "conflict_temporal" else []
+                )
+                conflict_co_injected = (
+                    bool(set(expected) & set(injected_ids))
+                    and bool(set(conflict_hits) & set(injected_ids))
+                )
                 excluded_hits = sorted(set(candidate_ids) & set(sample["excluded_memory_ids"]))
                 no_memory_correct = None
                 if sample["category"] in {"no_memory", "expired_deleted"}:
@@ -475,6 +502,8 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
                     "no_memory_correct": no_memory_correct,
                     "wrong_scope_count": wrong_scope,
                     "foreign_distractor_hits": foreign_hits,
+                    "conflict_memory_hits": conflict_hits,
+                    "conflict_co_injected": conflict_co_injected,
                     "excluded_memory_hits": excluded_hits,
                     "estimated_injected_tokens": token_count,
                     "injection_effectiveness": None,
@@ -515,6 +544,14 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
                 if sum(len(next(s for s in selected_samples if s["sample_id"] == row["sample_id"])["excluded_memory_ids"]) for row in rows) else 0.0
             ),
             "cross_scope_distractor_hit_count": sum(len(row["foreign_distractor_hits"]) for row in rows),
+            "conflict_sample_count": sum(
+                1 for row in rows if row["category"] == "conflict_temporal"
+            ),
+            "conflict_co_injection_rate": (
+                sum(1 for row in rows if row["conflict_co_injected"])
+                / sum(1 for row in rows if row["category"] == "conflict_temporal")
+                if any(row["category"] == "conflict_temporal" for row in rows) else None
+            ),
             "injection_effectiveness": {
                 "status": "pending_human_rubric",
                 "rated_count": 0,
@@ -531,6 +568,10 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
             "candidate_precision_at_k": summarize(rows, "candidate_precision"),
             "candidate_mrr": summarize(rows, "candidate_mrr"),
             "no_memory_correct_rate": summarize(rows, "no_memory_correct"),
+            "conflict_co_injection_rate": (
+                sum(1 for row in rows if row["conflict_co_injected"]) / len(rows)
+                if category == "conflict_temporal" and rows else None
+            ),
         }
 
     report = {
@@ -566,6 +607,7 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
             "Baseline covers all declared splits for descriptive reporting; the holdout split is never used for parameter selection, so future experiments must use train only.",
             "Baseline uses the current V1.3 SQLite FTS runtime services and does not alter runtime defaults.",
             "Cross-scope samples include an in-scope target and a foreign same-term distractor; target retrieval contributes to normal metrics and foreign hits are reported separately.",
+            "Conflict-temporal samples pair an old and a new ACTIVE memory in the same scope; conflict_co_injection_rate is diagnostic only and has no pass threshold in V1.4.",
         ],
     }
     return report
@@ -594,14 +636,14 @@ def render_markdown(report: dict[str, Any]) -> str:
         ),
         "- JSON 逐样本行包含 `candidate_diagnostics` / `omitted_diagnostics`，用于定位 false positive 与漏召回。", "",
         "## Scope 指标", "",
-        "| Scope | 样本 | Candidate Recall@K | Candidate Precision@K | Candidate MRR | Injected Recall@K | Injected Precision@K | Injected MRR | 无记忆正确率 | 平均 Token | P50/P95 ms | 错误归属率 | 过期/删除召回率 | 跨 Scope 干扰命中 |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Scope | 样本 | Candidate Recall@K | Candidate Precision@K | Candidate MRR | Injected Recall@K | Injected Precision@K | Injected MRR | 无记忆正确率 | 平均 Token | P50/P95 ms | 错误归属率 | 过期/删除召回率 | 跨 Scope 干扰命中 | 冲突共注入率 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     def fmt(value: Any) -> str:
         return "N/A" if value is None else f"{value:.4f}" if isinstance(value, float) else str(value)
     for scope, metrics in report["scope_metrics"].items():
         latency = metrics["retrieval_latency_ms"]
-        lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} | {} |".format(
+        lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} | {} | {} |".format(
             scope, metrics["sample_count"],
             fmt(metrics["candidate_recall_at_k"]["mean"]), fmt(metrics["candidate_precision_at_k"]["mean"]),
             fmt(metrics["candidate_mrr"]["mean"]), fmt(metrics["injected_recall_at_k"]["mean"]),
@@ -609,13 +651,15 @@ def render_markdown(report: dict[str, Any]) -> str:
             fmt(metrics["no_memory_correct_rate"]["mean"]), fmt(metrics["average_injected_tokens"]),
             fmt(latency["p50"]), fmt(latency["p95"]), fmt(metrics["error_attribution_rate"]),
             fmt(metrics["expired_deleted_recall_rate"]), metrics["cross_scope_distractor_hit_count"],
+            fmt(metrics["conflict_co_injection_rate"]),
         ))
-    lines += ["", "## 分类统计", "", "| 类别 | 样本 | Candidate Recall@K | Candidate Precision@K | Candidate MRR | 无记忆正确率 |", "|---|---:|---:|---:|---:|---:|"]
+    lines += ["", "## 分类统计", "", "| 类别 | 样本 | Candidate Recall@K | Candidate Precision@K | Candidate MRR | 无记忆正确率 | 冲突共注入率 |", "|---|---:|---:|---:|---:|---:|---:|"]
     for category, metrics in report["category_metrics"].items():
-        lines.append("| {} | {} | {} | {} | {} | {} |".format(
+        lines.append("| {} | {} | {} | {} | {} | {} | {} |".format(
             category, metrics["sample_count"], fmt(metrics["candidate_recall_at_k"]["mean"]),
             fmt(metrics["candidate_precision_at_k"]["mean"]), fmt(metrics["candidate_mrr"]["mean"]),
             fmt(metrics["no_memory_correct_rate"]["mean"]),
+            fmt(metrics["conflict_co_injection_rate"]),
         ))
     lines += [
         "", "## 注入有效性", "",

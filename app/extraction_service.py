@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import datetime
 from hashlib import sha256
@@ -40,6 +41,7 @@ from .sensitive_filter import scan_sensitive
 from .write_coordinator import WriteCoordinator
 
 _ALLOWED_TYPES = (MemoryType.PREFERENCE, MemoryType.FACT, MemoryType.EVENT)
+CandidateNotifier = Callable[[tuple[MemoryEntity, ...]], Awaitable[None]]
 
 
 class ExtractionService:
@@ -77,16 +79,19 @@ class ExtractionService:
     async def submit(
         self, scope: Scope, *, conversation_id: str, message_id: str,
         content: str, watermark: int = 0,
+        on_candidates: CandidateNotifier | None = None,
     ) -> ExtractionJob | None:
         """Capture one private message and run the bounded extraction pipeline."""
         return await self.submit_messages(
             scope, conversation_id=conversation_id,
             messages=((message_id, content),), watermark=watermark,
+            on_candidates=on_candidates,
         )
 
     async def submit_messages(
         self, scope: Scope, *, conversation_id: str,
         messages: tuple[tuple[str, str], ...], watermark: int = 0,
+        on_candidates: CandidateNotifier | None = None,
     ) -> ExtractionJob | None:
         """Capture a message batch; sensitive messages are dropped before the model."""
         if scope.identity.scope_type is not ScopeType.PERSONAL:
@@ -141,7 +146,7 @@ class ExtractionService:
             conversation_id=conversation_id, watermark=watermark,
             content_hash=job.content_hash, messages=tuple(allowed),
         )
-        return await self._run(scope, stored, window, gates)
+        return await self._run(scope, stored, window, gates, on_candidates)
 
     def _pending_count(self, scope: Scope) -> int:
         counts = self._jobs.count_by_status(
@@ -151,7 +156,7 @@ class ExtractionService:
 
     async def _run(
         self, scope: Scope, job: ExtractionJob, window: ExtractionWindow,
-        gates: ExtractionGates,
+        gates: ExtractionGates, on_candidates: CandidateNotifier | None,
     ) -> ExtractionJob:
         running = replace(
             job, status=ExtractionJobStatus.RUNNING, attempts=job.attempts + 1,
@@ -168,7 +173,7 @@ class ExtractionService:
                     window, allowed_types=_ALLOWED_TYPES,
                     sensitive_categories=gates.sensitive_categories,
                 )
-            created_any, skipped_any = await self._materialize(
+            created_any, skipped_any, created = await self._materialize(
                 scope, job.id, candidates,
             )
         except (AuthorizationDenied, ValidationError) as exc:
@@ -183,6 +188,11 @@ class ExtractionService:
                 else ExtractionJobStatus.PENDING,
                 last_error=type(exc).__name__,
             )
+        if created and on_candidates is not None:
+            try:
+                await on_candidates(created)
+            except Exception:  # Notification failure must not fail the job.
+                pass
         if created_any:
             return self._finish(running, ExtractionJobStatus.SUCCEEDED)
         if skipped_any:
@@ -204,9 +214,10 @@ class ExtractionService:
 
     async def _materialize(
         self, scope: Scope, job_id: str, candidates: tuple[ExtractionCandidate, ...],
-    ) -> tuple[bool, bool]:
+    ) -> tuple[bool, bool, tuple[MemoryEntity, ...]]:
         created_any = False
         skipped_any = False
+        created: list[MemoryEntity] = []
         now = self._clock.now()
         for candidate in candidates:
             if candidate.memory_type not in _ALLOWED_TYPES:
@@ -225,17 +236,18 @@ class ExtractionService:
                 skipped_any = True
                 continue
             try:
-                await self._create_candidate(scope, candidate, job_id, now)
+                memory = await self._create_candidate(scope, candidate, job_id, now)
             except Conflict:
                 skipped_any = True
                 continue
+            created.append(memory)
             created_any = True
-        return created_any, skipped_any
+        return created_any, skipped_any, tuple(created)
 
     async def _create_candidate(
         self, scope: Scope, candidate: ExtractionCandidate, job_id: str,
         now: datetime,
-    ) -> None:
+    ) -> MemoryEntity:
         memory_id = self._ids.new_id("memory")
         normalized = normalize_content(candidate.content)
         metadata = {
@@ -273,6 +285,7 @@ class ExtractionService:
             memory, revision, source,
             guard=lambda: self._require_store_gate(scope),
         )
+        return memory
 
     def list_candidates(
         self, scope: Scope, *, limit: int = 20, offset: int = 0,

@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from ...app.extraction_service import ExtractionService
+from ...app.extraction_service import CandidateNotifier, ExtractionService
 from ...app.sensitive_filter import scan_sensitive
 from ...core.errors import AuthorizationDenied
 from ...core.model import (
     ExtractionCandidate,
     ExtractionWindow,
+    MemoryEntity,
     MemoryType,
 )
 from .identity import AstrBotIdentityAdapter
+
+EventNotifier = Callable[[Any, tuple[MemoryEntity, ...]], Awaitable[None]]
 
 _SYSTEM_PROMPT = (
     "你是织忆的记忆提取器。只输出 JSON 数组，不要解释或 Markdown。"
@@ -128,12 +132,14 @@ class AstrBotExtractionCapture:
         self, scopes: Any, extraction: ExtractionService, *,
         enabled: bool = True, min_messages: int = 1,
         max_buffer_messages: int = 50,
+        notifier: EventNotifier | None = None,
     ) -> None:
         self._scopes = scopes
         self._extraction = extraction
         self._enabled = enabled
         self._min_messages = max(1, min_messages)
         self._max_buffer = max(self._min_messages, max_buffer_messages)
+        self._notifier = notifier
         self._identity = AstrBotIdentityAdapter()
         self._tasks: set[asyncio.Task[None]] = set()
         self._buffers: dict[str, list[tuple[str, str]]] = {}
@@ -167,7 +173,7 @@ class AstrBotExtractionCapture:
         buffer.append((message_id, text))
         del buffer[:max(0, len(buffer) - self._max_buffer)]
         if text.startswith("记住") or len(buffer) >= self._min_messages:
-            self._schedule(scope, key, watermark)
+            self._schedule(scope, key, watermark, event)
 
     async def flush(self, event: Any) -> None:
         """Submit the current buffer when the host ends the turn."""
@@ -187,14 +193,25 @@ class AstrBotExtractionCapture:
         if not self._extraction.gates(scope).can_store:
             self._buffers.pop(key, None)
             return
-        self._schedule(scope, key, self._watermarks.get(key, 0))
+        self._schedule(scope, key, self._watermarks.get(key, 0), event)
 
-    def _schedule(self, scope: Any, key: str, watermark: int) -> None:
+    def _candidate_notifier(self, event: Any) -> CandidateNotifier | None:
+        notifier = self._notifier
+        if notifier is None:
+            return None
+
+        async def notify(candidates: tuple[MemoryEntity, ...]) -> None:
+            await notifier(event, candidates)
+
+        return notify
+
+    def _schedule(self, scope: Any, key: str, watermark: int, event: Any) -> None:
         messages = tuple(self._buffers.pop(key, ()))
         if not messages:
             return
         task = asyncio.create_task(self._extraction.submit_messages(
             scope, conversation_id=key, messages=messages, watermark=watermark,
+            on_candidates=self._candidate_notifier(event),
         ))
         self._tasks.add(task)
         task.add_done_callback(self._reap)

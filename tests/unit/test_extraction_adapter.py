@@ -56,12 +56,16 @@ class FakeScopes:
 class FakeExtraction:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
+        self.notify = ()
 
     def gates(self, scope):
         return SimpleNamespace(can_store=True)
 
-    async def submit_messages(self, scope, *, conversation_id, messages, watermark=0):
+    async def submit_messages(self, scope, *, conversation_id, messages, watermark=0,
+                              on_candidates=None):
         self.calls.append((scope, conversation_id, messages, watermark))
+        if on_candidates is not None and self.notify:
+            await on_candidates(self.notify)
         return None
 
 
@@ -119,6 +123,32 @@ def test_capture_ignores_group_commands_and_disabled(monkeypatch):
     _, conversation_id, messages, _watermark = extraction.calls[0]
     assert conversation_id == "astrbot:FriendMessage:session-1"
     assert messages == (("msg-1", "我喜欢黑咖啡"),)
+
+
+def test_capture_passes_candidate_notification_to_host():
+    scope = SimpleNamespace(id="scope")
+    extraction = FakeExtraction()
+    extraction.notify = (
+        SimpleNamespace(id="c1", memory_type=SimpleNamespace(value="PREFERENCE"), content="喜欢黑咖啡"),
+    )
+    scopes = FakeScopes(scope)
+    notifications: list[tuple] = []
+
+    async def notifier(event, candidates):
+        notifications.append((event, candidates))
+
+    async def run():
+        capture = AstrBotExtractionCapture(
+            scopes, extraction, notifier=notifier,
+        )
+        await capture.capture(FakeEvent("我喜欢黑咖啡"))
+        await asyncio.sleep(0.05)
+        await capture.close()
+
+    asyncio.run(run())
+    assert len(notifications) == 1
+    _, candidates = notifications[0]
+    assert candidates[0].id == "c1"
 
 
 def test_flush_submits_buffer_on_turn_end_and_clears_gate_failure():

@@ -99,6 +99,7 @@ def write_recall_diagnostics(
         "final_injected_ids": list(injected_ids),
         "estimated_tokens": estimated_tokens,
         "omitted": list(omitted),
+        "omitted_count": len(omitted),
     }
     if include_query:
         record["query"] = trace.query
@@ -256,7 +257,10 @@ class MemoryContextComposer:
             if len(selected) >= self._max_memories:
                 omitted.append({"id": memory.id, "reason": "max_memories"})
                 continue
-            line = f"- [{memory.memory_type.value}] {self._escape_untrusted(memory.content)}"
+            line = (
+                f"- [{memory.memory_type.value}] {self._escape_untrusted(memory.content)}"
+                f"（{memory.created_at.date().isoformat()}）"
+            )
             candidate_content = self._PREFIX + "\n".join((*lines, line)) + self._SUFFIX
             if estimate_tokens(candidate_content) > self._max_tokens:
                 omitted.append({"id": memory.id, "reason": "token_budget"})

@@ -1,9 +1,15 @@
 import asyncio
 import json
+import os
 import sqlite3
+import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
+from data.plugins.astrbot_plugin_weave_memory.adapters.astrbot.group_commands import (
+    AstrBotGroupCommands,
+)
 from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.consents import (
     SQLiteConsentStore,
 )
@@ -42,6 +48,9 @@ from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
 )
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     AuthorizationDenied,
+    GroupAdminUnavailable,
+    GroupNotAdmin,
+    GroupNotCreated,
     InvalidTransition,
     StorageError,
 )
@@ -141,6 +150,7 @@ def test_group_enable_save_recall_disable_clear_destroy(group_stack):
     context = asyncio.run(composer.compose("周五复盘", scope))
     assert context is not None and "周五复盘" in context.content
     assert "weave_memory_group_context" in context.content
+    assert "（2026-11-23）" in context.content
 
     diagnostics = []
     diagnostic_recall = GroupRecallService(
@@ -444,3 +454,81 @@ def test_group_and_personal_memory_do_not_cross(group_stack):
     personal_hits = group_stack["personal_recall"].recall("个人秘密", personal_scope)
     assert [item.id for item in personal_hits] == ["personal-1"]
     assert group_memory.id not in [item.id for item in personal_hits]
+
+
+def test_group_destroy_without_backup_records_skipped_mode(group_stack):
+    identity = group_identity()
+    scope, decision = make_scope(group_stack, identity)
+    lifecycle = group_stack["lifecycle"]
+    asyncio.run(lifecycle.enable(scope, decision, operator_id="admin-1"))
+    asyncio.run(group_stack["memories"].save_group(
+        scope, "无备份销毁测试", group_label="topic", operator_id="admin-1",
+        decision=decision,
+    ))
+    asyncio.run(lifecycle.disable(scope, decision, operator_id="admin-1"))
+    receipt = asyncio.run(lifecycle.destroy(
+        scope, decision, operator_id="admin-1", with_backup=False,
+    ))
+    assert receipt.backup_mode == "SKIPPED"
+    assert receipt.backup_path == ""
+    assert receipt.backup_sha256 == ""
+    backups = Path(group_stack["db"].path).parent / "backups"
+    sqlite_backups = list(backups.glob("group-*.sqlite3"))
+    assert sqlite_backups == []
+    manifests = list(backups.glob("group-*.json"))
+    assert len(manifests) == 1
+    payload = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert payload["backup_mode"] == "SKIPPED"
+    assert payload["backup_path"] is None
+
+
+def test_cleanup_destroy_backups_keeps_newest(group_stack):
+    backups = Path(group_stack["db"].path).parent / "backups"
+    backups.mkdir(exist_ok=True)
+    old = backups / "group-old-op-20260101T000000000000.sqlite3"
+    old.write_bytes(b"old")
+    old.with_suffix(".json").write_text("{}", encoding="utf-8")
+    os.utime(old, (0, 0))
+    os.utime(old.with_suffix(".json"), (0, 0))
+    new = backups / "group-new-op-20261123T000000000000.sqlite3"
+    new.write_bytes(b"new")
+    new.with_suffix(".json").write_text("{}", encoding="utf-8")
+    os.utime(new, (time.time(), time.time()))
+    removed = group_stack["lifecycle"].cleanup_destroy_backups(30)
+    assert removed >= 1
+    assert not old.exists()
+    assert new.exists()
+
+
+def test_rollback_preview_reports_group_data_without_modifying(group_stack):
+    identity = group_identity()
+    scope, decision = make_scope(group_stack, identity)
+    asyncio.run(group_stack["lifecycle"].enable(scope, decision, operator_id="admin-1"))
+    asyncio.run(group_stack["memories"].save_group(
+        scope, "回滚预览测试", group_label="topic", operator_id="admin-1",
+        decision=decision,
+    ))
+    db = group_stack["db"]
+    db.rollback_to_v5()
+    preview = db.rollback_preview()
+    assert preview["schema_version"] == 5
+    assert preview["group_scope_count"] >= 1
+    assert preview["group_memory_count"] >= 1
+    assert preview["can_rollback"] is False
+    assert db.rollback_to_v10(dry_run=True) == preview
+    assert db.schema_version() == 5
+
+
+def test_group_command_error_text_distinguishes_admin_reasons():
+    unavailable = AstrBotGroupCommands._error_text(
+        "群开启", GroupAdminUnavailable("no admin source"),
+    )
+    not_admin = AstrBotGroupCommands._error_text(
+        "群开启", GroupNotAdmin("not admin"),
+    )
+    not_created = AstrBotGroupCommands._error_text(
+        "群开启", GroupNotCreated("not created"),
+    )
+    assert "group_admin_ids" in unavailable
+    assert "不是本群管理员" in not_admin
+    assert "尚未创建" in not_created

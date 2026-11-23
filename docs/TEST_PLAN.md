@@ -344,3 +344,17 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - Extraction Precision / Recall、False Memory Rate、Sensitive Leakage Rate、Attribution Accuracy、Candidate Acceptance Rate。
 - Sensitive Leakage Rate 与错误归属为安全验收项；阈值在 V1.5 评测集冻结。
 
+
+## 17. 计划书审计对齐回归（2026-11-23）
+
+- 注入行包含 `created_at` 日期（`YYYY-MM-DD`），个人与群两条 composer 均覆盖；不改变检索排序。
+- `群销毁 无备份 确认` 与 CLI `--no-backup` 写 `backup_mode=SKIPPED`、sidecar 与 warning 审计，不生成 sqlite 备份。
+- 群销毁备份按 `group_destroy_backup_retention_days` 清理，保留最新一份；清理 sqlite 与 sidecar 成对进行。
+- `weave_admin.py groups / rollback-preview / group-destroy / cleanup-backups` 可执行；`group-destroy` 需 `--confirm`，无群聊天可达。
+- `rollback_to_v10 --dry-run`/`rollback_preview()` 只读列出群 scope、记忆数与步骤，不修改数据。
+- 管理失败区分 `NOT_GROUP_ADMIN` / `ADMIN_SOURCE_UNAVAILABLE` / `GROUP_NOT_CREATED`，提示含 `group_admin_ids` 格式。
+- 首次群开启的响应包含记录范围、群关闭与群销毁方式。
+- `/织忆 状态` 显示 `consent_source`；导出帮助写明“导出不是备份”；关闭帮助并列撤销授权（可逆）与关闭（永久）。
+- 群注入诊断记录 `omitted_count`；`群状态` 显示上次注入截断条数。
+- V1.4 `conflict_temporal` 类别覆盖同 scope 新旧 ACTIVE；报告输出 `conflict_co_injection_rate`，只作诊断。
+- V1.5 候选生成时通知摘要、ID 与确认/拒绝命令；通知失败不影响任务与聊天。

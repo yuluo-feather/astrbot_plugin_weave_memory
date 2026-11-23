@@ -48,6 +48,8 @@ def test_golden_set_meets_v14_minimum_and_privacy_contract():
     assert dataset["annotation_status"] == "assistant_generated_synthetic_labels_pending_human_review"
     assert {sample["labeler"] for sample in dataset["samples"]} == {"assistant-generated-draft"}
     assert {sample["scope"]["scope_type"] for sample in dataset["samples"]} == {"PERSONAL", "GROUP"}
+    assert "conflict_temporal" in dataset["categories"]
+    assert sum(sample["category"] == "conflict_temporal" for sample in dataset["samples"]) >= 5
     clock = datetime.fromisoformat(dataset["fixed_clock"])
     assert any(
         memory["valid_until"] and datetime.fromisoformat(memory["valid_until"]) <= clock
@@ -57,6 +59,16 @@ def test_golden_set_meets_v14_minimum_and_privacy_contract():
         memory["valid_from"] and datetime.fromisoformat(memory["valid_from"]) > clock
         for memory in dataset["memories"]
     )
+
+
+def test_conflict_temporal_samples_expose_co_injection():
+    report = _subset_report("P-CT-01", "G-CT-01")
+    rows = {row["sample_id"]: row for row in report["samples"]}
+    assert rows["P-CT-01"]["conflict_co_injected"] is True
+    assert rows["G-CT-01"]["conflict_co_injected"] is True
+    assert rows["P-CT-01"]["conflict_memory_hits"]
+    assert rows["G-CT-01"]["conflict_memory_hits"]
+    assert report["category_metrics"]["conflict_temporal"]["conflict_co_injection_rate"] == 1.0
 
 
 def test_empty_expected_metrics_are_na_and_nonempty_miss_is_zero():
@@ -162,7 +174,10 @@ def test_committed_baseline_report_is_complete_and_safe():
         assert row["injected_ids"] == []
     for scope_type in ("PERSONAL", "GROUP"):
         metrics = report["scope_metrics"][scope_type]
-        assert metrics["sample_count"] == 27
+        assert metrics["sample_count"] == 30
+        assert metrics["conflict_sample_count"] == 3
+        assert metrics["conflict_co_injection_rate"] is not None
+        assert 0.0 <= metrics["conflict_co_injection_rate"] <= 1.0
         assert metrics["candidate_recall_at_k"]["mean"] == 1.0
         assert metrics["no_memory_correct_rate"]["mean"] == 1.0
         assert metrics["error_attribution_rate"] == 0.0

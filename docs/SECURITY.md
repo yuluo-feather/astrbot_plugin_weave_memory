@@ -94,7 +94,7 @@ Recall 候选查找与上下文注入之间可能发生 Consent revoke 或 Scope
 - 普通成员只能读当前群；`群列表/查询` 需要 enabled + GRANTED，`群状态` 可在 disabled 读但不含正文；不能开启/关闭/清空/销毁/保存；错误不得泄漏其他群存在性。
 - `群列表/查询` 仅在 `is_enabled=1` 且 `group_memory=GRANTED` 时允许；disabled/撤销后拒绝。
 - `群状态` 只返回 `created/enabled/count/admin_source/admin_available`，`count` 只统计 ACTIVE；不返回记忆正文或管理员 ID 列表；无 Scope 时 `created=false`。
-- `群销毁` 是管理员显式破坏性操作：必须先关闭、必须确认；服务内自动备份并校验，写 sidecar manifest；删除顺序为记忆/关联 → consent 历史 → operations 审计 → scope；备份失败中止；不可恢复。
+- `群销毁` 是管理员显式破坏性操作：必须先关闭、必须确认；默认服务内自动备份并校验，写 sidecar manifest；删除顺序为记忆/关联 → consent 历史 → operations 审计 → scope；备份失败中止；被销毁群不可恢复。`群销毁 无备份 确认` / CLI `--no-backup` 不生成 sqlite 备份，写 `backup_mode=SKIPPED` 与 warning 审计；销毁备份默认保留 30 天，只用于审计与其他 scope 灾难恢复，不能复活被销毁群。
 - 群数据对群成员可见是预期；个人记忆不进群、群记忆不出现在私聊；FTS/读取加 `scope_type=GROUP` 防御过滤。
 - 个人事实口径（主人 2026-11-23 确认）：V1.1 不做 NLP 检测，采用管理员输入责任；成员不能写、个人记忆不自动提升；V2.4 再做 Group personal 与敏感过滤。该风险由主人接受，P1-4 降为 P2。
 - 管理员来源丢失后：管理/写入 fail-closed；已启用群的成员读取/注入保留，记录 warning；保留 `EXPLICIT_CONFIG` 恢复路径。若要求更严格，M0 复审可改为读也 fail-closed。

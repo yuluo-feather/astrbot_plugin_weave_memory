@@ -70,6 +70,18 @@
     "default": 200,
     "hint": "超过后提示管理员清理；V1.1 不做自动淘汰。"
   },
+  "group_retention_days": {
+    "description": "群数据保留期建议（天）",
+    "type": "int",
+    "default": 90,
+    "hint": "仅用于群状态提示；不会自动删除群数据。群解散后需管理员或部署者 CLI 显式清理。"
+  },
+  "group_destroy_backup_retention_days": {
+    "description": "群销毁备份保留天数",
+    "type": "int",
+    "default": 30,
+    "hint": "启动或下次销毁时清理超期备份，保留最新一份。销毁备份不能恢复被销毁群，只用于审计与其他 scope 的灾难恢复。"
+  },
   "recall_diagnostics_enabled": {
     "description": "启用检索诊断 JSONL 记录",
     "type": "bool",

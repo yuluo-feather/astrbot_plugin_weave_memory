@@ -1,6 +1,6 @@
 {
   "dataset_name": "weave-memory-v1.4-golden",
-  "dataset_version": "1.1.0",
+  "dataset_version": "1.2.0",
   "created_at": "2026-11-23T17:50:00+08:00",
   "data_policy": "synthetic_only_no_production_memory_content",
   "fixed_clock": "2026-11-23T12:00:00+00:00",
@@ -13,7 +13,8 @@
     "recent_topic",
     "cross_scope",
     "expired_deleted",
-    "no_memory"
+    "no_memory",
+    "conflict_temporal"
   ],
   "scopes": {
     "personal": {
@@ -572,6 +573,138 @@
       "created_at": "2026-11-23T12:00:00+00:00",
       "valid_from": "2026-12-01T00:00:00+00:00",
       "valid_until": null
+    },
+    {
+      "id": "p-conf-old-1",
+      "scope_key": "personal",
+      "content": "用户的常驻城市是北京",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-15T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-conf-new-1",
+      "scope_key": "personal",
+      "content": "用户目前住在上海",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-conf-old-2",
+      "scope_key": "personal",
+      "content": "用户常用的代码编辑器是 Vim",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-15T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-conf-new-2",
+      "scope_key": "personal",
+      "content": "用户现在改用 Neovim 作为代码编辑器",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-conf-old-3",
+      "scope_key": "personal",
+      "content": "用户原来的测试机器人名称是小栖",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-15T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-conf-new-3",
+      "scope_key": "personal",
+      "content": "用户的测试机器人已更名为青禾",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-conf-old-1",
+      "scope_key": "group",
+      "content": "本群例会原定在周三 15:00",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-15T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-conf-new-1",
+      "scope_key": "group",
+      "content": "本群例会已改到周四 10:00",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-conf-old-2",
+      "scope_key": "group",
+      "content": "本群前值班负责人代号是 LANTERN",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-15T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-conf-new-2",
+      "scope_key": "group",
+      "content": "本群值班负责人已改为 BEACON",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-conf-old-3",
+      "scope_key": "group",
+      "content": "本群原发布窗口是每月第二个周五",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-15T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-conf-new-3",
+      "scope_key": "group",
+      "content": "本群发布窗口改为每月最后一个周五",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
     }
   ],
   "samples": [
@@ -602,7 +735,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -633,7 +766,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -664,7 +797,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -695,7 +828,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -726,7 +859,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -757,7 +890,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -788,7 +921,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -819,7 +952,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -850,7 +983,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -881,7 +1014,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -912,7 +1045,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -943,7 +1076,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -974,7 +1107,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1005,7 +1138,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1036,7 +1169,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1067,7 +1200,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1098,7 +1231,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1129,7 +1262,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1160,7 +1293,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1191,7 +1324,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1222,7 +1355,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1253,7 +1386,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1284,7 +1417,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1315,7 +1448,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1346,7 +1479,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1377,7 +1510,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1408,7 +1541,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1439,7 +1572,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1470,7 +1603,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1501,7 +1634,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1534,7 +1667,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1567,7 +1700,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1600,7 +1733,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1633,7 +1766,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1666,7 +1799,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1695,7 +1828,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1724,7 +1857,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1753,7 +1886,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1782,7 +1915,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1811,7 +1944,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1838,7 +1971,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1865,7 +1998,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1892,7 +2025,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1919,7 +2052,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1946,7 +2079,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1973,7 +2106,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -2000,7 +2133,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -2027,7 +2160,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -2054,7 +2187,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -2081,7 +2214,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -2110,7 +2243,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -2139,7 +2272,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -2168,7 +2301,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -2197,7 +2330,205 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.1.0",
+      "dataset_version": "1.2.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-CT-01",
+      "query": "我现在住在哪个城市",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-conf-new-1"
+      ],
+      "expected_memory_content": [
+        "用户目前住在上海"
+      ],
+      "distractor_memory_ids": [
+        "p-conf-old-1"
+      ],
+      "excluded_memory_ids": [],
+      "category": "conflict_temporal",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.2.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-CT-02",
+      "query": "我现在用哪个代码编辑器",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-conf-new-2"
+      ],
+      "expected_memory_content": [
+        "用户现在改用 Neovim 作为代码编辑器"
+      ],
+      "distractor_memory_ids": [
+        "p-conf-old-2"
+      ],
+      "excluded_memory_ids": [],
+      "category": "conflict_temporal",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.2.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-CT-03",
+      "query": "我的测试机器人现在叫什么",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-conf-new-3"
+      ],
+      "expected_memory_content": [
+        "用户的测试机器人已更名为青禾"
+      ],
+      "distractor_memory_ids": [
+        "p-conf-old-3"
+      ],
+      "excluded_memory_ids": [],
+      "category": "conflict_temporal",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.2.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "G-CT-01",
+      "query": "本群例会现在什么时候",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-conf-new-1"
+      ],
+      "expected_memory_content": [
+        "本群例会已改到周四 10:00"
+      ],
+      "distractor_memory_ids": [
+        "g-conf-old-1"
+      ],
+      "excluded_memory_ids": [],
+      "category": "conflict_temporal",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.2.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-CT-02",
+      "query": "本群值班负责人现在是谁",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-conf-new-2"
+      ],
+      "expected_memory_content": [
+        "本群值班负责人已改为 BEACON"
+      ],
+      "distractor_memory_ids": [
+        "g-conf-old-2"
+      ],
+      "excluded_memory_ids": [],
+      "category": "conflict_temporal",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.2.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-CT-03",
+      "query": "本群发布窗口现在哪一天",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-conf-new-3"
+      ],
+      "expected_memory_content": [
+        "本群发布窗口改为每月最后一个周五"
+      ],
+      "distractor_memory_ids": [
+        "g-conf-old-3"
+      ],
+      "excluded_memory_ids": [],
+      "category": "conflict_temporal",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.2.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     }

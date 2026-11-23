@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,8 @@ from ..core.ports import Clock, GroupScopeStore, IdGenerator, SearchIndex
 from .consent_service import ConsentService, GroupConsentType
 from .write_coordinator import OperationReceipt, WriteCoordinator
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class GroupLifecycleReceipt:
@@ -37,6 +40,7 @@ class GroupDestroyReceipt:
     backup_sha256: str
     affected_count: int
     purged: bool
+    backup_mode: str = "REQUIRED"
 
 
 class GroupLifecycleService:
@@ -124,25 +128,31 @@ class GroupLifecycleService:
 
     async def destroy(self, scope: Scope, decision: AdminDecision, *,
                       operator_id: str,
-                      operation_id: str | None = None) -> GroupDestroyReceipt:
+                      operation_id: str | None = None,
+                      with_backup: bool = True) -> GroupDestroyReceipt:
         self._require_group(scope)
         self._require_admin(decision)
         op = operation_id or self._ids.new_id("operation")
         try:
             self._store.get_scope(scope.id)
         except NotFound:
-            return GroupDestroyReceipt(op, scope.id, "", "", 0, False)
+            return GroupDestroyReceipt(
+                op, scope.id, "", "", 0, False,
+                "REQUIRED" if with_backup else "SKIPPED",
+            )
         if self._store.is_scope_enabled(scope.id):
             raise InvalidTransition("disable group scope before destroy")
         self._backup_dir.mkdir(parents=True, exist_ok=True)
-        existing = sorted(self._backup_dir.glob(f"group-{scope.id}-{op}-*.sqlite3"))
-        if existing:
-            backup_path = existing[0]
-            digest = _sha256_file(backup_path)
-        else:
-            stamp = self._clock.now().strftime("%Y%m%dT%H%M%S%f")
-            backup_path = self._backup_dir / f"group-{scope.id}-{op}-{stamp}.sqlite3"
-            digest = self._store.backup_group_scope(scope.id, str(backup_path))
+        stamp = self._clock.now().strftime("%Y%m%dT%H%M%S%f")
+        backup_path = self._backup_dir / f"group-{scope.id}-{op}-{stamp}.sqlite3"
+        digest = ""
+        if with_backup:
+            existing = sorted(self._backup_dir.glob(f"group-{scope.id}-{op}-*.sqlite3"))
+            if existing:
+                backup_path = existing[0]
+                digest = _sha256_file(backup_path)
+            else:
+                digest = self._store.backup_group_scope(scope.id, str(backup_path))
         row_counts = self._store.group_row_counts(scope.id)
 
         def destroy_operation() -> tuple[int, bool]:
@@ -166,8 +176,9 @@ class GroupLifecycleService:
         payload = json.dumps({
             "operation_id": op,
             "scope_id": scope.id,
-            "backup_path": str(backup_path),
-            "backup_sha256": digest,
+            "backup_mode": "REQUIRED" if with_backup else "SKIPPED",
+            "backup_path": str(backup_path) if with_backup else None,
+            "backup_sha256": digest if with_backup else None,
             "affected_count": affected,
             "purged": purged,
             "row_counts": row_counts,
@@ -178,9 +189,52 @@ class GroupLifecycleService:
             handle.flush()
             os.fsync(handle.fileno())
         temp.replace(manifest)
+        if not with_backup:
+            logger.warning(
+                "织忆群销毁未写备份：scope_id=%s operation_id=%s",
+                scope.id, op,
+            )
         return GroupDestroyReceipt(
-            op, scope.id, str(backup_path), digest, affected, purged,
+            op, scope.id, str(backup_path) if with_backup else "",
+            digest, affected, purged,
+            "REQUIRED" if with_backup else "SKIPPED",
         )
+
+    def cleanup_destroy_backups(self, retention_days: int = 30) -> int:
+        """Remove destroy backups older than retention, keeping the newest."""
+        if retention_days < 1:
+            return 0
+        if not self._backup_dir.exists():
+            return 0
+        cutoff = self._clock.now().timestamp() - retention_days * 86400
+        backups = sorted(
+            self._backup_dir.glob("group-*.sqlite3"),
+            key=lambda path: path.stat().st_mtime,
+        )
+        removed = 0
+        for path in backups[:-1]:
+            if path.stat().st_mtime >= cutoff:
+                continue
+            try:
+                path.unlink(missing_ok=True)
+                path.with_suffix(".json").unlink(missing_ok=True)
+            except OSError:
+                continue
+            removed += 1
+        orphan_manifests = sorted(
+            (path for path in self._backup_dir.glob("group-*.json")
+             if not path.with_suffix(".sqlite3").exists()),
+            key=lambda path: path.stat().st_mtime,
+        )
+        for path in orphan_manifests[:-1]:
+            if path.stat().st_mtime >= cutoff:
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                continue
+            removed += 1
+        return removed
 
 
 def _sha256_file(path: Path) -> str:
