@@ -9,7 +9,7 @@
     "description": "允许模型工具写入个人记忆（实验性，默认关闭）",
     "type": "bool",
     "default": false,
-    "hint": "默认关闭，避免模型把闲聊或临时情绪写成长期记忆。开启前应先补齐确定性触发、候选确认与每日限额（TODO V1.3）。"
+    "hint": "默认关闭，避免模型把闲聊或临时情绪写成长期记忆。开启前应先补齐确定性触发、候选确认与每日限额；宿主若为人格设置了工具白名单，还需把 weave_memory_remember 加入白名单（AstrBot 只注入白名单工具）。"
   },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",

@@ -296,8 +296,8 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("关闭", exc))
 
-    # TODO(V1.3): 自然语言写入在确定性触发、候选确认与每日限额完成前默认关闭，
-    # 避免模型把闲聊或临时情绪写成 ACTIVE 记忆。
+    # 默认关闭：确定性触发、候选确认与每日限额完成前，避免模型把闲聊或临时情绪写成
+    # ACTIVE 记忆。开启时还须把本工具加入宿主 persona 的工具白名单（AstrBot 只注入白名单工具）。
     @filter.llm_tool(name="weave_memory_remember")
     async def memory_remember_tool(self, event: AstrMessageEvent,
                                    content: str = "", memory_type: str = "FACT"):
