@@ -2,8 +2,8 @@
   "report_version": "1.0.0",
   "project_version": "V1.4",
   "dataset_name": "weave-memory-v1.4-golden",
-  "dataset_version": "1.0.0",
-  "dataset_sha256": "1601b8c27989f238a2f4e95e49a1e250534ad6d5636a12935f4ca3ae6479894c",
+  "dataset_version": "1.1.0",
+  "dataset_sha256": "776ea74ea36d9bbecbab75eed6d170de555557920db2ef27ea2007e06fb3682a",
   "split": "all",
   "parameter_experiment": false,
   "parameters": {
@@ -25,14 +25,14 @@
     "python": "3.12.10",
     "platform": "Windows-11-10.0.26300-SP0",
     "sqlite": "3.49.1",
-    "runtime_source_commit": "cc3ac42d91eb92d1597cdbdd3a364230445db05d",
-    "runtime_source_dirty": false,
+    "runtime_source_commit": "e042570fd7d18463810ade6dc7c5c79256a97e93",
+    "runtime_source_dirty": true,
     "fixed_clock": "2026-11-23T12:00:00+00:00",
     "random_seed": 1401
   },
   "scope_metrics": {
     "PERSONAL": {
-      "sample_count": 25,
+      "sample_count": 27,
       "candidate_recall_at_k": {
         "n": 17,
         "mean": 1.0
@@ -58,16 +58,16 @@
         "mean": 1.0
       },
       "no_memory_correct_rate": {
-        "n": 8,
+        "n": 10,
         "mean": 1.0
       },
-      "average_injected_tokens": 75.92,
+      "average_injected_tokens": 70.29629629629629,
       "retrieval_latency_ms": {
         "warmup_runs_per_query": 2,
         "measured_runs_per_query": 30,
-        "p50": 0.35829999251291156,
-        "p95": 0.7390200393274426,
-        "measurement_count": 750
+        "p50": 0.46010001096874475,
+        "p95": 0.9711199440062046,
+        "measurement_count": 810
       },
       "wrong_scope_count": 0,
       "returned_memory_count": 49,
@@ -77,11 +77,11 @@
       "injection_effectiveness": {
         "status": "pending_human_rubric",
         "rated_count": 0,
-        "double_scored_minimum": 10
+        "double_scored_minimum": 11
       }
     },
     "GROUP": {
-      "sample_count": 25,
+      "sample_count": 27,
       "candidate_recall_at_k": {
         "n": 18,
         "mean": 1.0
@@ -107,16 +107,16 @@
         "mean": 1.0
       },
       "no_memory_correct_rate": {
-        "n": 7,
+        "n": 9,
         "mean": 1.0
       },
-      "average_injected_tokens": 69.88,
+      "average_injected_tokens": 64.70370370370371,
       "retrieval_latency_ms": {
         "warmup_runs_per_query": 2,
         "measured_runs_per_query": 30,
-        "p50": 0.40330004412680864,
-        "p95": 0.7326149905566124,
-        "measurement_count": 750
+        "p50": 0.5356500041671097,
+        "p95": 1.0822349751833822,
+        "measurement_count": 810
       },
       "wrong_scope_count": 0,
       "returned_memory_count": 55,
@@ -126,7 +126,7 @@
       "injection_effectiveness": {
         "status": "pending_human_rubric",
         "rated_count": 0,
-        "double_scored_minimum": 10
+        "double_scored_minimum": 11
       }
     }
   },
@@ -208,7 +208,7 @@
       }
     },
     "expired_deleted": {
-      "sample_count": 5,
+      "sample_count": 9,
       "candidate_recall_at_k": {
         "n": 0,
         "mean": null
@@ -222,7 +222,7 @@
         "mean": null
       },
       "no_memory_correct_rate": {
-        "n": 5,
+        "n": 9,
         "mean": 1.0
       }
     },
@@ -246,30 +246,254 @@
       }
     }
   },
+  "injection_rubric": {
+    "status": "pending_human_rubric",
+    "required_double_scored": 11,
+    "template": "eval/v1.4/datasets/injection_rubric_template.csv",
+    "checker": "python scripts/injection_rubric.py"
+  },
   "samples": [
     {
-      "sample_id": "G-EF-05",
-      "split": "holdout",
-      "query": "紧急联络频道 ops-alerts",
-      "scope_type": "GROUP",
-      "category": "exact_fact",
-      "trace_id": "6f753a1e1fc443db8e328ef1946eef3b",
-      "query_hash": "31f61fd3bbe84debd7a85a15c46eb3476c91b431d9550a149de83318d7472ef6",
+      "sample_id": "P-CS-01",
+      "split": "train",
+      "query": "CROSSGROUP1",
+      "scope_type": "PERSONAL",
+      "category": "cross_scope",
+      "trace_id": "f9afe68c801d49308c6e4fc132c1fe87",
+      "query_hash": "5c0c6eaf76902baeaec1b9e26deb8115b36324aed8914d5f73e8fd1796b49a20",
       "expected_ids": [
-        "g-fact-5"
+        "p-cross-target-1"
       ],
       "candidate_ids": [
-        "g-fact-5"
+        "p-cross-target-1"
       ],
       "injected_ids": [
-        "g-fact-5"
+        "p-cross-target-1"
       ],
       "false_positive_ids": [],
       "candidate_diagnostics": [
         {
-          "id": "g-fact-5",
+          "id": "p-cross-target-1",
           "rank": 1,
-          "bm25_score": -25.381845608073085,
+          "bm25_score": -2.6806908757351158,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-RT-01",
+      "split": "train",
+      "query": "最近推进 服务端日志轮转",
+      "scope_type": "GROUP",
+      "category": "recent_topic",
+      "trace_id": "b6017cab4d5948f0b5e3acad841618c6",
+      "query_hash": "207397e67395a059e91c6c28ece30178bae797deb81ad86b1b04a89a70a542c4",
+      "expected_ids": [
+        "g-rec-1"
+      ],
+      "candidate_ids": [
+        "g-rec-1",
+        "g-rec-3",
+        "g-rec-5",
+        "g-rec-2",
+        "g-rec-4"
+      ],
+      "injected_ids": [
+        "g-rec-1",
+        "g-rec-3"
+      ],
+      "false_positive_ids": [
+        "g-rec-2",
+        "g-rec-3",
+        "g-rec-4",
+        "g-rec-5"
+      ],
+      "candidate_diagnostics": [
+        {
+          "id": "g-rec-1",
+          "rank": 1,
+          "bm25_score": -22.893257222730405,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-rec-3",
+          "rank": 2,
+          "bm25_score": -1.3267203940740948,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-rec-5",
+          "rank": 3,
+          "bm25_score": -1.3267203940740948,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-rec-2",
+          "rank": 4,
+          "bm25_score": -1.285567447920737,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-rec-4",
+          "rank": 5,
+          "bm25_score": -1.285567447920737,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [
+        {
+          "id": "g-rec-5",
+          "reason": "max_memories"
+        },
+        {
+          "id": "g-rec-2",
+          "reason": "max_memories"
+        },
+        {
+          "id": "g-rec-4",
+          "reason": "max_memories"
+        }
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 107,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-RT-01",
+      "split": "train",
+      "query": "最近整理 插件 并发故障注入",
+      "scope_type": "PERSONAL",
+      "category": "recent_topic",
+      "trace_id": "3573e264985f47aabb44a80108dbb44f",
+      "query_hash": "9958d25c3821142ba0059dbf2ee4a985861c273de30554bb984f1f8c03eabcfc",
+      "expected_ids": [
+        "p-rec-1"
+      ],
+      "candidate_ids": [
+        "p-rec-1",
+        "p-rec-5",
+        "p-rec-4",
+        "p-rec-2",
+        "p-rec-3"
+      ],
+      "injected_ids": [
+        "p-rec-1",
+        "p-rec-5",
+        "p-rec-4",
+        "p-rec-2"
+      ],
+      "false_positive_ids": [
+        "p-rec-2",
+        "p-rec-3",
+        "p-rec-4",
+        "p-rec-5"
+      ],
+      "candidate_diagnostics": [
+        {
+          "id": "p-rec-1",
+          "rank": 1,
+          "bm25_score": -21.663718395252626,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-rec-5",
+          "rank": 2,
+          "bm25_score": -3.9694580874820637,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-rec-4",
+          "rank": 3,
+          "bm25_score": -1.3705952065745517,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-rec-2",
+          "rank": 4,
+          "bm25_score": -1.2468907032215568,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-rec-3",
+          "rank": 5,
+          "bm25_score": -1.1761225873671737,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [
+        {
+          "id": "p-rec-3",
+          "reason": "max_memories"
+        }
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 145,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-PR-01",
+      "split": "train",
+      "query": "评审先看 风险 实现细节",
+      "scope_type": "GROUP",
+      "category": "preference",
+      "trace_id": "9cfc093f8a404917b9fda6b686836528",
+      "query_hash": "e8083eaa4fc6c9e1c6d22a192b8a60337a47e86f1ca67e3237f6ccd4f18db605",
+      "expected_ids": [
+        "g-pref-1"
+      ],
+      "candidate_ids": [
+        "g-pref-1",
+        "g-pref-3"
+      ],
+      "injected_ids": [
+        "g-pref-1",
+        "g-pref-3"
+      ],
+      "false_positive_ids": [
+        "g-pref-3"
+      ],
+      "candidate_diagnostics": [
+        {
+          "id": "g-pref-1",
+          "rank": 1,
+          "bm25_score": -18.544394008758545,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-pref-3",
+          "rank": 2,
+          "bm25_score": -2.841989914203957,
           "filter_reason": "eligible"
         }
       ],
@@ -284,95 +508,112 @@
       "wrong_scope_count": 0,
       "foreign_distractor_hits": [],
       "excluded_memory_hits": [],
-      "estimated_injected_tokens": 86,
+      "estimated_injected_tokens": 111,
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-NM-03",
-      "split": "train",
-      "query": "VOIDPERSON3",
+      "sample_id": "P-EF-05",
+      "split": "holdout",
+      "query": "测试机器人 小栖",
       "scope_type": "PERSONAL",
-      "category": "no_memory",
-      "trace_id": "28cba8b9e4dc4afb973daf6af112f412",
-      "query_hash": "b592b16dee29ff9c3ab584eb792daf978264813778f8eb3c660c6fa55b6e7233",
-      "expected_ids": [],
-      "candidate_ids": [],
-      "injected_ids": [],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [],
-      "omitted_diagnostics": [],
-      "candidate_recall": null,
-      "candidate_precision": null,
-      "candidate_mrr": null,
-      "injected_recall": null,
-      "injected_precision": null,
-      "injected_mrr": null,
-      "no_memory_correct": 1.0,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 0,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-ED-01",
-      "split": "train",
-      "query": "DELETEDCODE1",
-      "scope_type": "GROUP",
-      "category": "expired_deleted",
-      "trace_id": "a4826bc5f41644d6adde38337a04396b",
-      "query_hash": "f2bdc1898f9ce553b1659a8ab58294ef26074fb54071182c3d430ff8f074b952",
-      "expected_ids": [],
-      "candidate_ids": [],
-      "injected_ids": [],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [],
-      "omitted_diagnostics": [],
-      "candidate_recall": null,
-      "candidate_precision": null,
-      "candidate_mrr": null,
-      "injected_recall": null,
-      "injected_precision": null,
-      "injected_mrr": null,
-      "no_memory_correct": 1.0,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 0,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "P-ED-01",
-      "split": "train",
-      "query": "EXPIRYCODE1",
-      "scope_type": "PERSONAL",
-      "category": "expired_deleted",
-      "trace_id": "d07e63d4347b42299f4550dbf0f33afe",
-      "query_hash": "e9037a6175af4f00bfbb9668b6a192fc7934830e87a3d93a0d9670d6c6ef4dd0",
-      "expected_ids": [],
-      "candidate_ids": [],
-      "injected_ids": [],
-      "false_positive_ids": [],
+      "category": "exact_fact",
+      "trace_id": "4c912b04173549abb56f863ad2c6e296",
+      "query_hash": "a29c3cd0df0acc7628460180815690936ce1b5fd8830fa660f6024b354529f20",
+      "expected_ids": [
+        "p-fact-5"
+      ],
+      "candidate_ids": [
+        "p-fact-5",
+        "p-pref-5",
+        "p-cross-target-1",
+        "p-cross-target-2",
+        "p-rec-1"
+      ],
+      "injected_ids": [
+        "p-fact-5",
+        "p-pref-5",
+        "p-cross-target-1",
+        "p-cross-target-2"
+      ],
+      "false_positive_ids": [
+        "p-cross-target-1",
+        "p-cross-target-2",
+        "p-pref-5",
+        "p-rec-1"
+      ],
       "candidate_diagnostics": [
         {
-          "id": "p-exp-1",
+          "id": "p-fact-5",
           "rank": 1,
-          "bm25_score": -3.7484045243918787,
+          "bm25_score": -14.717614996286311,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-exp-1",
+          "rank": 2,
+          "bm25_score": -0.9324570329623759,
           "filter_reason": "expired"
+        },
+        {
+          "id": "p-exp-2",
+          "rank": 3,
+          "bm25_score": -0.9324570329623759,
+          "filter_reason": "expired"
+        },
+        {
+          "id": "p-exp-3",
+          "rank": 4,
+          "bm25_score": -0.9324570329623759,
+          "filter_reason": "expired"
+        },
+        {
+          "id": "p-exp-4",
+          "rank": 5,
+          "bm25_score": -0.9324570329623759,
+          "filter_reason": "expired"
+        },
+        {
+          "id": "p-pref-5",
+          "rank": 6,
+          "bm25_score": -0.7962872736089668,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-cross-target-1",
+          "rank": 7,
+          "bm25_score": -0.7736903652005008,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-cross-target-2",
+          "rank": 8,
+          "bm25_score": -0.7736903652005008,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-rec-1",
+          "rank": 9,
+          "bm25_score": -0.7321374164346537,
+          "filter_reason": "eligible"
         }
       ],
-      "omitted_diagnostics": [],
-      "candidate_recall": null,
-      "candidate_precision": null,
-      "candidate_mrr": null,
-      "injected_recall": null,
-      "injected_precision": null,
-      "injected_mrr": null,
-      "no_memory_correct": 1.0,
+      "omitted_diagnostics": [
+        {
+          "id": "p-rec-1",
+          "reason": "max_memories"
+        }
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
       "wrong_scope_count": 0,
       "foreign_distractor_hits": [],
       "excluded_memory_hits": [],
-      "estimated_injected_tokens": 0,
+      "estimated_injected_tokens": 147,
       "injection_effectiveness": null
     },
     {
@@ -381,7 +622,7 @@
       "query": "VOIDPERSON4",
       "scope_type": "PERSONAL",
       "category": "no_memory",
-      "trace_id": "75e7ce8483594051906954a5d5fb02fd",
+      "trace_id": "e243db097b8142f8b3a85fa51392d1a0",
       "query_hash": "560683bdb18c4e2a374bd9a12f659d7158afe1feca7e128fdcb95856a17facf0",
       "expected_ids": [],
       "candidate_ids": [],
@@ -403,282 +644,12 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-EF-04",
-      "split": "train",
-      "query": "文档格式 Markdown",
-      "scope_type": "PERSONAL",
-      "category": "exact_fact",
-      "trace_id": "0a9193dc3b544b59a860e6153dfcd783",
-      "query_hash": "953dea8058acb9c8aa6b6591142bc5d39b3c810951e09ad75ca143f19d07fa1b",
-      "expected_ids": [
-        "p-fact-4"
-      ],
-      "candidate_ids": [
-        "p-fact-4"
-      ],
-      "injected_ids": [
-        "p-fact-4"
-      ],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "p-fact-4",
-          "rank": 1,
-          "bm25_score": -13.344487887348652,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.08333333333333333,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.25,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 81,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "P-EF-01",
-      "split": "train",
-      "query": "评测项目代号 ORBIT",
-      "scope_type": "PERSONAL",
-      "category": "exact_fact",
-      "trace_id": "b83f9c4addde405491a7550f1a4358dc",
-      "query_hash": "b03ec9178d148e7b3eb960a287cdeb7ad7f8f990f063446db3e2a716e4ad3241",
-      "expected_ids": [
-        "p-fact-1"
-      ],
-      "candidate_ids": [
-        "p-fact-1",
-        "p-pref-5"
-      ],
-      "injected_ids": [
-        "p-fact-1",
-        "p-pref-5"
-      ],
-      "false_positive_ids": [
-        "p-pref-5"
-      ],
-      "candidate_diagnostics": [
-        {
-          "id": "p-fact-1",
-          "rank": 1,
-          "bm25_score": -20.596443775369533,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-pref-5",
-          "rank": 2,
-          "bm25_score": -2.6942752728235706,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.08333333333333333,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.25,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 102,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-PR-05",
-      "split": "holdout",
-      "query": "任务拆分 小步提交",
-      "scope_type": "GROUP",
-      "category": "preference",
-      "trace_id": "de27caaa60314f19a1d26be5c02d5148",
-      "query_hash": "5ae992bfe542222793ba1d471d0290c23405cfc178f238ba593363cef46c7d0b",
-      "expected_ids": [
-        "g-pref-5"
-      ],
-      "candidate_ids": [
-        "g-pref-5"
-      ],
-      "injected_ids": [
-        "g-pref-5"
-      ],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "g-pref-5",
-          "rank": 1,
-          "bm25_score": -21.067773451412087,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.125,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.5,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 87,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "P-EF-02",
-      "split": "train",
-      "query": "常用编辑器 Neovim",
-      "scope_type": "PERSONAL",
-      "category": "exact_fact",
-      "trace_id": "f18aa5b2ab9b4688bd3f5dabe4382adb",
-      "query_hash": "1ebf9c3c4a821facbae5a22b33ad38293c2a54871ed961d426aa07eca04d9105",
-      "expected_ids": [
-        "p-fact-2"
-      ],
-      "candidate_ids": [
-        "p-fact-2"
-      ],
-      "injected_ids": [
-        "p-fact-2"
-      ],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "p-fact-2",
-          "rank": 1,
-          "bm25_score": -19.39693573750777,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.08333333333333333,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.25,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 79,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-PR-01",
-      "split": "train",
-      "query": "评审先看 风险 实现细节",
-      "scope_type": "GROUP",
-      "category": "preference",
-      "trace_id": "392e584163454c0b95637e4845cd8466",
-      "query_hash": "e8083eaa4fc6c9e1c6d22a192b8a60337a47e86f1ca67e3237f6ccd4f18db605",
-      "expected_ids": [
-        "g-pref-1"
-      ],
-      "candidate_ids": [
-        "g-pref-1",
-        "g-pref-3"
-      ],
-      "injected_ids": [
-        "g-pref-1",
-        "g-pref-3"
-      ],
-      "false_positive_ids": [
-        "g-pref-3"
-      ],
-      "candidate_diagnostics": [
-        {
-          "id": "g-pref-1",
-          "rank": 1,
-          "bm25_score": -18.203443784309048,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-pref-3",
-          "rank": 2,
-          "bm25_score": -2.7744201252895757,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.125,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.5,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 111,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-EF-03",
-      "split": "train",
-      "query": "值班负责人 LANTERN",
-      "scope_type": "GROUP",
-      "category": "exact_fact",
-      "trace_id": "bbcf39adbfec4a1683ebda54c2ef3fdb",
-      "query_hash": "1fdc34e990c5a2e7915e8cc0429537b2e139eb41d60f54fd448ba9674028447b",
-      "expected_ids": [
-        "g-fact-3"
-      ],
-      "candidate_ids": [
-        "g-fact-3",
-        "g-rec-5"
-      ],
-      "injected_ids": [
-        "g-fact-3",
-        "g-rec-5"
-      ],
-      "false_positive_ids": [
-        "g-rec-5"
-      ],
-      "candidate_diagnostics": [
-        {
-          "id": "g-fact-3",
-          "rank": 1,
-          "bm25_score": -17.55017777570565,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-rec-5",
-          "rank": 2,
-          "bm25_score": -2.9499187504100504,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.125,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.5,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 102,
-      "injection_effectiveness": null
-    },
-    {
       "sample_id": "G-EF-01",
       "split": "train",
       "query": "本群例会 周三 15:00",
       "scope_type": "GROUP",
       "category": "exact_fact",
-      "trace_id": "ea2a09e4cff6487fb770816998a94669",
+      "trace_id": "2722c46d2fba46ce83502b762e0ea1e6",
       "query_hash": "0aaa628d98d849c85b6f41c0509b328b6533e1e1d0e47386fbe7d365baf228ec",
       "expected_ids": [
         "g-fact-1"
@@ -688,7 +659,7 @@
         "g-fact-3",
         "g-fact-5",
         "g-pref-2",
-        "g-rec-5",
+        "g-rec-3",
         "g-cross-target-1",
         "g-cross-target-2",
         "g-cross-target-3"
@@ -704,127 +675,139 @@
         "g-fact-3",
         "g-fact-5",
         "g-pref-2",
-        "g-rec-5"
+        "g-rec-3"
       ],
       "candidate_diagnostics": [
         {
           "id": "g-fact-1",
           "rank": 1,
-          "bm25_score": -6.9463002290195135,
+          "bm25_score": -7.062366383009566,
           "filter_reason": "eligible"
         },
         {
-          "id": "g-fact-3",
+          "id": "g-exp-1",
           "rank": 2,
-          "bm25_score": -0.14809034296175924,
+          "bm25_score": -0.13937150750020785,
+          "filter_reason": "expired"
+        },
+        {
+          "id": "g-fact-3",
+          "rank": 3,
+          "bm25_score": -0.13476247398659766,
           "filter_reason": "eligible"
         },
         {
           "id": "g-fact-5",
-          "rank": 3,
-          "bm25_score": -0.14809034296175924,
+          "rank": 4,
+          "bm25_score": -0.13476247398659766,
           "filter_reason": "eligible"
+        },
+        {
+          "id": "g-future-1",
+          "rank": 5,
+          "bm25_score": -0.13476247398659766,
+          "filter_reason": "not_yet_valid"
         },
         {
           "id": "g-pref-2",
-          "rank": 4,
-          "bm25_score": -0.14809034296175924,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-rec-5",
-          "rank": 5,
-          "bm25_score": -0.1434065441119553,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-cross-target-1",
           "rank": 6,
-          "bm25_score": -0.1434065441119553,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-cross-target-2",
-          "rank": 7,
-          "bm25_score": -0.1434065441119553,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-cross-target-3",
-          "rank": 8,
-          "bm25_score": -0.1434065441119553,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-fact-4",
-          "rank": 9,
-          "bm25_score": -0.1434065441119553,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-pref-4",
-          "rank": 10,
-          "bm25_score": -0.1434065441119553,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-pref-5",
-          "rank": 11,
-          "bm25_score": -0.1434065441119553,
+          "bm25_score": -0.13476247398659766,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-3",
+          "rank": 7,
+          "bm25_score": -0.13044852465283568,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-cross-target-1",
+          "rank": 8,
+          "bm25_score": -0.13044852465283568,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-cross-target-2",
+          "rank": 9,
+          "bm25_score": -0.13044852465283568,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-cross-target-3",
+          "rank": 10,
+          "bm25_score": -0.13044852465283568,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-fact-4",
+          "rank": 11,
+          "bm25_score": -0.13044852465283568,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-pref-4",
           "rank": 12,
-          "bm25_score": -0.1434065441119553,
+          "bm25_score": -0.13044852465283568,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-pref-5",
+          "rank": 13,
+          "bm25_score": -0.13044852465283568,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-rec-5",
+          "rank": 14,
+          "bm25_score": -0.13044852465283568,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-2",
-          "rank": 13,
-          "bm25_score": -0.13900994008982692,
+          "rank": 15,
+          "bm25_score": -0.12640220024657703,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-4",
-          "rank": 14,
-          "bm25_score": -0.13900994008982692,
+          "rank": 16,
+          "bm25_score": -0.12640220024657703,
           "filter_reason": "eligible"
         },
         {
           "id": "g-pref-3",
-          "rank": 15,
-          "bm25_score": -0.13487490190268145,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-fact-2",
-          "rank": 16,
-          "bm25_score": -0.12730139827001488,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-pref-1",
           "rank": 17,
-          "bm25_score": -0.12730139827001488,
+          "bm25_score": -0.12259934600018284,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-1",
           "rank": 18,
-          "bm25_score": -0.12730139827001488,
+          "bm25_score": -0.11564113811636728,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-fact-2",
+          "rank": 19,
+          "bm25_score": -0.11564113811636728,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-pref-1",
+          "rank": 20,
+          "bm25_score": -0.11564113811636728,
           "filter_reason": "eligible"
         },
         {
           "id": "g-cross-1",
-          "rank": 19,
-          "bm25_score": -0.11163066822023571,
+          "rank": 21,
+          "bm25_score": -0.10127177044607079,
           "filter_reason": "eligible"
         },
         {
           "id": "g-cross-2",
-          "rank": 20,
-          "bm25_score": -0.11163066822023571,
+          "rank": 22,
+          "bm25_score": -0.10127177044607079,
           "filter_reason": "eligible"
         }
       ],
@@ -838,7 +821,7 @@
           "reason": "max_memories"
         },
         {
-          "id": "g-rec-5",
+          "id": "g-rec-3",
           "reason": "max_memories"
         },
         {
@@ -868,387 +851,12 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-PR-03",
-      "split": "train",
-      "query": "示例优先 Python",
-      "scope_type": "PERSONAL",
-      "category": "preference",
-      "trace_id": "91cfd256ddad4bd0887c79fffd8af587",
-      "query_hash": "879db32b48940b2edc9756bafba0019b24ce8d8ed0eb3e1b15e708e658961cd9",
-      "expected_ids": [
-        "p-pref-3"
-      ],
-      "candidate_ids": [
-        "p-pref-3"
-      ],
-      "injected_ids": [
-        "p-pref-3"
-      ],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "p-pref-3",
-          "rank": 1,
-          "bm25_score": -14.503911776041765,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.08333333333333333,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.25,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 83,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-EF-04",
-      "split": "train",
-      "query": "文档归档目录 /srv/team/archive",
-      "scope_type": "GROUP",
-      "category": "exact_fact",
-      "trace_id": "ec8fe97e80e3445586ef8d4afd358fa5",
-      "query_hash": "d71f29be9ba92aa88dfb8741890657186b2d26ac2a6a97c1c57fc2671bface45",
-      "expected_ids": [
-        "g-fact-4"
-      ],
-      "candidate_ids": [
-        "g-fact-4"
-      ],
-      "injected_ids": [
-        "g-fact-4"
-      ],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "g-fact-4",
-          "rank": 1,
-          "bm25_score": -27.528987777057484,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.125,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.5,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 89,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-CS-03",
-      "split": "train",
-      "query": "CROSSPERSON3",
-      "scope_type": "GROUP",
-      "category": "cross_scope",
-      "trace_id": "e93e89e3c2a14c7d866a399e1a362f2e",
-      "query_hash": "373a500d0595b837cfead442b141726320185409b65d3a938771039fd6cf2109",
-      "expected_ids": [
-        "g-cross-target-3"
-      ],
-      "candidate_ids": [
-        "g-cross-target-3"
-      ],
-      "injected_ids": [
-        "g-cross-target-3"
-      ],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "g-cross-target-3",
-          "rank": 1,
-          "bm25_score": -2.9499187504100504,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.125,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.5,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 87,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-RT-01",
-      "split": "train",
-      "query": "最近推进 服务端日志轮转",
-      "scope_type": "GROUP",
-      "category": "recent_topic",
-      "trace_id": "15910c51a22a44ffa1b37a81b1cca671",
-      "query_hash": "207397e67395a059e91c6c28ece30178bae797deb81ad86b1b04a89a70a542c4",
-      "expected_ids": [
-        "g-rec-1"
-      ],
-      "candidate_ids": [
-        "g-rec-1",
-        "g-rec-5",
-        "g-rec-3",
-        "g-rec-2",
-        "g-rec-4"
-      ],
-      "injected_ids": [
-        "g-rec-1",
-        "g-rec-5"
-      ],
-      "false_positive_ids": [
-        "g-rec-2",
-        "g-rec-3",
-        "g-rec-4",
-        "g-rec-5"
-      ],
-      "candidate_diagnostics": [
-        {
-          "id": "g-rec-1",
-          "rank": 1,
-          "bm25_score": -22.401795434965194,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-rec-5",
-          "rank": 2,
-          "bm25_score": -1.2181976539771653,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-rec-3",
-          "rank": 3,
-          "bm25_score": -1.2181976539771653,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-rec-2",
-          "rank": 4,
-          "bm25_score": -1.1808497579073594,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-rec-4",
-          "rank": 5,
-          "bm25_score": -1.1808497579073594,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [
-        {
-          "id": "g-rec-3",
-          "reason": "max_memories"
-        },
-        {
-          "id": "g-rec-2",
-          "reason": "max_memories"
-        },
-        {
-          "id": "g-rec-4",
-          "reason": "max_memories"
-        }
-      ],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.125,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.5,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 107,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-PR-04",
-      "split": "train",
-      "query": "通知 避免 夜间发送",
-      "scope_type": "GROUP",
-      "category": "preference",
-      "trace_id": "eb99b23930004965b18dd068765c3a17",
-      "query_hash": "b857b285f7127eb41046ddb56237b96e72f9ac00db4de590fa73fab43fa2ee97",
-      "expected_ids": [
-        "g-pref-4"
-      ],
-      "candidate_ids": [
-        "g-pref-4"
-      ],
-      "injected_ids": [
-        "g-pref-4"
-      ],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "g-pref-4",
-          "rank": 1,
-          "bm25_score": -17.55647787617674,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.125,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.5,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 87,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-NM-04",
-      "split": "train",
-      "query": "VOIDGROUP4",
-      "scope_type": "GROUP",
-      "category": "no_memory",
-      "trace_id": "3838ac243a114c97a036772a3ee18d16",
-      "query_hash": "562938b3a2cc6150e726545cbb1ecebc0913346219f5027c156beccb1469db9f",
-      "expected_ids": [],
-      "candidate_ids": [],
-      "injected_ids": [],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [],
-      "omitted_diagnostics": [],
-      "candidate_recall": null,
-      "candidate_precision": null,
-      "candidate_mrr": null,
-      "injected_recall": null,
-      "injected_precision": null,
-      "injected_mrr": null,
-      "no_memory_correct": 1.0,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 0,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-NM-03",
-      "split": "train",
-      "query": "VOIDGROUP3",
-      "scope_type": "GROUP",
-      "category": "no_memory",
-      "trace_id": "5d35517f94b1486b80a77f5aea5ef35b",
-      "query_hash": "ecc1f80a06f288ce84a6cab82267a83c9b2cb1944eddfb45a02cf22794cfcfdd",
-      "expected_ids": [],
-      "candidate_ids": [],
-      "injected_ids": [],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [],
-      "omitted_diagnostics": [],
-      "candidate_recall": null,
-      "candidate_precision": null,
-      "candidate_mrr": null,
-      "injected_recall": null,
-      "injected_precision": null,
-      "injected_mrr": null,
-      "no_memory_correct": 1.0,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 0,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "P-ED-03",
-      "split": "holdout",
-      "query": "EXPIRYCODE3",
-      "scope_type": "PERSONAL",
-      "category": "expired_deleted",
-      "trace_id": "047b84511ea848ba944f041420a019a7",
-      "query_hash": "918c3c0050fa981d1bd8cec85a70a7bb5fc2b33b35c1b9e55a3b465ea5fc5a37",
-      "expected_ids": [],
-      "candidate_ids": [],
-      "injected_ids": [],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "p-exp-3",
-          "rank": 1,
-          "bm25_score": -3.7484045243918787,
-          "filter_reason": "expired"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": null,
-      "candidate_precision": null,
-      "candidate_mrr": null,
-      "injected_recall": null,
-      "injected_precision": null,
-      "injected_mrr": null,
-      "no_memory_correct": 1.0,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 0,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "P-PR-02",
-      "split": "train",
-      "query": "喜欢 深色 终端主题",
-      "scope_type": "PERSONAL",
-      "category": "preference",
-      "trace_id": "102c8c6be71f4019b607df5075bd4a6e",
-      "query_hash": "7fa37ef7406746481f17b51aa9066ce64d50b628135affe378c224b1f7469bfb",
-      "expected_ids": [
-        "p-pref-2"
-      ],
-      "candidate_ids": [
-        "p-pref-2"
-      ],
-      "injected_ids": [
-        "p-pref-2"
-      ],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [
-        {
-          "id": "p-pref-2",
-          "rank": 1,
-          "bm25_score": -17.55647787617674,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.08333333333333333,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.25,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 83,
-      "injection_effectiveness": null
-    },
-    {
       "sample_id": "P-NM-02",
       "split": "train",
       "query": "VOIDPERSON2",
       "scope_type": "PERSONAL",
       "category": "no_memory",
-      "trace_id": "fc6d55dd642548c8b58c146022c80229",
+      "trace_id": "3e21dc5cd68843edbc3c3b93662538ee",
       "query_hash": "b343a102b9d870dde59cb4981e61b1479912228f3b900ca6aaf9f26a531496c6",
       "expected_ids": [],
       "candidate_ids": [],
@@ -1270,127 +878,28 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-EF-05",
+      "sample_id": "G-PR-05",
       "split": "holdout",
-      "query": "测试机器人 小栖",
-      "scope_type": "PERSONAL",
-      "category": "exact_fact",
-      "trace_id": "b7f03ac760e34aa7ae5806b1b51040aa",
-      "query_hash": "a29c3cd0df0acc7628460180815690936ce1b5fd8830fa660f6024b354529f20",
-      "expected_ids": [
-        "p-fact-5"
-      ],
-      "candidate_ids": [
-        "p-fact-5",
-        "p-pref-5",
-        "p-cross-target-1",
-        "p-cross-target-2",
-        "p-rec-1"
-      ],
-      "injected_ids": [
-        "p-fact-5",
-        "p-pref-5",
-        "p-cross-target-1",
-        "p-cross-target-2"
-      ],
-      "false_positive_ids": [
-        "p-cross-target-1",
-        "p-cross-target-2",
-        "p-pref-5",
-        "p-rec-1"
-      ],
-      "candidate_diagnostics": [
-        {
-          "id": "p-fact-5",
-          "rank": 1,
-          "bm25_score": -14.555314030031738,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-exp-1",
-          "rank": 2,
-          "bm25_score": -1.0360214942219306,
-          "filter_reason": "expired"
-        },
-        {
-          "id": "p-exp-2",
-          "rank": 3,
-          "bm25_score": -1.0360214942219306,
-          "filter_reason": "expired"
-        },
-        {
-          "id": "p-exp-3",
-          "rank": 4,
-          "bm25_score": -1.0360214942219306,
-          "filter_reason": "expired"
-        },
-        {
-          "id": "p-pref-5",
-          "rank": 5,
-          "bm25_score": -0.886383396788219,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-cross-target-1",
-          "rank": 6,
-          "bm25_score": -0.861497269789014,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-cross-target-2",
-          "rank": 7,
-          "bm25_score": -0.861497269789014,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-rec-1",
-          "rank": 8,
-          "bm25_score": -0.8156943513375307,
-          "filter_reason": "eligible"
-        }
-      ],
-      "omitted_diagnostics": [
-        {
-          "id": "p-rec-1",
-          "reason": "max_memories"
-        }
-      ],
-      "candidate_recall": 1.0,
-      "candidate_precision": 0.08333333333333333,
-      "candidate_mrr": 1.0,
-      "injected_recall": 1.0,
-      "injected_precision": 0.25,
-      "injected_mrr": 1.0,
-      "no_memory_correct": null,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 147,
-      "injection_effectiveness": null
-    },
-    {
-      "sample_id": "G-CS-01",
-      "split": "train",
-      "query": "CROSSPERSON1",
+      "query": "任务拆分 小步提交",
       "scope_type": "GROUP",
-      "category": "cross_scope",
-      "trace_id": "0c1674cbacc145cc8574e19b6be3ad34",
-      "query_hash": "6f026faf4ca0517bf3173b6d105263369c5fb3b4ed574c5cf1559bb996980c8e",
+      "category": "preference",
+      "trace_id": "dffe093c3a9e433fb1a8f5f9e4860e26",
+      "query_hash": "5ae992bfe542222793ba1d471d0290c23405cfc178f238ba593363cef46c7d0b",
       "expected_ids": [
-        "g-cross-target-1"
+        "g-pref-5"
       ],
       "candidate_ids": [
-        "g-cross-target-1"
+        "g-pref-5"
       ],
       "injected_ids": [
-        "g-cross-target-1"
+        "g-pref-5"
       ],
       "false_positive_ids": [],
       "candidate_diagnostics": [
         {
-          "id": "g-cross-target-1",
+          "id": "g-pref-5",
           "rank": 1,
-          "bm25_score": -2.9499187504100504,
+          "bm25_score": -21.47398446201125,
           "filter_reason": "eligible"
         }
       ],
@@ -1409,28 +918,78 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-CS-01",
+      "sample_id": "G-EF-04",
       "split": "train",
-      "query": "CROSSGROUP1",
-      "scope_type": "PERSONAL",
-      "category": "cross_scope",
-      "trace_id": "b3fe7f5f45184470b3071b3adb006139",
-      "query_hash": "5c0c6eaf76902baeaec1b9e26deb8115b36324aed8914d5f73e8fd1796b49a20",
+      "query": "文档归档目录 /srv/team/archive",
+      "scope_type": "GROUP",
+      "category": "exact_fact",
+      "trace_id": "3c86a8f1a4704f0580d7edec26066aaa",
+      "query_hash": "d71f29be9ba92aa88dfb8741890657186b2d26ac2a6a97c1c57fc2671bface45",
       "expected_ids": [
-        "p-cross-target-1"
+        "g-fact-4"
       ],
       "candidate_ids": [
-        "p-cross-target-1"
+        "g-fact-4"
       ],
       "injected_ids": [
-        "p-cross-target-1"
+        "g-fact-4"
       ],
       "false_positive_ids": [],
       "candidate_diagnostics": [
         {
-          "id": "p-cross-target-1",
+          "id": "g-fact-4",
           "rank": 1,
-          "bm25_score": -2.618630718950767,
+          "bm25_score": -28.076924523603278,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 89,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-EF-01",
+      "split": "train",
+      "query": "评测项目代号 ORBIT",
+      "scope_type": "PERSONAL",
+      "category": "exact_fact",
+      "trace_id": "e66ef8ea02d8467398bbc34e3849a7fc",
+      "query_hash": "b03ec9178d148e7b3eb960a287cdeb7ad7f8f990f063446db3e2a716e4ad3241",
+      "expected_ids": [
+        "p-fact-1"
+      ],
+      "candidate_ids": [
+        "p-fact-1",
+        "p-pref-5"
+      ],
+      "injected_ids": [
+        "p-fact-1",
+        "p-pref-5"
+      ],
+      "false_positive_ids": [
+        "p-pref-5"
+      ],
+      "candidate_diagnostics": [
+        {
+          "id": "p-fact-1",
+          "rank": 1,
+          "bm25_score": -21.03731088328458,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "p-pref-5",
+          "rank": 2,
+          "bm25_score": -2.7589848921982765,
           "filter_reason": "eligible"
         }
       ],
@@ -1445,32 +1004,189 @@
       "wrong_scope_count": 0,
       "foreign_distractor_hits": [],
       "excluded_memory_hits": [],
-      "estimated_injected_tokens": 87,
+      "estimated_injected_tokens": 102,
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-PR-04",
+      "sample_id": "G-PR-04",
       "split": "train",
-      "query": "先给结论 再解释",
-      "scope_type": "PERSONAL",
+      "query": "通知 避免 夜间发送",
+      "scope_type": "GROUP",
       "category": "preference",
-      "trace_id": "26a3be24f742435fbb5c51a525553ecb",
-      "query_hash": "6ff3c1d933031a38b2433c11cb4859a361a5b7c94b08a7ae140416e0b7f2ed5b",
+      "trace_id": "3803198a9dfe40549b9639e29ec97cfb",
+      "query_hash": "b857b285f7127eb41046ddb56237b96e72f9ac00db4de590fa73fab43fa2ee97",
       "expected_ids": [
-        "p-pref-4"
+        "g-pref-4"
       ],
       "candidate_ids": [
-        "p-pref-4"
+        "g-pref-4"
       ],
       "injected_ids": [
-        "p-pref-4"
+        "g-pref-4"
       ],
       "false_positive_ids": [],
       "candidate_diagnostics": [
         {
-          "id": "p-pref-4",
+          "id": "g-pref-4",
           "rank": 1,
-          "bm25_score": -14.045182300941391,
+          "bm25_score": -17.89498705167604,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-EF-03",
+      "split": "train",
+      "query": "值班负责人 LANTERN",
+      "scope_type": "GROUP",
+      "category": "exact_fact",
+      "trace_id": "d88575115e684de48875774b718f0c9e",
+      "query_hash": "1fdc34e990c5a2e7915e8cc0429537b2e139eb41d60f54fd448ba9674028447b",
+      "expected_ids": [
+        "g-fact-3"
+      ],
+      "candidate_ids": [
+        "g-fact-3",
+        "g-rec-5"
+      ],
+      "injected_ids": [
+        "g-fact-3",
+        "g-rec-5"
+      ],
+      "false_positive_ids": [
+        "g-rec-5"
+      ],
+      "candidate_diagnostics": [
+        {
+          "id": "g-fact-3",
+          "rank": 1,
+          "bm25_score": -17.913366063199547,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-rec-5",
+          "rank": 2,
+          "bm25_score": -3.023942651256821,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 102,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-ED-01",
+      "split": "train",
+      "query": "DELETEDCODE1",
+      "scope_type": "GROUP",
+      "category": "expired_deleted",
+      "trace_id": "d351ce99b7514aeb973c203880e37c67",
+      "query_hash": "f2bdc1898f9ce553b1659a8ab58294ef26074fb54071182c3d430ff8f074b952",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-EF-02",
+      "split": "train",
+      "query": "常用编辑器 Neovim",
+      "scope_type": "PERSONAL",
+      "category": "exact_fact",
+      "trace_id": "f8497ca6e6be402f8eb2f063afb461e7",
+      "query_hash": "1ebf9c3c4a821facbae5a22b33ad38293c2a54871ed961d426aa07eca04d9105",
+      "expected_ids": [
+        "p-fact-2"
+      ],
+      "candidate_ids": [
+        "p-fact-2"
+      ],
+      "injected_ids": [
+        "p-fact-2"
+      ],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "p-fact-2",
+          "rank": 1,
+          "bm25_score": -19.7960953454037,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 79,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-PR-03",
+      "split": "train",
+      "query": "示例优先 Python",
+      "scope_type": "PERSONAL",
+      "category": "preference",
+      "trace_id": "f421a35e86f94453a5e2cdb7b8500bf9",
+      "query_hash": "879db32b48940b2edc9756bafba0019b24ce8d8ed0eb3e1b15e708e658961cd9",
+      "expected_ids": [
+        "p-pref-3"
+      ],
+      "candidate_ids": [
+        "p-pref-3"
+      ],
+      "injected_ids": [
+        "p-pref-3"
+      ],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "p-pref-3",
+          "rank": 1,
+          "bm25_score": -14.789421243114514,
           "filter_reason": "eligible"
         }
       ],
@@ -1489,12 +1205,187 @@
       "injection_effectiveness": null
     },
     {
+      "sample_id": "P-EF-04",
+      "split": "train",
+      "query": "文档格式 Markdown",
+      "scope_type": "PERSONAL",
+      "category": "exact_fact",
+      "trace_id": "c55b287a150842e8ba9dfdbc64479e26",
+      "query_hash": "953dea8058acb9c8aa6b6591142bc5d39b3c810951e09ad75ca143f19d07fa1b",
+      "expected_ids": [
+        "p-fact-4"
+      ],
+      "candidate_ids": [
+        "p-fact-4"
+      ],
+      "injected_ids": [
+        "p-fact-4"
+      ],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "p-fact-4",
+          "rank": 1,
+          "bm25_score": -13.642600261727319,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 81,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-ED-01",
+      "split": "train",
+      "query": "EXPIRYCODE1",
+      "scope_type": "PERSONAL",
+      "category": "expired_deleted",
+      "trace_id": "727824a10edd4c0b82aa74d0552aa0bd",
+      "query_hash": "e9037a6175af4f00bfbb9668b6a192fc7934830e87a3d93a0d9670d6c6ef4dd0",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "p-exp-1",
+          "rank": 1,
+          "bm25_score": -3.8238091672193923,
+          "filter_reason": "expired"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-ED-03",
+      "split": "train",
+      "query": "EXPIRYCODE5",
+      "scope_type": "GROUP",
+      "category": "expired_deleted",
+      "trace_id": "071799d8421949e683edd8c7392c565d",
+      "query_hash": "01d55cc9fe6c0a15155c47fc6e757452d8ac0010e58be1d5c8f27d246f393c8a",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "g-exp-1",
+          "rank": 1,
+          "bm25_score": -3.8238091672193923,
+          "filter_reason": "expired"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-CS-01",
+      "split": "train",
+      "query": "CROSSPERSON1",
+      "scope_type": "GROUP",
+      "category": "cross_scope",
+      "trace_id": "caf1c0836837420cab07ae44078fd7d3",
+      "query_hash": "6f026faf4ca0517bf3173b6d105263369c5fb3b4ed574c5cf1559bb996980c8e",
+      "expected_ids": [
+        "g-cross-target-1"
+      ],
+      "candidate_ids": [
+        "g-cross-target-1"
+      ],
+      "injected_ids": [
+        "g-cross-target-1"
+      ],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "g-cross-target-1",
+          "rank": 1,
+          "bm25_score": -3.023942651256821,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-NM-01",
+      "split": "train",
+      "query": "VOIDPERSON1",
+      "scope_type": "PERSONAL",
+      "category": "no_memory",
+      "trace_id": "1969617da53e452784ba3783b6d145ac",
+      "query_hash": "a35b152c0563a1be1f76b593c38f5c7aa2ec6733c5f344a753e4bd8924629814",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
       "sample_id": "P-RT-03",
       "split": "train",
       "query": "最近准备 AstrBot 4.29.4 兼容性",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "de4ce8d907a44681b1959f7bbebf5310",
+      "trace_id": "87007a7ae4fc4bc9a18c3ea37d2e7e10",
       "query_hash": "0a0c4862d3ea92f06694f4e347bd098db7ab5826e96086e47810ac5a0afddbeb",
       "expected_ids": [
         "p-rec-3"
@@ -1522,31 +1413,31 @@
         {
           "id": "p-rec-3",
           "rank": 1,
-          "bm25_score": -13.549239489871114,
+          "bm25_score": -13.867085093785917,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-4",
           "rank": 2,
-          "bm25_score": -1.2579851881225923,
+          "bm25_score": -1.3705952065745517,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-2",
           "rank": 3,
-          "bm25_score": -1.1457237889365564,
+          "bm25_score": -1.2468907032215568,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-5",
           "rank": 4,
-          "bm25_score": -1.1126271922120323,
+          "bm25_score": -1.2104731952837873,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-1",
           "rank": 5,
-          "bm25_score": -1.0238952118467233,
+          "bm25_score": -1.1129560238252343,
           "filter_reason": "eligible"
         }
       ],
@@ -1570,73 +1461,32 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-RT-01",
+      "sample_id": "P-PR-04",
       "split": "train",
-      "query": "最近整理 插件 并发故障注入",
+      "query": "先给结论 再解释",
       "scope_type": "PERSONAL",
-      "category": "recent_topic",
-      "trace_id": "bc4bd800504b4bf3a15babd48a0be09d",
-      "query_hash": "9958d25c3821142ba0059dbf2ee4a985861c273de30554bb984f1f8c03eabcfc",
+      "category": "preference",
+      "trace_id": "b47165ef433e498181ca0f7bbf5fc0a4",
+      "query_hash": "6ff3c1d933031a38b2433c11cb4859a361a5b7c94b08a7ae140416e0b7f2ed5b",
       "expected_ids": [
-        "p-rec-1"
+        "p-pref-4"
       ],
       "candidate_ids": [
-        "p-rec-1",
-        "p-rec-5",
-        "p-rec-4",
-        "p-rec-2",
-        "p-rec-3"
+        "p-pref-4"
       ],
       "injected_ids": [
-        "p-rec-1",
-        "p-rec-5",
-        "p-rec-4",
-        "p-rec-2"
+        "p-pref-4"
       ],
-      "false_positive_ids": [
-        "p-rec-2",
-        "p-rec-3",
-        "p-rec-4",
-        "p-rec-5"
-      ],
+      "false_positive_ids": [],
       "candidate_diagnostics": [
         {
-          "id": "p-rec-1",
+          "id": "p-pref-4",
           "rank": 1,
-          "bm25_score": -21.210767157271626,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-rec-5",
-          "rank": 2,
-          "bm25_score": -3.806902465035603,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-rec-4",
-          "rank": 3,
-          "bm25_score": -1.2579851881225923,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-rec-2",
-          "rank": 4,
-          "bm25_score": -1.1457237889365564,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "p-rec-3",
-          "rank": 5,
-          "bm25_score": -1.0813890375844888,
+          "bm25_score": -14.315989641340831,
           "filter_reason": "eligible"
         }
       ],
-      "omitted_diagnostics": [
-        {
-          "id": "p-rec-3",
-          "reason": "max_memories"
-        }
-      ],
+      "omitted_diagnostics": [],
       "candidate_recall": 1.0,
       "candidate_precision": 0.08333333333333333,
       "candidate_mrr": 1.0,
@@ -1647,32 +1497,32 @@
       "wrong_scope_count": 0,
       "foreign_distractor_hits": [],
       "excluded_memory_hits": [],
-      "estimated_injected_tokens": 145,
+      "estimated_injected_tokens": 83,
       "injection_effectiveness": null
     },
     {
-      "sample_id": "G-PR-02",
+      "sample_id": "G-CS-03",
       "split": "train",
-      "query": "会议纪要 Markdown",
+      "query": "CROSSPERSON3",
       "scope_type": "GROUP",
-      "category": "preference",
-      "trace_id": "a59d57f170ec4f34a483977a777ab677",
-      "query_hash": "65b7afb7b22fbda10e9c0d7da3bed3ac73ebde2fd440bedae34d86ab9e2c8466",
+      "category": "cross_scope",
+      "trace_id": "198797cbcfa04d1fb99ab4b10e6d2dfc",
+      "query_hash": "373a500d0595b837cfead442b141726320185409b65d3a938771039fd6cf2109",
       "expected_ids": [
-        "g-pref-2"
+        "g-cross-target-3"
       ],
       "candidate_ids": [
-        "g-pref-2"
+        "g-cross-target-3"
       ],
       "injected_ids": [
-        "g-pref-2"
+        "g-cross-target-3"
       ],
       "false_positive_ids": [],
       "candidate_diagnostics": [
         {
-          "id": "g-pref-2",
+          "id": "g-cross-target-3",
           "rank": 1,
-          "bm25_score": -13.924199831695208,
+          "bm25_score": -3.023942651256821,
           "filter_reason": "eligible"
         }
       ],
@@ -1691,39 +1541,12 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "G-ED-02",
-      "split": "train",
-      "query": "DELETEDCODE2",
-      "scope_type": "GROUP",
-      "category": "expired_deleted",
-      "trace_id": "e617bbec1b4f4a998c351bde3ee85dc0",
-      "query_hash": "ba0ec75a61874f62aa74e0cee9100299ac70a73bbba613a4e4d07f2eced7b635",
-      "expected_ids": [],
-      "candidate_ids": [],
-      "injected_ids": [],
-      "false_positive_ids": [],
-      "candidate_diagnostics": [],
-      "omitted_diagnostics": [],
-      "candidate_recall": null,
-      "candidate_precision": null,
-      "candidate_mrr": null,
-      "injected_recall": null,
-      "injected_precision": null,
-      "injected_mrr": null,
-      "no_memory_correct": 1.0,
-      "wrong_scope_count": 0,
-      "foreign_distractor_hits": [],
-      "excluded_memory_hits": [],
-      "estimated_injected_tokens": 0,
-      "injection_effectiveness": null
-    },
-    {
       "sample_id": "P-RT-05",
       "split": "holdout",
       "query": "最近整理 工具调用 审计链路",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "e47620e65d4544588af7b5361e495af7",
+      "trace_id": "3cec46685fc14369b394b68c61f39c8a",
       "query_hash": "0aa49e2f585e751b24d43fda2655ca5b2d0bc5b52f28e323c65d25f43695bd43",
       "expected_ids": [
         "p-rec-5"
@@ -1751,31 +1574,31 @@
         {
           "id": "p-rec-5",
           "rank": 1,
-          "bm25_score": -23.04891753941631,
+          "bm25_score": -23.56189271297517,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-1",
           "rank": 2,
-          "bm25_score": -3.5033021241985147,
+          "bm25_score": -3.6496737862495383,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-4",
           "rank": 3,
-          "bm25_score": -1.2579851881225923,
+          "bm25_score": -1.3705952065745517,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-2",
           "rank": 4,
-          "bm25_score": -1.1457237889365564,
+          "bm25_score": -1.2468907032215568,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-3",
           "rank": 5,
-          "bm25_score": -1.0813890375844888,
+          "bm25_score": -1.1761225873671737,
           "filter_reason": "eligible"
         }
       ],
@@ -1799,26 +1622,356 @@
       "injection_effectiveness": null
     },
     {
+      "sample_id": "P-ED-03",
+      "split": "holdout",
+      "query": "EXPIRYCODE3",
+      "scope_type": "PERSONAL",
+      "category": "expired_deleted",
+      "trace_id": "4da4eed30ad74440a1eb93987ca1a4b4",
+      "query_hash": "918c3c0050fa981d1bd8cec85a70a7bb5fc2b33b35c1b9e55a3b465ea5fc5a37",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "p-exp-3",
+          "rank": 1,
+          "bm25_score": -3.8238091672193923,
+          "filter_reason": "expired"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-PR-02",
+      "split": "train",
+      "query": "会议纪要 Markdown",
+      "scope_type": "GROUP",
+      "category": "preference",
+      "trace_id": "07a86b28981947d496f1a8fc44bbcdbf",
+      "query_hash": "65b7afb7b22fbda10e9c0d7da3bed3ac73ebde2fd440bedae34d86ab9e2c8466",
+      "expected_ids": [
+        "g-pref-2"
+      ],
+      "candidate_ids": [
+        "g-pref-2"
+      ],
+      "injected_ids": [
+        "g-pref-2"
+      ],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "g-pref-2",
+          "rank": 1,
+          "bm25_score": -14.216010752420916,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-ED-05",
+      "split": "holdout",
+      "query": "FUTURECODE1",
+      "scope_type": "PERSONAL",
+      "category": "expired_deleted",
+      "trace_id": "fb761d861a924d519812807f57c10b6c",
+      "query_hash": "7e240c0562894b74b7e5e3e76f013b1cbbe1457667b30c75fab01e4184ab877a",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "p-future-1",
+          "rank": 1,
+          "bm25_score": -3.6973553107786286,
+          "filter_reason": "not_yet_valid"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-ED-04",
+      "split": "train",
+      "query": "EXPIRYCODE4",
+      "scope_type": "PERSONAL",
+      "category": "expired_deleted",
+      "trace_id": "712117cab6ae4bac8135a58f1aad228a",
+      "query_hash": "043126331af95e4d7d370e9256f6ac3d456234853bafd2abe3a6c0090d78de22",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "p-exp-4",
+          "rank": 1,
+          "bm25_score": -3.8238091672193923,
+          "filter_reason": "expired"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-PR-02",
+      "split": "train",
+      "query": "喜欢 深色 终端主题",
+      "scope_type": "PERSONAL",
+      "category": "preference",
+      "trace_id": "c2f174496aa24eaaa211b384efea4170",
+      "query_hash": "7fa37ef7406746481f17b51aa9066ce64d50b628135affe378c224b1f7469bfb",
+      "expected_ids": [
+        "p-pref-2"
+      ],
+      "candidate_ids": [
+        "p-pref-2"
+      ],
+      "injected_ids": [
+        "p-pref-2"
+      ],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "p-pref-2",
+          "rank": 1,
+          "bm25_score": -17.89498705167604,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 83,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-NM-01",
+      "split": "train",
+      "query": "VOIDGROUP1",
+      "scope_type": "GROUP",
+      "category": "no_memory",
+      "trace_id": "4f66f68766f548af9903ff93857eba23",
+      "query_hash": "b3cdc242595bdf810479b0035ad8af0b22519e3a7c9bb66ed1b133fa61b70067",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-EF-05",
+      "split": "holdout",
+      "query": "紧急联络频道 ops-alerts",
+      "scope_type": "GROUP",
+      "category": "exact_fact",
+      "trace_id": "69804f69a3c347a08c234a42081ad0b7",
+      "query_hash": "31f61fd3bbe84debd7a85a15c46eb3476c91b431d9550a149de83318d7472ef6",
+      "expected_ids": [
+        "g-fact-5"
+      ],
+      "candidate_ids": [
+        "g-fact-5"
+      ],
+      "injected_ids": [
+        "g-fact-5"
+      ],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [
+        {
+          "id": "g-fact-5",
+          "rank": 1,
+          "bm25_score": -25.881487175450403,
+          "filter_reason": "eligible"
+        }
+      ],
+      "omitted_diagnostics": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 86,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-NM-03",
+      "split": "train",
+      "query": "VOIDPERSON3",
+      "scope_type": "PERSONAL",
+      "category": "no_memory",
+      "trace_id": "081dd94fae21470aa0f0905786157a78",
+      "query_hash": "b592b16dee29ff9c3ab584eb792daf978264813778f8eb3c660c6fa55b6e7233",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-NM-03",
+      "split": "train",
+      "query": "VOIDGROUP3",
+      "scope_type": "GROUP",
+      "category": "no_memory",
+      "trace_id": "abc94b8051974c1f88798594071655d6",
+      "query_hash": "ecc1f80a06f288ce84a6cab82267a83c9b2cb1944eddfb45a02cf22794cfcfdd",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-ED-02",
+      "split": "train",
+      "query": "DELETEDCODE2",
+      "scope_type": "GROUP",
+      "category": "expired_deleted",
+      "trace_id": "7cea955392e542b98c903c7fe3f9391c",
+      "query_hash": "ba0ec75a61874f62aa74e0cee9100299ac70a73bbba613a4e4d07f2eced7b635",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_diagnostics": [],
+      "omitted_diagnostics": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
       "sample_id": "G-RT-02",
       "split": "train",
       "query": "最近讨论 CI 缓存失效",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "536e861cf7024b5a80db5c68dd5ccc68",
+      "trace_id": "4b14794e17d641429a039409314239fd",
       "query_hash": "36394c91c041d1f88c5eed7a5c85cef355a73956bf8d9f926e9fbff19801c7da",
       "expected_ids": [
         "g-rec-2"
       ],
       "candidate_ids": [
         "g-rec-2",
-        "g-rec-5",
         "g-rec-3",
+        "g-rec-5",
         "g-rec-4",
         "g-rec-1"
       ],
       "injected_ids": [
         "g-rec-2",
-        "g-rec-5"
+        "g-rec-3"
       ],
       "false_positive_ids": [
         "g-rec-1",
@@ -1830,37 +1983,37 @@
         {
           "id": "g-rec-2",
           "rank": 1,
-          "bm25_score": -21.602720624696417,
-          "filter_reason": "eligible"
-        },
-        {
-          "id": "g-rec-5",
-          "rank": 2,
-          "bm25_score": -1.2181976539771653,
+          "bm25_score": -22.093459996209702,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-3",
+          "rank": 2,
+          "bm25_score": -1.3267203940740948,
+          "filter_reason": "eligible"
+        },
+        {
+          "id": "g-rec-5",
           "rank": 3,
-          "bm25_score": -1.2181976539771653,
+          "bm25_score": -1.3267203940740948,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-4",
           "rank": 4,
-          "bm25_score": -1.1808497579073594,
+          "bm25_score": -1.285567447920737,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-1",
           "rank": 5,
-          "bm25_score": -1.0813890375844888,
+          "bm25_score": -1.1761225873671737,
           "filter_reason": "eligible"
         }
       ],
       "omitted_diagnostics": [
         {
-          "id": "g-rec-3",
+          "id": "g-rec-5",
           "reason": "max_memories"
         },
         {
@@ -1891,7 +2044,7 @@
       "query": "测试报告 未执行项目",
       "scope_type": "PERSONAL",
       "category": "preference",
-      "trace_id": "59cffd9aa79445f185ba319786f97047",
+      "trace_id": "727b520ba28d4e1ebe3dbab8c58f7ec5",
       "query_hash": "f0f2550d062af9c0ec7c3e7b7f8a627372a62b36f09207b5925c3665fd816151",
       "expected_ids": [
         "p-pref-5"
@@ -1921,55 +2074,61 @@
         {
           "id": "p-pref-5",
           "rank": 1,
-          "bm25_score": -19.615671231595712,
+          "bm25_score": -19.882301020384833,
           "filter_reason": "eligible"
         },
         {
           "id": "p-fact-1",
           "rank": 2,
-          "bm25_score": -3.046265999663885,
+          "bm25_score": -3.1239448200850313,
           "filter_reason": "eligible"
         },
         {
           "id": "p-exp-1",
           "rank": 3,
-          "bm25_score": -1.0360214942219306,
+          "bm25_score": -0.9324570329623759,
           "filter_reason": "expired"
         },
         {
           "id": "p-exp-2",
           "rank": 4,
-          "bm25_score": -1.0360214942219306,
+          "bm25_score": -0.9324570329623759,
           "filter_reason": "expired"
         },
         {
           "id": "p-exp-3",
           "rank": 5,
-          "bm25_score": -1.0360214942219306,
+          "bm25_score": -0.9324570329623759,
+          "filter_reason": "expired"
+        },
+        {
+          "id": "p-exp-4",
+          "rank": 6,
+          "bm25_score": -0.9324570329623759,
           "filter_reason": "expired"
         },
         {
           "id": "p-fact-5",
-          "rank": 6,
-          "bm25_score": -0.9407334521723655,
+          "rank": 7,
+          "bm25_score": -0.8456866307603333,
           "filter_reason": "eligible"
         },
         {
           "id": "p-cross-target-1",
-          "rank": 7,
-          "bm25_score": -0.861497269789014,
+          "rank": 8,
+          "bm25_score": -0.7736903652005008,
           "filter_reason": "eligible"
         },
         {
           "id": "p-cross-target-2",
-          "rank": 8,
-          "bm25_score": -0.861497269789014,
+          "rank": 9,
+          "bm25_score": -0.7736903652005008,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-1",
-          "rank": 9,
-          "bm25_score": -0.8156943513375307,
+          "rank": 10,
+          "bm25_score": -0.7321374164346537,
           "filter_reason": "eligible"
         }
       ],
@@ -2002,7 +2161,7 @@
       "query": "最近评估 SQLite FTS 检索",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "09a9b20182f0474e885a1c777ecd02e2",
+      "trace_id": "eb150e5ace6248918f4aaf4ef0a934c7",
       "query_hash": "9979aafd2961d2f7d63fb5f748f00a17590eaddf9af8821be983913a006f0f8f",
       "expected_ids": [
         "p-rec-2"
@@ -2030,31 +2189,31 @@
         {
           "id": "p-rec-2",
           "rank": 1,
-          "bm25_score": -14.355320301951075,
+          "bm25_score": -14.701477269414855,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-4",
           "rank": 2,
-          "bm25_score": -1.2579851881225923,
+          "bm25_score": -1.3705952065745517,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-5",
           "rank": 3,
-          "bm25_score": -1.1126271922120323,
+          "bm25_score": -1.2104731952837873,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-3",
           "rank": 4,
-          "bm25_score": -1.0813890375844888,
+          "bm25_score": -1.1761225873671737,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-1",
           "rank": 5,
-          "bm25_score": -1.0238952118467233,
+          "bm25_score": -1.1129560238252343,
           "filter_reason": "eligible"
         }
       ],
@@ -2083,7 +2242,7 @@
       "query": "发布窗口 第二个周五",
       "scope_type": "GROUP",
       "category": "exact_fact",
-      "trace_id": "071b0325d52c489688f7764063aa465a",
+      "trace_id": "7777cbd673b64cba84c396e8cf1618e5",
       "query_hash": "fc1eb3fc2ed1c196af546910506bd65d964fc2274f7b5f1f97cba32c6ca03621",
       "expected_ids": [
         "g-fact-2"
@@ -2103,13 +2262,19 @@
         {
           "id": "g-fact-2",
           "rank": 1,
-          "bm25_score": -21.320406397380705,
+          "bm25_score": -21.22508488449366,
           "filter_reason": "eligible"
         },
         {
-          "id": "g-rec-3",
+          "id": "g-future-1",
           "rank": 2,
-          "bm25_score": -2.9499187504100504,
+          "bm25_score": -3.1239448200850313,
+          "filter_reason": "not_yet_valid"
+        },
+        {
+          "id": "g-rec-3",
+          "rank": 3,
+          "bm25_score": -3.023942651256821,
           "filter_reason": "eligible"
         }
       ],
@@ -2133,7 +2298,7 @@
       "query": "CROSSPERSON2",
       "scope_type": "GROUP",
       "category": "cross_scope",
-      "trace_id": "d2a0463ad6934bbe8a740cd3c2924ff8",
+      "trace_id": "f51589d449194500afd40011c8f4d597",
       "query_hash": "0b4d69f789ebc764c0e6c853186a93b7d5ab4203c38f23f40f6e89d80fd65c1e",
       "expected_ids": [
         "g-cross-target-2"
@@ -2149,7 +2314,7 @@
         {
           "id": "g-cross-target-2",
           "rank": 1,
-          "bm25_score": -2.9499187504100504,
+          "bm25_score": -3.023942651256821,
           "filter_reason": "eligible"
         }
       ],
@@ -2168,13 +2333,13 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-NM-01",
-      "split": "train",
-      "query": "VOIDPERSON1",
+      "sample_id": "P-NM-05",
+      "split": "holdout",
+      "query": "VOIDPERSON5",
       "scope_type": "PERSONAL",
       "category": "no_memory",
-      "trace_id": "4a74461f690b4e1e8f2c76543fb1fb3b",
-      "query_hash": "a35b152c0563a1be1f76b593c38f5c7aa2ec6733c5f344a753e4bd8924629814",
+      "trace_id": "5f9c8ad7a3434da18615462f1b318393",
+      "query_hash": "ea811041c71041e880934a3049b576d2749ab872b257adcf3460ba0b83c5db5d",
       "expected_ids": [],
       "candidate_ids": [],
       "injected_ids": [],
@@ -2200,7 +2365,7 @@
       "query": "最近设计 离线 Golden Set",
       "scope_type": "PERSONAL",
       "category": "recent_topic",
-      "trace_id": "6aa1ec8c025d4b2b841d362eeb8dab21",
+      "trace_id": "d03adab7eaf64e348a09792d5432d97e",
       "query_hash": "dc1131e605af7614108ec1332f29fcbefd2bb1ef03da43de0151b3cba6f803b3",
       "expected_ids": [
         "p-rec-4"
@@ -2228,31 +2393,31 @@
         {
           "id": "p-rec-4",
           "rank": 1,
-          "bm25_score": -15.761896964164354,
+          "bm25_score": -16.160016449689067,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-2",
           "rank": 2,
-          "bm25_score": -1.1457237889365564,
+          "bm25_score": -1.2468907032215568,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-5",
           "rank": 3,
-          "bm25_score": -1.1126271922120323,
+          "bm25_score": -1.2104731952837873,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-3",
           "rank": 4,
-          "bm25_score": -1.0813890375844888,
+          "bm25_score": -1.1761225873671737,
           "filter_reason": "eligible"
         },
         {
           "id": "p-rec-1",
           "rank": 5,
-          "bm25_score": -1.0238952118467233,
+          "bm25_score": -1.1129560238252343,
           "filter_reason": "eligible"
         }
       ],
@@ -2281,7 +2446,7 @@
       "query": "最近更新 值班交接清单",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "96ada7ec63f84fc885dc59311f1fb40a",
+      "trace_id": "f039cb15255340699ce61240e51daaba",
       "query_hash": "c6df4fea55ec754af346e4f37a944d23fdf5993a94f073c816b6bcc1588a34c1",
       "expected_ids": [
         "g-rec-5"
@@ -2309,37 +2474,37 @@
         {
           "id": "g-rec-5",
           "rank": 1,
-          "bm25_score": -28.74718543103465,
+          "bm25_score": -29.403644917677376,
           "filter_reason": "eligible"
         },
         {
           "id": "g-fact-3",
           "rank": 2,
-          "bm25_score": -3.046265999663885,
+          "bm25_score": -3.1239448200850313,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-3",
           "rank": 3,
-          "bm25_score": -1.2181976539771653,
+          "bm25_score": -1.3267203940740948,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-2",
           "rank": 4,
-          "bm25_score": -1.1808497579073594,
+          "bm25_score": -1.285567447920737,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-4",
           "rank": 5,
-          "bm25_score": -1.1808497579073594,
+          "bm25_score": -1.285567447920737,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-1",
           "rank": 6,
-          "bm25_score": -1.0813890375844888,
+          "bm25_score": -1.1761225873671737,
           "filter_reason": "eligible"
         }
       ],
@@ -2375,13 +2540,13 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "P-NM-05",
-      "split": "holdout",
-      "query": "VOIDPERSON5",
-      "scope_type": "PERSONAL",
+      "sample_id": "G-NM-04",
+      "split": "train",
+      "query": "VOIDGROUP4",
+      "scope_type": "GROUP",
       "category": "no_memory",
-      "trace_id": "6b28c6e64b104636a505c1786838cc47",
-      "query_hash": "ea811041c71041e880934a3049b576d2749ab872b257adcf3460ba0b83c5db5d",
+      "trace_id": "8ef8c35ee9704301bfa8b8c089da9792",
+      "query_hash": "562938b3a2cc6150e726545cbb1ecebc0913346219f5027c156beccb1469db9f",
       "expected_ids": [],
       "candidate_ids": [],
       "injected_ids": [],
@@ -2407,7 +2572,7 @@
       "query": "代码评审 回归测试",
       "scope_type": "GROUP",
       "category": "preference",
-      "trace_id": "8ccb7539b1714a23a33bbd9b3f593a42",
+      "trace_id": "d7800e763e5741679e321caa771b4419",
       "query_hash": "1af03b5a4683c89003eda44f95f28022122de5074bb7a72082e76ceb37c2be1b",
       "expected_ids": [
         "g-pref-3"
@@ -2433,32 +2598,38 @@
         {
           "id": "g-pref-3",
           "rank": 1,
-          "bm25_score": -15.325083790205765,
+          "bm25_score": -15.569090499111601,
           "filter_reason": "eligible"
         },
         {
           "id": "g-cross-target-1",
           "rank": 2,
-          "bm25_score": -2.810681293300136,
+          "bm25_score": -2.804935589775475,
           "filter_reason": "eligible"
         },
         {
           "id": "g-cross-target-2",
           "rank": 3,
-          "bm25_score": -2.810681293300136,
+          "bm25_score": -2.804935589775475,
           "filter_reason": "eligible"
         },
         {
           "id": "g-cross-target-3",
           "rank": 4,
-          "bm25_score": -2.810681293300136,
+          "bm25_score": -2.804935589775475,
           "filter_reason": "eligible"
         },
         {
           "id": "g-pref-1",
           "rank": 5,
-          "bm25_score": -2.618630718950767,
+          "bm25_score": -2.6806908757351158,
           "filter_reason": "eligible"
+        },
+        {
+          "id": "g-exp-1",
+          "rank": 6,
+          "bm25_score": -0.9324570329623759,
+          "filter_reason": "expired"
         }
       ],
       "omitted_diagnostics": [
@@ -2489,13 +2660,13 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "G-NM-01",
-      "split": "train",
-      "query": "VOIDGROUP1",
+      "sample_id": "G-NM-05",
+      "split": "holdout",
+      "query": "VOIDGROUP5",
       "scope_type": "GROUP",
       "category": "no_memory",
-      "trace_id": "6cd98d72b8134a0cbc8e7fa22329c2d4",
-      "query_hash": "b3cdc242595bdf810479b0035ad8af0b22519e3a7c9bb66ed1b133fa61b70067",
+      "trace_id": "5cbe7eaaf2514a23a1b7ffc0eb819e84",
+      "query_hash": "e46badb07c0111ac1a7f0195563b1e6ae2e86ab161dbfb0016a45767e791d44e",
       "expected_ids": [],
       "candidate_ids": [],
       "injected_ids": [],
@@ -2521,7 +2692,7 @@
       "query": "EXPIRYCODE2",
       "scope_type": "PERSONAL",
       "category": "expired_deleted",
-      "trace_id": "c8b322399c494407aebcbc315fb9e9f9",
+      "trace_id": "10617b6e13bc4d98b84573822f951ce6",
       "query_hash": "c4e356d2d6f217f920d8f9cd53d8a406e9c9eeb29d4196ca54c84e5ce2e82ba4",
       "expected_ids": [],
       "candidate_ids": [],
@@ -2531,7 +2702,7 @@
         {
           "id": "p-exp-2",
           "rank": 1,
-          "bm25_score": -3.7484045243918787,
+          "bm25_score": -3.8238091672193923,
           "filter_reason": "expired"
         }
       ],
@@ -2555,7 +2726,7 @@
       "query": "最近安排 灰度发布演练",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "613884696b384749a256f4b167ab394a",
+      "trace_id": "3735e40b43024ea0a6d6e7925af612a3",
       "query_hash": "a2c0222b368fd5cbce6dfc1a9116bf2917d896ca8ed3d1e1a1fc4d690a641119",
       "expected_ids": [
         "g-rec-3"
@@ -2585,43 +2756,43 @@
         {
           "id": "g-rec-3",
           "rank": 1,
-          "bm25_score": -28.185808606209353,
+          "bm25_score": -28.848590158598988,
           "filter_reason": "eligible"
         },
         {
           "id": "g-fact-1",
           "rank": 2,
-          "bm25_score": -2.859479191160372,
+          "bm25_score": -2.930144327469945,
           "filter_reason": "eligible"
         },
         {
           "id": "g-fact-2",
           "rank": 3,
-          "bm25_score": -2.618630718950767,
+          "bm25_score": -2.6806908757351158,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-5",
           "rank": 4,
-          "bm25_score": -1.2181976539771653,
+          "bm25_score": -1.3267203940740948,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-2",
           "rank": 5,
-          "bm25_score": -1.1808497579073594,
+          "bm25_score": -1.285567447920737,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-4",
           "rank": 6,
-          "bm25_score": -1.1808497579073594,
+          "bm25_score": -1.285567447920737,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-1",
           "rank": 7,
-          "bm25_score": -1.0813890375844888,
+          "bm25_score": -1.1761225873671737,
           "filter_reason": "eligible"
         }
       ],
@@ -2666,7 +2837,7 @@
       "query": "CROSSGROUP2",
       "scope_type": "PERSONAL",
       "category": "cross_scope",
-      "trace_id": "35ec6158839c46789189a3bf22675311",
+      "trace_id": "8239f757e0d44280b89fc8630cb8b131",
       "query_hash": "1c26c09b3af98ace2f5deb51a6cf38da362f20e62e57b7690e033bec33ad2d0e",
       "expected_ids": [
         "p-cross-target-2"
@@ -2682,7 +2853,7 @@
         {
           "id": "p-cross-target-2",
           "rank": 1,
-          "bm25_score": -2.618630718950767,
+          "bm25_score": -2.6806908757351158,
           "filter_reason": "eligible"
         }
       ],
@@ -2706,7 +2877,7 @@
       "query": "偏好 简洁 变更日志",
       "scope_type": "PERSONAL",
       "category": "preference",
-      "trace_id": "ddbbe7b61ab3466ba45fb58bce4c48f4",
+      "trace_id": "138c884b80a944e5990907f4888978b0",
       "query_hash": "ff5f871c535d29957812e6fce4a918b8c144f01116fec24f9556b38118b55392",
       "expected_ids": [
         "p-pref-1"
@@ -2729,19 +2900,19 @@
         {
           "id": "p-pref-1",
           "rank": 1,
-          "bm25_score": -16.034171440697037,
+          "bm25_score": -16.417588377892383,
           "filter_reason": "eligible"
         },
         {
           "id": "p-fact-4",
           "rank": 2,
-          "bm25_score": -2.1099716090018283,
+          "bm25_score": -2.201577625471463,
           "filter_reason": "eligible"
         },
         {
           "id": "p-pref-4",
           "rank": 3,
-          "bm25_score": -2.043237462819767,
+          "bm25_score": -2.1311018168159137,
           "filter_reason": "eligible"
         }
       ],
@@ -2760,18 +2931,25 @@
       "injection_effectiveness": null
     },
     {
-      "sample_id": "G-NM-05",
-      "split": "holdout",
-      "query": "VOIDGROUP5",
+      "sample_id": "G-ED-04",
+      "split": "train",
+      "query": "FUTURECODE2",
       "scope_type": "GROUP",
-      "category": "no_memory",
-      "trace_id": "b1c713771fc84aba952184df069118f8",
-      "query_hash": "e46badb07c0111ac1a7f0195563b1e6ae2e86ab161dbfb0016a45767e791d44e",
+      "category": "expired_deleted",
+      "trace_id": "fa2475e7d14f4515b233fec4e89c528a",
+      "query_hash": "0b57d0922b2299c995be263acd73811c392a219ca5901fa384f19ad29b91685f",
       "expected_ids": [],
       "candidate_ids": [],
       "injected_ids": [],
       "false_positive_ids": [],
-      "candidate_diagnostics": [],
+      "candidate_diagnostics": [
+        {
+          "id": "g-future-1",
+          "rank": 1,
+          "bm25_score": -3.6973553107786286,
+          "filter_reason": "not_yet_valid"
+        }
+      ],
       "omitted_diagnostics": [],
       "candidate_recall": null,
       "candidate_precision": null,
@@ -2792,7 +2970,7 @@
       "query": "演示环境 Debian",
       "scope_type": "PERSONAL",
       "category": "exact_fact",
-      "trace_id": "717369998f0a4b86834041d6448f4189",
+      "trace_id": "c601aec660444ae6bdce37ffe978e752",
       "query_hash": "5a83949d0d67aecf89ca4268ea254d849f1d88b77f4846f47fbff4944170e254",
       "expected_ids": [
         "p-fact-3"
@@ -2808,7 +2986,7 @@
         {
           "id": "p-fact-3",
           "rank": 1,
-          "bm25_score": -14.503911776041765,
+          "bm25_score": -14.789421243114514,
           "filter_reason": "eligible"
         }
       ],
@@ -2832,7 +3010,7 @@
       "query": "最近复盘 数据库迁移耗时",
       "scope_type": "GROUP",
       "category": "recent_topic",
-      "trace_id": "ec0414139df145e38f64d17dab99a101",
+      "trace_id": "3ceb1f76f6494aadadb0b7061d5b71d8",
       "query_hash": "86383b731df77a1efcc1cca16015aae27e4377aeaefca333b0137a58e0967376",
       "expected_ids": [
         "g-rec-4"
@@ -2858,31 +3036,31 @@
         {
           "id": "g-rec-4",
           "rank": 1,
-          "bm25_score": -31.813656058090945,
+          "bm25_score": -32.49740627035418,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-3",
           "rank": 2,
-          "bm25_score": -1.2181976539771653,
+          "bm25_score": -1.3267203940740948,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-5",
           "rank": 3,
-          "bm25_score": -1.2181976539771653,
+          "bm25_score": -1.3267203940740948,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-2",
           "rank": 4,
-          "bm25_score": -1.1808497579073594,
+          "bm25_score": -1.285567447920737,
           "filter_reason": "eligible"
         },
         {
           "id": "g-rec-1",
           "rank": 5,
-          "bm25_score": -1.0813890375844888,
+          "bm25_score": -1.1761225873671737,
           "filter_reason": "eligible"
         }
       ],
@@ -2919,7 +3097,7 @@
       "query": "VOIDGROUP2",
       "scope_type": "GROUP",
       "category": "no_memory",
-      "trace_id": "d20086618f8f4981aff5dee57b329772",
+      "trace_id": "d1b6503684854cf1addd5452123ce414",
       "query_hash": "b0e822b791403288f291b48a7c756879790c821a20be3e64d0e820fd2226fdae",
       "expected_ids": [],
       "candidate_ids": [],
@@ -2944,6 +3122,7 @@
   "limitations": [
     "Golden Set labels are assistant-generated drafts and require human review before V1.4 exit acceptance.",
     "Injection effectiveness requires human rubric scoring; no score is fabricated by this harness.",
+    "Baseline covers all declared splits for descriptive reporting; the holdout split is never used for parameter selection, so future experiments must use train only.",
     "Baseline uses the current V1.3 SQLite FTS runtime services and does not alter runtime defaults.",
     "Cross-scope samples include an in-scope target and a foreign same-term distractor; target retrieval contributes to normal metrics and foreign hits are reported separately."
   ]

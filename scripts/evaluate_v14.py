@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import importlib.machinery
 import json
+import math
 import platform
 import random
 import sqlite3
@@ -160,6 +161,23 @@ def validate_dataset(dataset: dict[str, Any]) -> None:
     }
     scope_by_id = {scope["scope_id"]: scope for scope in dataset["scopes"].values()}
     memory_by_id = {memory["id"]: memory for memory in memories}
+    fixed_clock = parse_time(dataset["fixed_clock"])
+
+    def excluded_by_validity(fixture: dict[str, Any]) -> tuple[bool, bool]:
+        valid_from = parse_time(fixture.get("valid_from"))
+        valid_until = parse_time(fixture.get("valid_until"))
+        expired = (
+            valid_until is not None
+            and fixed_clock is not None
+            and valid_until <= fixed_clock
+        )
+        not_yet_effective = (
+            valid_from is not None
+            and fixed_clock is not None
+            and valid_from > fixed_clock
+        )
+        return expired, not_yet_effective
+
     for item in samples:
         missing_fields = required_sample_fields - item.keys()
         if missing_fields:
@@ -192,17 +210,28 @@ def validate_dataset(dataset: dict[str, Any]) -> None:
         for memory_id in item["excluded_memory_ids"]:
             fixture = memory_by_id[memory_id]
             fixture_scope = dataset["scopes"][fixture["scope_key"]]
-            valid_until = parse_time(fixture.get("valid_until"))
-            fixed_clock = parse_time(dataset["fixed_clock"])
-            expired = (
-                valid_until is not None
-                and fixed_clock is not None
-                and valid_until <= fixed_clock
-            )
-            if fixture_scope["scope_id"] != sample_scope["scope_id"] or not (fixture["status"] == "DELETED" or expired):
-                raise ValueError(f"sample {item['sample_id']} excluded memory is not expired/deleted in-scope")
+            expired, not_yet_effective = excluded_by_validity(fixture)
+            if fixture_scope["scope_id"] != sample_scope["scope_id"] or not (
+                fixture["status"] == "DELETED" or expired or not_yet_effective
+            ):
+                raise ValueError(
+                    f"sample {item['sample_id']} excluded memory is not deleted/expired/future-effective in-scope"
+                )
         if item["category"] == "cross_scope" and (not item["expected_memory_ids"] or not item["distractor_memory_ids"]):
             raise ValueError(f"cross_scope sample {item['sample_id']} needs an in-scope target and foreign distractor")
+
+    expired_fixtures = {item["id"] for item in memories if excluded_by_validity(item)[0]}
+    future_fixtures = {item["id"] for item in memories if excluded_by_validity(item)[1]}
+    if not expired_fixtures:
+        raise ValueError("dataset must cover at least one valid_until-expired memory")
+    if not future_fixtures:
+        raise ValueError("dataset must cover at least one not-yet-effective valid_from memory")
+    referenced_excluded = {memory_id for item in samples for memory_id in item["excluded_memory_ids"]}
+    if not referenced_excluded & expired_fixtures:
+        raise ValueError("dataset must have a sample exercising a valid_until-expired memory")
+    if not referenced_excluded & future_fixtures:
+        raise ValueError("dataset must have a sample exercising a valid_from-future memory")
+
     for category in dataset["categories"]:
         if not any(s["category"] == category and s["split"] == "holdout" for s in samples):
             raise ValueError(f"category {category!r} must be represented in holdout")
@@ -454,6 +483,7 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
             runtime["db"].close()
 
     by_scope: dict[str, Any] = {}
+    required_double_scored = max(10, math.ceil(len(dataset["samples"]) * 0.2))
     for scope_type in ("PERSONAL", "GROUP"):
         rows = [row for row in result_rows if row["scope_type"] == scope_type]
         by_scope[scope_type] = {
@@ -485,7 +515,11 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
                 if sum(len(next(s for s in selected_samples if s["sample_id"] == row["sample_id"])["excluded_memory_ids"]) for row in rows) else 0.0
             ),
             "cross_scope_distractor_hit_count": sum(len(row["foreign_distractor_hits"]) for row in rows),
-            "injection_effectiveness": {"status": "pending_human_rubric", "rated_count": 0, "double_scored_minimum": 10},
+            "injection_effectiveness": {
+                "status": "pending_human_rubric",
+                "rated_count": 0,
+                "double_scored_minimum": required_double_scored,
+            },
         }
 
     categories = {}
@@ -519,10 +553,17 @@ def run_evaluation(dataset: dict[str, Any], dataset_hash: str, args: argparse.Na
         },
         "scope_metrics": by_scope,
         "category_metrics": categories,
+        "injection_rubric": {
+            "status": "pending_human_rubric",
+            "required_double_scored": required_double_scored,
+            "template": "eval/v1.4/datasets/injection_rubric_template.csv",
+            "checker": "python scripts/injection_rubric.py",
+        },
         "samples": result_rows,
         "limitations": [
             "Golden Set labels are assistant-generated drafts and require human review before V1.4 exit acceptance.",
             "Injection effectiveness requires human rubric scoring; no score is fabricated by this harness.",
+            "Baseline covers all declared splits for descriptive reporting; the holdout split is never used for parameter selection, so future experiments must use train only.",
             "Baseline uses the current V1.3 SQLite FTS runtime services and does not alter runtime defaults.",
             "Cross-scope samples include an in-scope target and a foreign same-term distractor; target retrieval contributes to normal metrics and foreign hits are reported separately.",
         ],
@@ -578,7 +619,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         ))
     lines += [
         "", "## 注入有效性", "",
-        "人工 Rubric 尚未评分；需至少 10 条样本双人评分（0=无关、1=部分相关、2=直接帮助），不一致由第三人裁定。",
+        "人工 Rubric 尚未评分；需至少 {} 条样本双人评分（0=无关、1=部分相关、2=直接帮助），不一致由第三人裁定。"
+        " 模板：`{}`；填充后用 `{}` 校验。".format(
+            report["injection_rubric"]["required_double_scored"],
+            report["injection_rubric"]["template"],
+            report["injection_rubric"]["checker"],
+        ),
         "", "## 失败样本分析", "",
         "| Query | 期望 | 实际 | 原因分类 | 建议 |",
         "|---|---|---|---|---|",

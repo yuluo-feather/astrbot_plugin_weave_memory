@@ -1,9 +1,9 @@
 # V1.4 Golden Set 基线评测报告
 
-- 数据集：`weave-memory-v1.4-golden` v`1.0.0`
-- SHA-256：`1601b8c27989f238a2f4e95e49a1e250534ad6d5636a12935f4ca3ae6479894c`
+- 数据集：`weave-memory-v1.4-golden` v`1.1.0`
+- SHA-256：`776ea74ea36d9bbecbab75eed6d170de555557920db2ef27ea2007e06fb3682a`
 - Split：`all`；参数实验：`否`
-- 运行时代码基线 commit：`cc3ac42d91eb92d1597cdbdd3a364230445db05d`；工作区有未提交改动：`否`
+- 运行时代码基线 commit：`e042570fd7d18463810ade6dc7c5c79256a97e93`；工作区有未提交改动：`是`
 - Python / SQLite：`3.12.10` / `3.49.1`
 - 固定时间 / 随机种子：`2026-11-23T12:00:00+00:00` / `1401`
 
@@ -18,8 +18,8 @@
 
 | Scope | 样本 | Candidate Recall@K | Candidate Precision@K | Candidate MRR | Injected Recall@K | Injected Precision@K | Injected MRR | 无记忆正确率 | 平均 Token | P50/P95 ms | 错误归属率 | 过期/删除召回率 | 跨 Scope 干扰命中 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| PERSONAL | 25 | 1.0000 | 0.0833 | 1.0000 | 1.0000 | 0.2500 | 1.0000 | 1.0000 | 75.9200 | 0.3583/0.7390 | 0.0000 | 0.0000 | 0 |
-| GROUP | 25 | 1.0000 | 0.1250 | 1.0000 | 1.0000 | 0.5000 | 1.0000 | 1.0000 | 69.8800 | 0.4033/0.7326 | 0.0000 | 0.0000 | 0 |
+| PERSONAL | 27 | 1.0000 | 0.0833 | 1.0000 | 1.0000 | 0.2500 | 1.0000 | 1.0000 | 70.2963 | 0.4601/0.9711 | 0.0000 | 0.0000 | 0 |
+| GROUP | 27 | 1.0000 | 0.1250 | 1.0000 | 1.0000 | 0.5000 | 1.0000 | 1.0000 | 64.7037 | 0.5357/1.0822 | 0.0000 | 0.0000 | 0 |
 
 ## 分类统计
 
@@ -29,18 +29,18 @@
 | preference | 10 | 1.0000 | 0.1042 | 1.0000 | N/A |
 | recent_topic | 10 | 1.0000 | 0.1042 | 1.0000 | N/A |
 | cross_scope | 5 | 1.0000 | 0.1083 | 1.0000 | N/A |
-| expired_deleted | 5 | N/A | N/A | N/A | 1.0000 |
+| expired_deleted | 9 | N/A | N/A | N/A | 1.0000 |
 | no_memory | 10 | N/A | N/A | N/A | 1.0000 |
 
 ## 注入有效性
 
-人工 Rubric 尚未评分；需至少 10 条样本双人评分（0=无关、1=部分相关、2=直接帮助），不一致由第三人裁定。
+人工 Rubric 尚未评分；需至少 11 条样本双人评分（0=无关、1=部分相关、2=直接帮助），不一致由第三人裁定。 模板：`eval/v1.4/datasets/injection_rubric_template.csv`；填充后用 `python scripts/injection_rubric.py` 校验。
 
 ## 失败样本分析
 
 | Query | 期望 | 实际 | 原因分类 | 建议 |
 |---|---|---|---|---|
-| 本群例会 周三 15:00 | ['g-fact-1'] | ['g-fact-1', 'g-fact-3', 'g-fact-5', 'g-pref-2', 'g-rec-5', 'g-cross-target-1', 'g-cross-target-2', 'g-cross-target-3'] | false_positive_candidates_shared_OR_terms | 将共享泛词命中列为后续 V2 候选排序/语义检索实验；V1.4 不改运行时。 |
+| 本群例会 周三 15:00 | ['g-fact-1'] | ['g-fact-1', 'g-fact-3', 'g-fact-5', 'g-pref-2', 'g-rec-3', 'g-cross-target-1', 'g-cross-target-2', 'g-cross-target-3'] | false_positive_candidates_shared_OR_terms | 将共享泛词命中列为后续 V2 候选排序/语义检索实验；V1.4 不改运行时。 |
 | 最近安排 灰度发布演练 | ['g-rec-3'] | ['g-rec-3', 'g-fact-1', 'g-fact-2', 'g-rec-5', 'g-rec-2', 'g-rec-4', 'g-rec-1'] | false_positive_candidates_shared_OR_terms | 将共享泛词命中列为后续 V2 候选排序/语义检索实验；V1.4 不改运行时。 |
 | 测试报告 未执行项目 | ['p-pref-5'] | ['p-pref-5', 'p-fact-1', 'p-fact-5', 'p-cross-target-1', 'p-cross-target-2', 'p-rec-1'] | false_positive_candidates_shared_OR_terms | 将共享泛词命中列为后续 V2 候选排序/语义检索实验；V1.4 不改运行时。 |
 | 最近更新 值班交接清单 | ['g-rec-5'] | ['g-rec-5', 'g-fact-3', 'g-rec-3', 'g-rec-2', 'g-rec-4', 'g-rec-1'] | false_positive_candidates_shared_OR_terms | 将共享泛词命中列为后续 V2 候选排序/语义检索实验；V1.4 不改运行时。 |
@@ -53,6 +53,7 @@
 
 - Golden Set labels are assistant-generated drafts and require human review before V1.4 exit acceptance.
 - Injection effectiveness requires human rubric scoring; no score is fabricated by this harness.
+- Baseline covers all declared splits for descriptive reporting; the holdout split is never used for parameter selection, so future experiments must use train only.
 - Baseline uses the current V1.3 SQLite FTS runtime services and does not alter runtime defaults.
 - Cross-scope samples include an in-scope target and a foreign same-term distractor; target retrieval contributes to normal metrics and foreign hits are reported separately.
 - 空期望集（`no_memory`、`expired_deleted`）的 Recall@K / Precision@K / MRR 记 N/A，不进入非空均值；无记忆正确率只统计这两类。

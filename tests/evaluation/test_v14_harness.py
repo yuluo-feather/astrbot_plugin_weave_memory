@@ -37,13 +37,26 @@ def _without_trace_id(rows):
 
 
 def test_golden_set_meets_v14_minimum_and_privacy_contract():
+    from datetime import datetime
+
     dataset, _ = evaluate_v14.load_dataset(evaluate_v14.DATASET)
-    assert len(dataset["samples"]) == 50
-    assert sum(sample["split"] == "holdout" for sample in dataset["samples"]) == 10
+    assert len(dataset["samples"]) >= dataset["minimum_sample_count"]
+    assert sum(sample["split"] == "holdout" for sample in dataset["samples"]) == round(
+        len(dataset["samples"]) * dataset["holdout_ratio"]
+    )
     assert dataset["data_policy"] == "synthetic_only_no_production_memory_content"
     assert dataset["annotation_status"] == "assistant_generated_synthetic_labels_pending_human_review"
     assert {sample["labeler"] for sample in dataset["samples"]} == {"assistant-generated-draft"}
     assert {sample["scope"]["scope_type"] for sample in dataset["samples"]} == {"PERSONAL", "GROUP"}
+    clock = datetime.fromisoformat(dataset["fixed_clock"])
+    assert any(
+        memory["valid_until"] and datetime.fromisoformat(memory["valid_until"]) <= clock
+        for memory in dataset["memories"]
+    )
+    assert any(
+        memory["valid_from"] and datetime.fromisoformat(memory["valid_from"]) > clock
+        for memory in dataset["memories"]
+    )
 
 
 def test_empty_expected_metrics_are_na_and_nonempty_miss_is_zero():
@@ -129,7 +142,7 @@ def test_committed_baseline_report_is_complete_and_safe():
     path = Path(evaluate_v14.ROOT) / "eval" / "v1.4" / "reports" / "baseline_v1.json"
     report = json.loads(path.read_text(encoding="utf-8"))
     assert report["dataset_sha256"] == digest
-    assert len(report["samples"]) == len(dataset["samples"]) == 50
+    assert len(report["samples"]) == len(dataset["samples"])
     assert isinstance(report["environment"]["runtime_source_dirty"], bool)
     assert isinstance(report["environment"]["runtime_source_commit"], str)
     assert "bm25" in report["parameters"]["fts"]["order_by"]
@@ -138,9 +151,18 @@ def test_committed_baseline_report_is_complete_and_safe():
         assert isinstance(row["query_hash"], str) and row["query_hash"]
         assert isinstance(row["candidate_diagnostics"], list)
         assert isinstance(row["omitted_diagnostics"], list)
+    validity_rows = {
+        row["sample_id"]: row for row in report["samples"]
+        if row["sample_id"] in {"P-ED-04", "P-ED-05", "G-ED-03", "G-ED-04"}
+    }
+    assert set(validity_rows) == {"P-ED-04", "P-ED-05", "G-ED-03", "G-ED-04"}
+    for row in validity_rows.values():
+        assert row["expected_ids"] == []
+        assert row["candidate_ids"] == []
+        assert row["injected_ids"] == []
     for scope_type in ("PERSONAL", "GROUP"):
         metrics = report["scope_metrics"][scope_type]
-        assert metrics["sample_count"] == 25
+        assert metrics["sample_count"] == 27
         assert metrics["candidate_recall_at_k"]["mean"] == 1.0
         assert metrics["no_memory_correct_rate"]["mean"] == 1.0
         assert metrics["error_attribution_rate"] == 0.0

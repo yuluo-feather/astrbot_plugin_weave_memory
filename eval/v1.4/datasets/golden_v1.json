@@ -1,6 +1,6 @@
 {
   "dataset_name": "weave-memory-v1.4-golden",
-  "dataset_version": "1.0.0",
+  "dataset_version": "1.1.0",
   "created_at": "2026-11-23T17:50:00+08:00",
   "data_policy": "synthetic_only_no_production_memory_content",
   "fixed_clock": "2026-11-23T12:00:00+00:00",
@@ -528,6 +528,50 @@
       "created_at": "2026-11-23T12:00:00+00:00",
       "valid_from": null,
       "valid_until": null
+    },
+    {
+      "id": "p-exp-4",
+      "scope_key": "personal",
+      "content": "用户已过期测试凭据 EXPIRYCODE4",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": "2026-11-22T00:00:00+00:00"
+    },
+    {
+      "id": "g-exp-1",
+      "scope_key": "group",
+      "content": "本群已过期测试凭据 EXPIRYCODE5",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": "2026-11-22T00:00:00+00:00"
+    },
+    {
+      "id": "p-future-1",
+      "scope_key": "personal",
+      "content": "用户的下季度预算编号 FUTURECODE1",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": "2026-12-01T00:00:00+00:00",
+      "valid_until": null
+    },
+    {
+      "id": "g-future-1",
+      "scope_key": "group",
+      "content": "本群的下季度维护窗口 FUTURECODE2",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": "2026-12-01T00:00:00+00:00",
+      "valid_until": null
     }
   ],
   "samples": [
@@ -558,7 +602,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -589,7 +633,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -620,7 +664,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -651,7 +695,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -682,7 +726,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -713,7 +757,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -744,7 +788,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -775,7 +819,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -806,7 +850,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -837,7 +881,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -868,7 +912,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -899,7 +943,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -930,7 +974,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -961,7 +1005,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -992,7 +1036,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1023,7 +1067,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1054,7 +1098,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1085,7 +1129,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1116,7 +1160,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1147,7 +1191,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1178,7 +1222,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1209,7 +1253,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1240,7 +1284,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1271,7 +1315,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1302,7 +1346,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1333,7 +1377,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1364,7 +1408,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1395,7 +1439,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1426,7 +1470,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1457,7 +1501,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1490,7 +1534,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1523,7 +1567,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1556,7 +1600,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1589,7 +1633,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1622,7 +1666,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1651,7 +1695,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1680,7 +1724,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1709,7 +1753,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1738,7 +1782,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1767,7 +1811,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1794,7 +1838,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1821,7 +1865,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1848,7 +1892,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1875,7 +1919,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1902,7 +1946,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
     },
@@ -1929,7 +1973,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1956,7 +2000,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -1983,7 +2027,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -2010,7 +2054,7 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "train"
     },
@@ -2037,9 +2081,125 @@
       "valid_until": null,
       "created_at": "2026-11-23T12:00:00+00:00",
       "caller": "memory_context",
-      "dataset_version": "1.0.0",
+      "dataset_version": "1.1.0",
       "labeler": "assistant-generated-draft",
       "split": "holdout"
+    },
+    {
+      "sample_id": "P-ED-04",
+      "query": "EXPIRYCODE4",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "p-exp-4"
+      ],
+      "category": "expired_deleted",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.1.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-ED-05",
+      "query": "FUTURECODE1",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "p-future-1"
+      ],
+      "category": "expired_deleted",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.1.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "G-ED-03",
+      "query": "EXPIRYCODE5",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "g-exp-1"
+      ],
+      "category": "expired_deleted",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.1.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-ED-04",
+      "query": "FUTURECODE2",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "g-future-1"
+      ],
+      "category": "expired_deleted",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.1.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
     }
   ],
   "annotation_status": "assistant_generated_synthetic_labels_pending_human_review"
