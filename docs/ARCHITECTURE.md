@@ -104,6 +104,6 @@ V0 目标为单进程、单实例、SQLite。写操作由应用层统一协调�
 - `CANDIDATE` 不进入召回/注入/FTS；确认后由生命周期服务转 `ACTIVE`。
 - 群事件不进入该管线；Group personal 与群提取不在 V1.5。
 - 失败隔离：提取任务异常不影响聊天；注入与显式写入路径不变。
-- M1 已实现：schema v6、分层 consent、`extraction_jobs`、`ExtractionService`、私聊捕获（单条/批量）、敏感前置过滤、候选命令与离线指标 harness。真实宿主模型调用与质量采集待补。
+- M1 已实现：schema v6、分层 consent、`extraction_jobs`、`ExtractionService`、私聊捕获（累计阈值/“记住…”/回合结束）、敏感前置过滤、候选命令与离线指标 harness。真实宿主模型调用与质量采集待补。
 - 实现不改 V1.4 显式写入、检索、注入与群路径语义。
 

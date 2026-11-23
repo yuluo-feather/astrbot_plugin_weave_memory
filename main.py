@@ -449,6 +449,11 @@ class WeaveMemoryPlugin(Star):
         if self._extraction_capture is not None:
             await self._extraction_capture.capture(event)
 
+    @_hook("after_message_sent")()
+    async def extraction_flush_event(self, event: AstrMessageEvent):
+        if self._extraction_capture is not None:
+            await self._extraction_capture.flush(event)
+
     @_hook("on_using_llm_tool")()
     async def weave_bind_tool_call(self, event: AstrMessageEvent, tool, tool_args):
         """Verify that the invoked handler is registered by this plugin."""

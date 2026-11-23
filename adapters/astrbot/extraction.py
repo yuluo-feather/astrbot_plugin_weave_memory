@@ -169,6 +169,26 @@ class AstrBotExtractionCapture:
         if text.startswith("记住") or len(buffer) >= self._min_messages:
             self._schedule(scope, key, watermark)
 
+    async def flush(self, event: Any) -> None:
+        """Submit the current buffer when the host ends the turn."""
+        if not self._enabled:
+            return
+        try:
+            identity = self._identity.resolve_identity(event)
+        except AuthorizationDenied:
+            return
+        scope = self._scopes.find(identity)
+        if scope is None:
+            return
+        conversation_id = str(getattr(event, "unified_msg_origin", "") or "").strip()
+        key = conversation_id or scope.id
+        if not self._buffers.get(key):
+            return
+        if not self._extraction.gates(scope).can_store:
+            self._buffers.pop(key, None)
+            return
+        self._schedule(scope, key, self._watermarks.get(key, 0))
+
     def _schedule(self, scope: Any, key: str, watermark: int) -> None:
         messages = tuple(self._buffers.pop(key, ()))
         if not messages:

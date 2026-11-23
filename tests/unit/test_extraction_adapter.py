@@ -121,6 +121,35 @@ def test_capture_ignores_group_commands_and_disabled(monkeypatch):
     assert messages == (("msg-1", "我喜欢黑咖啡"),)
 
 
+def test_flush_submits_buffer_on_turn_end_and_clears_gate_failure():
+    scope = SimpleNamespace(id="scope")
+    extraction = FakeExtraction()
+    scopes = FakeScopes(scope)
+
+    async def run():
+        capture = AstrBotExtractionCapture(
+            scopes, extraction, min_messages=5,
+        )
+        await capture.capture(FakeEvent("第一句"))
+        assert extraction.calls == []
+        await capture.flush(FakeEvent(""))
+        await asyncio.sleep(0.05)
+        assert len(extraction.calls) == 1
+        _, _, messages, watermark = extraction.calls[0]
+        assert messages == (("msg-1", "第一句"),)
+        assert watermark == 1
+
+        extraction.can_store = False
+        extraction.gates = lambda scope: SimpleNamespace(can_store=extraction.can_store)
+        await capture.capture(FakeEvent("第二句"))
+        await capture.flush(FakeEvent(""))
+        await asyncio.sleep(0.05)
+        await capture.close()
+
+    asyncio.run(run())
+    assert len(extraction.calls) == 1
+
+
 def test_capture_discards_messages_buffered_before_opt_in():
     scope = SimpleNamespace(id="scope")
     extraction = FakeExtraction()

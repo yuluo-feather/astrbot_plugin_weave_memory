@@ -353,7 +353,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 ### 配置
 
 - 已实现键：`extraction_enabled=false`、`extraction_min_messages=5`、`extraction_max_retries=3`、`extraction_timeout_seconds=30`、`extraction_queue_size=100`。
-- `extraction_min_messages` 按会话累计私聊消息触发；用户说“记住……”时立即提交当前缓冲。`extraction_queue_size` 超限时新任务记 `FAILED` + `last_error=queue_full`，不阻塞聊天。
+- `extraction_min_messages` 按会话累计私聊消息触发；用户说“记住……”时立即提交当前缓冲；宿主支持 `after_message_sent` 时，回合结束也会提交缓冲。`extraction_queue_size` 超限时新任务记 `FAILED` + `last_error=queue_full`，不阻塞聊天。
 - `extraction_include_assistant` 暂未实现；窗口默认只含用户消息。
 - 关闭 `extraction_enabled` 后行为退回 V1.4；既有候选保留但不自动激活。
 
