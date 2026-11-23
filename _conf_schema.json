@@ -47,6 +47,24 @@
     "default": 7,
     "hint": "候选创建时写入 candidate_expires_at；到期在读取候选列表时转 ARCHIVED，不物理删除。与记忆的语义有效期 valid_until 不同。"
   },
+  "archive_retention_days": {
+    "description": "软删除保留期（天）",
+    "type": "int",
+    "default": 30,
+    "hint": "用户归档的记忆在此期限内可用 /织忆 恢复；到期后由清理任务物理清除。候选过期归档不可恢复。范围 1–365。"
+  },
+  "purge_batch_size": {
+    "description": "到期清理每批处理条数",
+    "type": "int",
+    "default": 100,
+    "hint": "到期清理每个事务/批次最多处理多少条 ARCHIVED 记忆；范围 1–1000。"
+  },
+  "purge_interval_seconds": {
+    "description": "到期清理周期（秒）",
+    "type": "int",
+    "default": 3600,
+    "hint": "启动后先清理一次，之后按该间隔在后台清理；范围 60–86400。"
+  },
   "rejected_keep_body": {
     "description": "拒绝候选时保留正文",
     "type": "bool",

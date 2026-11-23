@@ -140,6 +140,11 @@ class ManagementService:
             "valid_from": _time(memory.valid_from),
             "valid_until": _time(memory.valid_until),
             "candidate_expires_at": _time(memory.candidate_expires_at),
+            "archived_at": _time(memory.archived_at),
+            "purge_after": _time(memory.purge_after),
+            "archive_reason": (
+                memory.archive_reason.value if memory.archive_reason else None
+            ),
             "last_accessed_at": _time(memory.last_accessed_at),
             "metadata": dict(memory.metadata),
         }

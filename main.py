@@ -43,6 +43,7 @@ from .app.lifecycle_service import LifecycleService
 from .app.management_service import ManagementService
 from .app.memory_service import MemoryApplicationService
 from .app.recall_service import MemoryContextComposer, RecallService
+from .app.retention_service import RetentionService
 from .app.scope_service import GroupScopeService, PersonalScopeService
 from .app.startup_recovery import StartupRecoveryService
 from .app.write_coordinator import WriteCoordinator
@@ -103,6 +104,7 @@ class WeaveMemoryPlugin(Star):
         self._extraction_commands: AstrBotExtractionCommands | None = None
         self._backup_commands: AstrBotBackupCommands | None = None
         self._extraction_capture: AstrBotExtractionCapture | None = None
+        self._retention: RetentionService | None = None
         self._injector: AstrBotMemoryInjector | None = None
         self._group_injector: AstrBotGroupMemoryInjector | None = None
         self._tool_call_binding = AstrBotToolCallBinding(
@@ -136,7 +138,11 @@ class WeaveMemoryPlugin(Star):
             coordinator = WriteCoordinator(store, index, ledger)
             scopes = PersonalScopeService(store, coordinator, clock)
             consent = ConsentService(consent_repository, coordinator, clock, ids)
-            lifecycle = LifecycleService(coordinator, store, consent)
+            archive_retention_days = self._config_int("archive_retention_days", 30)
+            lifecycle = LifecycleService(
+                coordinator, store, consent,
+                archive_retention_days=archive_retention_days,
+            )
             memories = MemoryApplicationService(store, coordinator, consent, lifecycle, clock, ids)
             imports = ImportService(
                 store, SQLiteImportJobStore(self._database), coordinator,
@@ -166,6 +172,16 @@ class WeaveMemoryPlugin(Star):
                 self._database.secure_purge_if_pending()
             except StorageError as exc:
                 logger.warning(f"织忆启动时的物理擦除未完成：{type(exc).__name__}")
+            retention = RetentionService(
+                store, lifecycle, clock, ids,
+                batch_size=self._config_int("purge_batch_size", 100),
+                interval_seconds=self._config_int("purge_interval_seconds", 3600),
+            )
+            self._retention = retention
+            try:
+                retention.start()
+            except RuntimeError:
+                logger.warning("织忆到期清理未启动：当前没有运行中的事件循环。")
 
             diagnostics_enabled = self._config_bool("recall_diagnostics_enabled", True)
             diagnostics = None
@@ -286,6 +302,11 @@ class WeaveMemoryPlugin(Star):
                     ),
                     "extraction_queue_size": self._config_int("extraction_queue_size", 100),
                     "candidate_ttl_days": self._config_int("candidate_ttl_days", 7),
+                    "archive_retention_days": archive_retention_days,
+                    "purge_batch_size": self._config_int("purge_batch_size", 100),
+                    "purge_interval_seconds": self._config_int(
+                        "purge_interval_seconds", 3600,
+                    ),
                     "rejected_keep_body": self._config_bool("rejected_keep_body", False),
                     "group_max_tokens": self._config_int("group_max_tokens", 192),
                     "group_max_memories": self._config_non_negative_int(
@@ -570,13 +591,37 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("备份", exc))
 
+    @memory.command("备份恢复")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_backup_restore(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._backup_command_service().restore(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("备份恢复", exc))
+
     @memory.command("恢复")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def memory_restore(self, event: AstrMessageEvent):
         try:
-            yield event.plain_result(self._backup_command_service().restore(event))
+            yield event.plain_result(await self._command_service().restore_memory(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("恢复", exc))
+
+    @memory.command("归档")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_archive(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(await self._command_service().archive(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("归档", exc))
+
+    @memory.command("彻底删除")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_purge(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(await self._command_service().purge(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("彻底删除", exc))
 
     @memory.command("导出")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
@@ -918,6 +963,14 @@ class WeaveMemoryPlugin(Star):
             logger.warning(f"织忆本轮未注入记忆：{type(exc).__name__}")
 
     async def terminate(self):
+        if self._retention is not None:
+            try:
+                await asyncio.wait_for(
+                    self._retention.stop(), timeout=_TERMINATE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("织忆热重载收尾超时：到期清理任务未在限定时间内停止。")
+            self._retention = None
         if self._extraction_capture is not None:
             try:
                 await asyncio.wait_for(

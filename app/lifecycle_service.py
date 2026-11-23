@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..core.errors import ConsentRevocationPending, InvalidTransition, StorageError
 from ..core.model import (
+    ArchiveReason,
     MemoryEntity,
     MemoryOperation,
     MemoryRevision,
@@ -20,10 +21,15 @@ from .write_coordinator import OperationReceipt, WriteCoordinator, WriteReceipt
 
 class LifecycleService:
     def __init__(self, coordinator: WriteCoordinator, scopes: ScopeStore,
-                 consent: ConsentService) -> None:
+                 consent: ConsentService, *,
+                 archive_retention_days: int = 30) -> None:
         self._coordinator = coordinator
         self._scopes = scopes
         self._consent = consent
+        self._archive_retention_days = max(1, int(archive_retention_days))
+
+    def _purge_after(self, at: datetime) -> datetime:
+        return at + timedelta(days=self._archive_retention_days)
 
     async def transition_memory(self, memory: MemoryEntity, target: MemoryStatus, *,
                                 revision_id: str, at: datetime, reason: str,
@@ -32,6 +38,8 @@ class LifecycleService:
                                 operation: MemoryOperation | None = None) -> WriteReceipt:
         if target is MemoryStatus.DELETED:
             raise InvalidTransition("use delete_memory for irreversible physical deletion")
+        if target is MemoryStatus.ARCHIVED:
+            raise InvalidTransition("use archive_memory for soft deletion")
         updated = transition(
             memory, target, at=at, superseded_by=superseded_by,
             operator_type=operator_type,
@@ -50,6 +58,66 @@ class LifecycleService:
             operation=operation,
         )
 
+    async def archive_memory(self, memory: MemoryEntity, *, revision_id: str,
+                             at: datetime, reason: str,
+                             operator_type: OperatorType,
+                             operation: MemoryOperation | None = None,
+                             archive_reason: ArchiveReason = ArchiveReason.USER_ARCHIVE,
+                             ) -> WriteReceipt:
+        if memory.status is not MemoryStatus.ACTIVE:
+            raise InvalidTransition("only ACTIVE memory can be archived by the user")
+        updated = transition(
+            memory, MemoryStatus.ARCHIVED, at=at, operator_type=operator_type,
+            archive_reason=archive_reason, purge_after=self._purge_after(at),
+        )
+        revision = MemoryRevision(
+            id=revision_id, memory_id=updated.id, revision=updated.current_revision,
+            content=updated.content, status=updated.status, changed_at=at,
+            change_reason=reason,
+            snapshot={"scope_id": updated.scope_id, "subject_id": updated.subject_id,
+                      "memory_type": updated.memory_type.value,
+                      "source_type": updated.source_type.value,
+                      "archive_reason": archive_reason.value},
+        )
+        return await self._coordinator.archive(
+            updated, expected_revision=memory.current_revision,
+            revision=revision, operation=operation,
+        )
+
+    async def restore_memory(self, memory: MemoryEntity, *, revision_id: str,
+                             at: datetime, reason: str,
+                             operator_type: OperatorType,
+                             operation: MemoryOperation | None = None,
+                             ) -> WriteReceipt:
+        if memory.status is not MemoryStatus.ARCHIVED:
+            raise InvalidTransition("only ARCHIVED memory can be restored")
+        if memory.archive_reason is not ArchiveReason.USER_ARCHIVE:
+            raise InvalidTransition("only USER_ARCHIVE memory can be restored")
+        updated = transition(
+            memory, MemoryStatus.ACTIVE, at=at, operator_type=operator_type,
+        )
+        revision = MemoryRevision(
+            id=revision_id, memory_id=updated.id, revision=updated.current_revision,
+            content=updated.content, status=updated.status, changed_at=at,
+            change_reason=reason,
+            snapshot={"scope_id": updated.scope_id, "subject_id": updated.subject_id,
+                      "memory_type": updated.memory_type.value,
+                      "source_type": updated.source_type.value},
+        )
+        return await self._coordinator.restore(
+            updated, expected_revision=memory.current_revision,
+            revision=revision, operation=operation,
+        )
+
+    async def purge_memory(self, memory_id: str, *, scope_id: str, subject_id: str,
+                           operation_id: str, operator_type: OperatorType,
+                           operator_id: str, at: datetime) -> OperationReceipt:
+        return await self._coordinator.purge(
+            memory_id, scope_id=scope_id, subject_id=subject_id,
+            operation_id=operation_id, operator_type=operator_type,
+            operator_id=operator_id, occurred_at=at,
+        )
+
     async def expire_active(self, memory: MemoryEntity, *, revision_id: str,
                             at: datetime) -> WriteReceipt | None:
         updated = expire_if_due(memory, at=at)
@@ -66,13 +134,22 @@ class LifecycleService:
                                 operation: MemoryOperation | None = None) -> WriteReceipt | None:
         updated = archive_expired_candidate(
             memory, candidate_expires_at=candidate_expires_at, at=at,
+            purge_after=self._purge_after(at),
         )
         if updated is memory:
             return None
-        return await self.transition_memory(
-            memory, updated.status, revision_id=revision_id, at=at,
-            reason="candidate workflow TTL expired", operator_type=OperatorType.SYSTEM,
-            operation=operation,
+        revision = MemoryRevision(
+            id=revision_id, memory_id=updated.id, revision=updated.current_revision,
+            content=updated.content, status=updated.status, changed_at=at,
+            change_reason="candidate workflow TTL expired",
+            snapshot={"scope_id": updated.scope_id, "subject_id": updated.subject_id,
+                      "memory_type": updated.memory_type.value,
+                      "source_type": updated.source_type.value,
+                      "archive_reason": ArchiveReason.CANDIDATE_EXPIRED.value},
+        )
+        return await self._coordinator.archive(
+            updated, expected_revision=memory.current_revision,
+            revision=revision, operation=operation,
         )
 
     async def reject_candidate(self, memory: MemoryEntity, *, expected_revision: int,

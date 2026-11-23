@@ -136,6 +136,8 @@ class SQLiteLedger:
                     "earliest_retained_seq": "1",
                     "base_seq": "1",
                     "end_seq": "0",
+                    "ledger_format_version": "2",
+                    "min_reader_version": "2",
                 }
                 with self._lock:
                     self._conn().execute("BEGIN IMMEDIATE")
@@ -146,7 +148,30 @@ class SQLiteLedger:
                         if self._conn().in_transaction:
                             self._conn().execute("ROLLBACK")
                         raise StorageError("could not initialize ledger metadata") from exc
+            elif "ledger_format_version" not in meta:
+                # V1.8 ledgers become format 2 on first V2 open. Existing event
+                # semantics are unchanged; only the registry version advances.
+                with self._lock:
+                    self._conn().execute("BEGIN IMMEDIATE")
+                    try:
+                        self._write_meta(
+                            self._conn(),
+                            ledger_format_version="2",
+                            min_reader_version="2",
+                        )
+                        self._conn().execute("COMMIT")
+                    except sqlite3.Error as exc:
+                        if self._conn().in_transaction:
+                            self._conn().execute("ROLLBACK")
+                        raise StorageError("could not upgrade ledger metadata") from exc
+                meta = self._read_meta(self._conn())
             return meta
+
+    def format_version(self) -> int:
+        return int(self._meta().get("ledger_format_version", "1"))
+
+    def min_reader_version(self) -> int:
+        return int(self._meta().get("min_reader_version", "1"))
 
     def ledger_id(self) -> str:
         return self._meta()["ledger_id"]

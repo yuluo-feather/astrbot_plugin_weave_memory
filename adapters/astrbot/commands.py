@@ -15,7 +15,12 @@ from ...app.lifecycle_service import LifecycleService
 from ...app.memory_service import MemoryApplicationService
 from ...app.recall_service import RecallService, estimate_tokens
 from ...app.scope_service import PersonalScopeService
-from ...core.errors import AuthorizationDenied, NotFound, ValidationError
+from ...core.errors import (
+    AuthorizationDenied,
+    InvalidTransition,
+    NotFound,
+    ValidationError,
+)
 from ...core.model import MemoryType, OperatorType
 from ...core.normalization import normalize_content
 from ...core.ports import Clock, IdGenerator
@@ -132,13 +137,16 @@ class AstrBotMemoryCommands:
             "/织忆 导入 [dry-run] —— 附上 JSON 导出文件导入；dry-run 只预演\n"
             "/织忆 导入 回滚 <任务ID> —— 删除该任务本次新建的记忆（不走完整备份）\n"
             "/织忆 删除 <记忆ID> 确认 —— 二次确认后不可恢复地删除一条记忆\n"
+            "/织忆 归档 <记忆ID> 确认 —— 软删除：从检索/注入隐藏，保留期内可恢复\n"
+            "/织忆 恢复 <记忆ID> —— 恢复你主动归档的记忆（候选过期/生命周期归档不可恢复）\n"
+            "/织忆 彻底删除 <记忆ID> 确认 —— 二次确认后物理清除正文、索引与关联数据\n"
             "/织忆 清空 确认 —— 不可恢复地清空个人记忆\n"
             "/织忆 关闭 确认 —— 永久关闭个人记忆空间（不提供重新开启；只想停止功能请用 /织忆 撤销授权，可逆）\n"
             "/织忆 提取 开启 <capture|auto_extract|external_model|store_candidate|全部> —— 分层授权私聊自动提取（默认全关）\n"
             "/织忆 提取 关闭 <能力> / 提取 状态 —— 关闭单项能力；查看有效授权、缺失条件与任务\n"
             "/织忆 候选 列表 / 确认 <ID> / 拒绝 <ID> [原因] —— 管理提取候选\n"
             "/织忆 备份 [列表] —— 创建/查看实例级主库快照（不含账本）\n"
-            "/织忆 恢复 <备份ID> [merge|revert|disaster-rebuild] 确认 —— 按账本重放恢复\n"
+            "/织忆 备份恢复 <备份ID> [merge|revert|disaster-rebuild] 确认 —— 按账本重放恢复\n"
             "模型工具写入仅应在用户明确要求时发生；写入来源记录插件侧 evidence_ref（message/session + 内容哈希），不冒充宿主 tool_call_id。"
         )
 
@@ -525,6 +533,61 @@ class AstrBotMemoryCommands:
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "删除已提交，索引待恢复"
         purge = "" if receipt.purged is not False else "\n物理擦除未完成，将在下次插件启动时自动重试。"
         return f"记忆已删除。{state}{purge}"
+
+    async def archive(self, event: Any) -> str:
+        tail = tail_after_command(event, "归档")
+        parts = tail.split(maxsplit=1)
+        if not parts:
+            return "用法：/织忆 归档 <记忆ID> 确认"
+        memory_id = parts[0]
+        if len(parts) != 2 or parts[1] != "确认":
+            return (
+                f"归档后该记忆不再参与检索和注入，可用 /织忆 恢复 {memory_id} 撤销。"
+                f"确认执行请发送：/织忆 归档 {memory_id} 确认"
+            )
+        scope = self._scope(event, enroll=False)
+        operator_id = self._identity.resolve_operator_id(event)
+        receipt = await self._memories.archive_memory(
+            scope, memory_id, operator_id=operator_id,
+        )
+        state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "归档已提交，索引待恢复"
+        return f"记忆已归档，可用 /织忆 恢复 {memory_id} 撤销。{state}"
+
+    async def restore_memory(self, event: Any) -> str:
+        tail = tail_after_command(event, "恢复")
+        if not tail:
+            return "用法：/织忆 恢复 <记忆ID>"
+        memory_id = tail.split()[0]
+        scope = self._scope(event, enroll=False)
+        operator_id = self._identity.resolve_operator_id(event)
+        try:
+            receipt = await self._memories.restore_memory(
+                scope, memory_id, operator_id=operator_id,
+            )
+        except InvalidTransition:
+            return "恢复失败：只有你主动归档的记忆可以恢复；候选过期或生命周期归档不可恢复。"
+        state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "恢复已提交，索引待恢复"
+        return f"记忆已恢复。{state}"
+
+    async def purge(self, event: Any) -> str:
+        tail = tail_after_command(event, "彻底删除")
+        parts = tail.split(maxsplit=1)
+        if not parts:
+            return "用法：/织忆 彻底删除 <记忆ID> 确认"
+        memory_id = parts[0]
+        if len(parts) != 2 or parts[1] != "确认":
+            return (
+                f"彻底删除不可恢复，且会级联清除正文、索引与关联数据。"
+                f"确认执行请发送：/织忆 彻底删除 {memory_id} 确认"
+            )
+        scope = self._scope(event, enroll=False)
+        operator_id = self._identity.resolve_operator_id(event)
+        receipt = await self._memories.purge_memory(
+            scope, memory_id, operator_id=operator_id,
+        )
+        state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "删除已提交，索引待恢复"
+        purge = "" if receipt.purged is not False else "\n物理擦除未完成，将在下次插件启动时自动重试。"
+        return f"记忆已彻底删除。{state}{purge}"
 
     async def clear(self, event: Any) -> str:
         if tail_after_command(event, "清空") != "确认":

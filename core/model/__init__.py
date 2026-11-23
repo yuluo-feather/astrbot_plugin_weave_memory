@@ -49,6 +49,12 @@ class MemoryStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class ArchiveReason(StrEnum):
+    USER_ARCHIVE = "USER_ARCHIVE"
+    CANDIDATE_EXPIRED = "CANDIDATE_EXPIRED"
+    LIFECYCLE = "LIFECYCLE"
+
+
 class SourceType(StrEnum):
     EXPLICIT = "EXPLICIT"
     INFERRED = "INFERRED"
@@ -82,6 +88,10 @@ class LedgerEventType(StrEnum):
     CONSENT_CHANGE = "consent_change"
     REMOVE_ATTACHMENT = "remove_attachment"
     DESTROY_SCOPE = "destroy_scope"
+    ARCHIVE_MEMORY = "archive_memory"
+    RESTORE_MEMORY = "restore_memory"
+    PURGE_MEMORY = "purge_memory"
+    INDEX_INVALIDATE = "index_invalidate"
 
 
 class LedgerState(StrEnum):
@@ -250,6 +260,9 @@ class MemoryEntity:
     candidate_expires_at: datetime | None = None
     superseded_by: str | None = None
     last_accessed_at: datetime | None = None
+    archived_at: datetime | None = None
+    purge_after: datetime | None = None
+    archive_reason: ArchiveReason | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -270,10 +283,23 @@ class MemoryEntity:
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, require_aware_utc(value, name))
+        for name in ("archived_at", "purge_after"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, require_aware_utc(value, name))
         if self.valid_from and self.valid_until and self.valid_until <= self.valid_from:
             raise ValidationError("valid_until must be later than valid_from")
         if self.candidate_expires_at is not None and self.status is not MemoryStatus.CANDIDATE:
             raise ValidationError("candidate_expires_at is only valid for CANDIDATE memory")
+        archive_fields = (self.archived_at, self.purge_after, self.archive_reason)
+        if self.status is MemoryStatus.ARCHIVED:
+            if any(value is None for value in archive_fields):
+                raise ValidationError("ARCHIVED memory requires archived_at, purge_after and archive_reason")
+            assert self.archived_at is not None and self.purge_after is not None
+            if self.purge_after <= self.archived_at:
+                raise ValidationError("purge_after must be later than archived_at")
+        elif any(value is not None for value in archive_fields):
+            raise ValidationError("archive fields are only valid for ARCHIVED memory")
         if self.status is MemoryStatus.SUPERSEDED and not self.superseded_by:
             raise ValidationError("SUPERSEDED memory requires superseded_by")
         if self.status is not MemoryStatus.SUPERSEDED and self.superseded_by is not None:

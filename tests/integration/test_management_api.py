@@ -74,7 +74,7 @@ class FakeService:
 
     def maintenance_status(self):
         self.calls.append(("maintenance_status", {}))
-        return {"schema_version": 9}
+        return {"schema_version": 10}
 
     def export_group_payload(self, **kwargs):
         self.calls.append(("export_group_payload", kwargs))
@@ -250,7 +250,7 @@ def test_retrieval_debug_body_and_personal_rejection():
 def test_settings_and_maintenance_are_read_only():
     api, service = make_api()
     assert asyncio.run(api.h_settings())["data"] == {"candidate_ttl_days": 7}
-    assert asyncio.run(api.h_maintenance_status())["data"] == {"schema_version": 9}
+    assert asyncio.run(api.h_maintenance_status())["data"] == {"schema_version": 10}
     methods = {name for name, _ in service.calls}
     assert methods == {"settings", "maintenance_status"}
 

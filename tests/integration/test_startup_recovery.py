@@ -221,7 +221,7 @@ def test_startup_recovery_rebuilds_dirty_index(tmp_path):
     db, store, index, scope = make_stack(tmp_path / "recovery.db")
     add(store, scope)
     report = StartupRecoveryService(db, index).run()
-    assert report.schema_version == 9
+    assert report.schema_version == 10
     assert report.fts_rebuilt is True
     assert report.indexed_active_count == 1
     assert index.is_healthy()

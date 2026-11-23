@@ -247,7 +247,7 @@ def test_groups_and_maintenance_are_read_only_views(management_stack):
         "created_at": groups[0]["created_at"],
     }]
     status = service.maintenance_status()
-    assert status["schema_version"] == 9
+    assert status["schema_version"] == 10
     assert status["memory_total"] == 3
     assert status["candidate_total"] == 0
     assert status["index"]["healthy"] is True

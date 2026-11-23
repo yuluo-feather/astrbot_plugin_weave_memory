@@ -41,6 +41,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     ServiceClosed,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
+    ArchiveReason,
     Identity,
     MemoryRevision,
     MemorySource,
@@ -206,9 +207,10 @@ def test_agent_get_hides_non_active_memory(app_stack):
         memory, _ = await memories.save_explicit(
             scope, "已归档的个人记忆", operator_id="u1",
         )
-        await memories._lifecycle.transition_memory(
-            memory, MemoryStatus.ARCHIVED, revision_id="revision-archived",
+        await memories._lifecycle.archive_memory(
+            memory, revision_id="revision-archived",
             at=NOW, reason="test archive", operator_type=OperatorType.USER,
+            archive_reason=ArchiveReason.USER_ARCHIVE,
         )
         return memory
 

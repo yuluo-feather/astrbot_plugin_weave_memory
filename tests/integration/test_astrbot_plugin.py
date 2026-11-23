@@ -252,6 +252,10 @@ def test_plugin_registers_only_zhuyi_prefix_and_help(monkeypatch, tmp_path):
     help_text = plugin._commands.help()
     assert "默认已开启" in help_text
     assert "/织忆 保存" in help_text
+    assert "/织忆 归档" in help_text
+    assert "/织忆 恢复" in help_text
+    assert "/织忆 彻底删除" in help_text
+    assert "/织忆 备份恢复" in help_text
     assert "/记忆" not in help_text
 
     asyncio.run(collect(plugin.memory_grant(FakeEvent(message="/织忆 授权"))))
@@ -263,6 +267,50 @@ def test_plugin_registers_only_zhuyi_prefix_and_help(monkeypatch, tmp_path):
         FakeEvent(message="/织忆 列表"),
     )))[0]
     assert "前缀回归" in listed
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_archive_restore_and_purge_commands(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    asyncio.run(collect(plugin.memory_grant(FakeEvent(message="/织忆 授权"))))
+    saved = asyncio.run(collect(plugin.memory_save(
+        FakeEvent(message="/织忆 保存 归档命令测试"),
+    )))[0]
+    memory_id = saved.split("：", 1)[1].splitlines()[0]
+
+    prompt = asyncio.run(collect(plugin.memory_archive(
+        FakeEvent(message=f"/织忆 归档 {memory_id}"),
+    )))[0]
+    assert "确认执行" in prompt
+    archived = asyncio.run(collect(plugin.memory_archive(
+        FakeEvent(message=f"/织忆 归档 {memory_id} 确认"),
+    )))[0]
+    assert "已归档" in archived
+    assert asyncio.run(collect(plugin.memory_list(
+        FakeEvent(message="/织忆 列表"),
+    )))[0].count(memory_id) == 0
+
+    restored = asyncio.run(collect(plugin.memory_restore(
+        FakeEvent(message=f"/织忆 恢复 {memory_id}"),
+    )))[0]
+    assert "已恢复" in restored
+    assert memory_id in asyncio.run(collect(plugin.memory_list(
+        FakeEvent(message="/织忆 列表"),
+    )))[0]
+
+    prompt = asyncio.run(collect(plugin.memory_purge(
+        FakeEvent(message=f"/织忆 彻底删除 {memory_id}"),
+    )))[0]
+    assert "确认执行" in prompt
+    purged = asyncio.run(collect(plugin.memory_purge(
+        FakeEvent(message=f"/织忆 彻底删除 {memory_id} 确认"),
+    )))[0]
+    assert "已彻底删除" in purged
+    assert memory_id not in asyncio.run(collect(plugin.memory_list(
+        FakeEvent(message="/织忆 列表"),
+    )))[0]
     asyncio.run(plugin.terminate())
 
 

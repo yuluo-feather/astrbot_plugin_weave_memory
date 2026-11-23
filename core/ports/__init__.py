@@ -10,6 +10,7 @@ from typing import Protocol
 from ..model import (
     AdminDecision,
     AdminSource,
+    ArchiveReason,
     ExtractionCandidate,
     ExtractionJob,
     ExtractionJobStatus,
@@ -119,6 +120,24 @@ class MemoryStore(Protocol):
                expected_lineage: str | None = None,
                expected_creation_seq: int | None = None,
                idempotent: bool = False) -> bool: ...
+
+    def list_expired_archives(self, *, at: datetime,
+                              limit: int) -> tuple[MemoryEntity, ...]: ...
+
+    def purge_archived(self, memory_id: str, *, scope_id: str, subject_id: str,
+                       operation_id: str, operator_type: OperatorType,
+                       operator_id: str, occurred_at: datetime,
+                       expected_lineage: str | None = None,
+                       expected_creation_seq: int | None = None,
+                       idempotent: bool = False) -> bool: ...
+
+    def replay_archive(self, memory_id: str, *, scope_id: str,
+                       archived_at: datetime, purge_after: datetime,
+                       archive_reason: ArchiveReason,
+                       occurred_at: datetime) -> bool: ...
+
+    def replay_restore(self, memory_id: str, *, scope_id: str,
+                       occurred_at: datetime) -> bool: ...
 
     def clear_scope(self, scope_id: str, *, operation_id: str,
                     operator_type: OperatorType, operator_id: str,

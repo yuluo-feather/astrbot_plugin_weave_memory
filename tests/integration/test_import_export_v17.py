@@ -59,6 +59,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.errors import (
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     AdminDecision,
     AdminSource,
+    ArchiveReason,
     Identity,
     ImportJob,
     ImportJobStatus,
@@ -497,10 +498,11 @@ def test_export_default_and_all_filters(personal_stack):
     archived, _ = asyncio.run(stack["memories"].save_explicit(
         scope, "归档记忆", operator_id="u1",
     ))
-    asyncio.run(stack["lifecycle"].transition_memory(
-        archived, MemoryStatus.ARCHIVED,
+    asyncio.run(stack["lifecycle"].archive_memory(
+        archived,
         revision_id="archive-rev", at=NOW, reason="test archive",
         operator_type=OperatorType.USER,
+        archive_reason=ArchiveReason.USER_ARCHIVE,
     ))
     deleted, _ = asyncio.run(stack["memories"].save_explicit(
         scope, "删除记忆", operator_id="u1",
@@ -587,7 +589,7 @@ def test_export_and_import_share_schema_version(personal_stack):
 def test_v8_migration_creates_import_jobs_and_rolls_back(tmp_path):
     db = SQLiteDatabase(tmp_path / "v8.db")
     db.migrate()
-    assert db.schema_version() == 9
+    assert db.schema_version() == 10
     tables = {
         row[0] for row in db.connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table'",
@@ -610,7 +612,7 @@ def test_v8_migration_creates_import_jobs_and_rolls_back(tmp_path):
     }
     assert "import_jobs" not in tables
     db.migrate()
-    assert db.schema_version() == 9
+    assert db.schema_version() == 10
     db.close()
 
 
@@ -633,5 +635,5 @@ def test_v8_rollback_is_refused_while_jobs_exist(tmp_path):
     )
     with pytest.raises(StorageError):
         db.rollback_to_v7()
-    assert db.schema_version() == 9
+    assert db.schema_version() == 10
     db.close()
