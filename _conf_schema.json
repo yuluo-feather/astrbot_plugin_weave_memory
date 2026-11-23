@@ -88,7 +88,7 @@
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",
     "type": "dict",
     "default": {},
-    "hint": "仅在平台无法解析群主/管理员角色时使用。键必须精确匹配平台、平台实例和群 ID，避免跨群/跨实例复用。",
+    "hint": "仅在平台无法解析群主/管理员角色时使用。支持 dict 键 platform|tenant_id|group_id，或 [{platform,tenant_id,group_id,admin_ids}] 列表；键必须精确匹配平台、平台实例和群 ID，避免跨群/跨实例复用。",
     "obvious_hint": true
   },
   "group_max_tokens": {

@@ -7,20 +7,12 @@ from typing import Any
 
 from ...core.errors import ValidationError
 from ...core.ports import RESTORE_MODES, BackupPort
+from .command_text import tail_after_command
 
 
 class AstrBotBackupCommands:
     def __init__(self, service: BackupPort) -> None:
         self._service = service
-
-    @staticmethod
-    def _tail(event: Any, subcommand: str) -> str:
-        raw = event.message_str.strip().lstrip("/").strip()
-        if raw.startswith("织忆"):
-            raw = raw[len("织忆"):].strip()
-        if raw.startswith(subcommand):
-            return raw[len(subcommand):].strip()
-        return raw
 
     def help(self) -> str:
         return (
@@ -34,7 +26,7 @@ class AstrBotBackupCommands:
         )
 
     def backup(self, event: Any) -> str:
-        tail = self._tail(event, "备份")
+        tail = tail_after_command(event, "备份")
         if tail in {"列表", "list"}:
             return json.dumps(
                 {"backups": self._service.list_backups()},
@@ -46,7 +38,7 @@ class AstrBotBackupCommands:
         return json.dumps(manifest, ensure_ascii=False, indent=2)
 
     def restore(self, event: Any) -> str:
-        tail = self._tail(event, "恢复")
+        tail = tail_after_command(event, "恢复")
         if not tail:
             return "用法：/织忆 恢复 <备份ID> [merge|revert|disaster-rebuild] 确认"
         parts = tail.split()

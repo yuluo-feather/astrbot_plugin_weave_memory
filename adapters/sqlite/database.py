@@ -18,6 +18,73 @@ SECURE_PURGE_BASELINE_KEY = "secure_purge_baseline_done"
 MIGRATION_BACKUP_DIR = "migration_backups"
 
 
+def _split_sql_statements(script: str) -> list[str]:
+    """Split a migration script on top-level semicolons.
+
+    Semicolons inside quoted strings, ``--`` line comments and ``/* */`` block
+    comments are preserved. Trigger bodies (``BEGIN ... END``) are not
+    special-cased; the migration files do not use them.
+    """
+    statements: list[str] = []
+    buffer: list[str] = []
+    index = 0
+    length = len(script)
+    while index < length:
+        char = script[index]
+        if char in ("'", '"'):
+            quote = char
+            buffer.append(char)
+            index += 1
+            while index < length:
+                current = script[index]
+                buffer.append(current)
+                if current == quote:
+                    if index + 1 < length and script[index + 1] == quote:
+                        buffer.append(script[index + 1])
+                        index += 2
+                        continue
+                    index += 1
+                    break
+                index += 1
+            continue
+        if char == "-" and index + 1 < length and script[index + 1] == "-":
+            end = script.find("\n", index)
+            if end == -1:
+                buffer.append(script[index:])
+                index = length
+            else:
+                buffer.append(script[index:end + 1])
+                index = end + 1
+            continue
+        if char == "/" and index + 1 < length and script[index + 1] == "*":
+            end = script.find("*/", index + 2)
+            if end == -1:
+                buffer.append(script[index:])
+                index = length
+            else:
+                buffer.append(script[index:end + 2])
+                index = end + 2
+            continue
+        if char == ";":
+            statement = "".join(buffer).strip()
+            if statement:
+                statements.append(statement)
+            buffer.clear()
+            index += 1
+            continue
+        buffer.append(char)
+        index += 1
+    tail = "".join(buffer).strip()
+    if tail:
+        statements.append(tail)
+    return statements
+
+
+def _apply_script(connection: sqlite3.Connection, script: str) -> None:
+    for statement in _split_sql_statements(script):
+        connection.execute(statement)
+
+
 class SQLiteDatabase:
     """Single-owner, single-process SQLite connection.
 
@@ -159,9 +226,7 @@ class SQLiteDatabase:
                 if version < 1:
                     # Avoid executescript(): sqlite3 executescript implicitly commits.
                     # Execute each statement to keep DDL and migration marker atomic.
-                    for statement in _SCHEMA_V1.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, _SCHEMA_V1)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (1, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("initial_v0_schema",),
@@ -169,9 +234,7 @@ class SQLiteDatabase:
                     version = 1
                 if version < 2:
                     migration_v2 = (Path(__file__).parent / "migrations" / "002_scope_disable.sql").read_text(encoding="utf-8")
-                    for statement in migration_v2.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, migration_v2)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (2, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("scope_disable_and_close",),
@@ -179,9 +242,7 @@ class SQLiteDatabase:
                     version = 2
                 if version < 3:
                     migration_v3 = (Path(__file__).parent / "migrations" / "003_memory_consents.sql").read_text(encoding="utf-8")
-                    for statement in migration_v3.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, migration_v3)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (3, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("personal_memory_consents",),
@@ -189,9 +250,7 @@ class SQLiteDatabase:
                     version = 3
                 if version < 4:
                     migration_v4 = (Path(__file__).parent / "migrations" / "004_memory_relations.sql").read_text(encoding="utf-8")
-                    for statement in migration_v4.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, migration_v4)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (4, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("reserved_memory_relations",),
@@ -199,18 +258,14 @@ class SQLiteDatabase:
                     version = 4
                 if version < 5:
                     migration_v5 = (Path(__file__).parent / "migrations" / "005_group_scopes.sql").read_text(encoding="utf-8")
-                    for statement in migration_v5.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, migration_v5)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (5, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("group_scopes_admin",),
                     )
                 if version < 6:
                     migration_v6 = (Path(__file__).parent / "migrations" / "006_extraction_jobs.sql").read_text(encoding="utf-8")
-                    for statement in migration_v6.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, migration_v6)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (6, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("extraction_jobs",),
@@ -218,9 +273,7 @@ class SQLiteDatabase:
                     version = 6
                 if version < 7:
                     migration_v7 = (Path(__file__).parent / "migrations" / "007_candidate_expiry.sql").read_text(encoding="utf-8")
-                    for statement in migration_v7.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, migration_v7)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (7, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("candidate_expiry",),
@@ -228,9 +281,7 @@ class SQLiteDatabase:
                     version = 7
                 if version < 8:
                     migration_v8 = (Path(__file__).parent / "migrations" / "008_import_jobs.sql").read_text(encoding="utf-8")
-                    for statement in migration_v8.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, migration_v8)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (8, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("import_jobs",),
@@ -238,9 +289,7 @@ class SQLiteDatabase:
                     version = 8
                 if version < 9:
                     migration_v9 = (Path(__file__).parent / "migrations" / "009_lineage_ledger.sql").read_text(encoding="utf-8")
-                    for statement in migration_v9.split(";"):
-                        if statement.strip():
-                            conn.execute(statement)
+                    _apply_script(conn, migration_v9)
                     conn.execute(
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (9, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("lineage_ledger",),

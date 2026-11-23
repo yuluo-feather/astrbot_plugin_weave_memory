@@ -20,6 +20,7 @@ from ...core.model import MemoryType, OperatorType
 from ...core.normalization import normalize_content
 from ...core.ports import Clock, IdGenerator
 from .attachments import read_json_attachment
+from .command_text import tail_after_command
 from .identity import AstrBotIdentityAdapter
 from .import_result import format_import_result, format_rollback_result
 from .notices import AUTO_ENROLL_NOTICE
@@ -114,15 +115,6 @@ class AstrBotMemoryCommands:
         }
         return evidence_ref, metadata
 
-    @staticmethod
-    def _tail(event: Any, subcommand: str) -> str:
-        raw = event.message_str.strip().lstrip("/").strip()
-        if raw.startswith("织忆"):
-            raw = raw[len("织忆"):].strip()
-        if raw.startswith(subcommand):
-            return raw[len(subcommand):].strip()
-        return raw
-
     def help(self) -> str:
         return (
             "织忆命令：\n"
@@ -165,7 +157,7 @@ class AstrBotMemoryCommands:
         return "已撤销个人记忆授权。后续保存、检索和自动注入均停止；已有数据不会自动删除。"
 
     async def save(self, event: Any) -> str:
-        content = self._tail(event, "保存")
+        content = tail_after_command(event, "保存")
         if not content:
             return "用法：/织忆 保存 <你希望记住的内容>"
         scope = self._scope(event)
@@ -434,10 +426,10 @@ class AstrBotMemoryCommands:
         return "导出失败：格式只支持 json 或 md（可加 all 附带其他状态元数据）。"
 
     def export_command(self, event: Any) -> str:
-        return self.export(event, self._tail(event, "导出") or "json")
+        return self.export(event, tail_after_command(event, "导出") or "json")
 
     async def import_command(self, event: Any) -> str:
-        tail = self._tail(event, "导入")
+        tail = tail_after_command(event, "导入")
         if tail.startswith("回滚"):
             job_id = tail[len("回滚"):].strip()
             if not job_id:
@@ -467,7 +459,7 @@ class AstrBotMemoryCommands:
         return format_import_result(result, scope_label="个人空间") + self._take_notice(event)
 
     async def update(self, event: Any) -> str:
-        payload = self._tail(event, "更新")
+        payload = tail_after_command(event, "更新")
         parts = payload.split(maxsplit=2)
         if len(parts) != 3:
             return "用法：/织忆 更新 <记忆ID> <当前revision> <新内容>"
@@ -497,7 +489,7 @@ class AstrBotMemoryCommands:
         return "个人记忆：\n" + "\n".join(lines) + suffix + self._take_notice(event)
 
     async def query(self, event: Any) -> str:
-        query = self._tail(event, "查询")
+        query = tail_after_command(event, "查询")
         if not query:
             return "用法：/织忆 查询 <问题>"
         scope = self._scope(event)
@@ -515,7 +507,7 @@ class AstrBotMemoryCommands:
         return result
 
     async def delete(self, event: Any) -> str:
-        tail = self._tail(event, "删除")
+        tail = tail_after_command(event, "删除")
         parts = tail.split(maxsplit=1)
         if not parts:
             return "用法：/织忆 删除 <记忆ID>"
@@ -535,7 +527,7 @@ class AstrBotMemoryCommands:
         return f"记忆已删除。{state}{purge}"
 
     async def clear(self, event: Any) -> str:
-        if self._tail(event, "清空") != "确认":
+        if tail_after_command(event, "清空") != "确认":
             return "清空不可恢复。确认执行请发送：/织忆 清空 确认"
         scope = self._scope(event, enroll=False)
         operator_id = self._identity.resolve_operator_id(event)
@@ -549,7 +541,7 @@ class AstrBotMemoryCommands:
         return f"已清空 {receipt.affected_count} 条记忆。{state}{purge}"
 
     async def disable(self, event: Any) -> str:
-        if self._tail(event, "关闭") != "确认":
+        if tail_after_command(event, "关闭") != "确认":
             return "关闭会永久停止读写和注入（V0 不支持重新开启），但保留数据。确认执行请发送：/织忆 关闭 确认"
         scope = self._scope(event, enroll=False)
         operator_id = self._identity.resolve_operator_id(event)

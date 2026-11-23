@@ -12,6 +12,7 @@ from ...app.extraction_service import ExtractionService
 from ...app.scope_service import PersonalScopeService
 from ...app.sensitive_filter import KNOWN_CATEGORIES
 from ...core.errors import AuthorizationDenied, NotFound, ValidationError
+from .command_text import tail_after_command
 from .identity import AstrBotIdentityAdapter
 
 _ABILITY = {
@@ -65,15 +66,6 @@ class AstrBotExtractionCommands:
         self._extraction = extraction
         self._identity = AstrBotIdentityAdapter()
 
-    @staticmethod
-    def _tail(event: Any, command: str) -> str:
-        raw = str(getattr(event, "message_str", "") or "").strip().lstrip("/").strip()
-        if raw.startswith("织忆"):
-            raw = raw[2:].strip()
-        if raw.startswith(command):
-            raw = raw[len(command):].strip()
-        return raw
-
     def _scope(self, event: Any):
         identity = self._identity.resolve_identity(event)
         scope = self._scopes.find(identity)
@@ -91,7 +83,7 @@ class AstrBotExtractionCommands:
     async def handle_extract(self, event: Any) -> str:
         scope = self._scope(event)
         operator_id = self._operator(event, scope)
-        parts = self._tail(event, "提取").split()
+        parts = tail_after_command(event, "提取").split()
         if not parts:
             return _USAGE
         subcommand = parts[0]
@@ -183,7 +175,7 @@ class AstrBotExtractionCommands:
 
     async def handle_candidate(self, event: Any) -> str:
         scope = self._scope(event)
-        parts = self._tail(event, "候选").split()
+        parts = tail_after_command(event, "候选").split()
         if not parts:
             return _USAGE
         subcommand = parts[0]

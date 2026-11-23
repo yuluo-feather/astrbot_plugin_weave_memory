@@ -29,6 +29,7 @@ from ...core.errors import (
 )
 from ...core.model import AdminSource, Scope
 from .attachments import read_json_attachment
+from .command_text import tail_after_command
 from .identity import AstrBotIdentityAdapter
 from .import_result import format_import_result, format_rollback_result
 
@@ -49,15 +50,6 @@ class AstrBotGroupCommands:
         self._retention_days = max(1, retention_days)
         self._backup_retention_days = max(1, backup_retention_days)
         self._identity = AstrBotIdentityAdapter()
-
-    @staticmethod
-    def _tail(event: Any, subcommand: str) -> str:
-        raw = event.message_str.strip().lstrip("/").strip()
-        if raw.startswith("织忆"):
-            raw = raw[len("织忆"):].strip()
-        if raw.startswith(subcommand):
-            return raw[len(subcommand):].strip()
-        return raw
 
     def _identity_and_decision(self, event: Any):
         identity = self._identity.resolve_group_identity(event)
@@ -155,7 +147,7 @@ class AstrBotGroupCommands:
         return "已关闭当前群共享记忆；数据保留，可由管理员重新开启。"
 
     async def clear(self, event: Any) -> str:
-        if self._tail(event, "群清空") != "确认":
+        if tail_after_command(event, "群清空") != "确认":
             return "清空不可恢复。确认执行请发送：/织忆 群清空 确认"
         identity, sender_id, decision = self._identity_and_decision(event)
         self._require_admin(decision)
@@ -166,7 +158,7 @@ class AstrBotGroupCommands:
         return f"已清空当前群 {receipt.affected_count} 条记忆。{state}{purge}"
 
     async def destroy(self, event: Any) -> str:
-        payload = self._tail(event, "群销毁").strip()
+        payload = tail_after_command(event, "群销毁").strip()
         with_backup = True
         if payload == "无备份":
             return (
@@ -196,7 +188,7 @@ class AstrBotGroupCommands:
         )
 
     async def save(self, event: Any) -> str:
-        payload = self._tail(event, "群保存")
+        payload = tail_after_command(event, "群保存")
         parts = payload.split(maxsplit=1)
         if len(parts) != 2:
             return (
@@ -230,7 +222,7 @@ class AstrBotGroupCommands:
         return "当前群共享记忆：\n" + "\n".join(lines) + suffix
 
     async def query(self, event: Any) -> str:
-        query = self._tail(event, "群查询")
+        query = tail_after_command(event, "群查询")
         if not query:
             return "用法：/织忆 群查询 <问题>"
         identity, _, _ = self._identity_and_decision(event)
@@ -243,7 +235,7 @@ class AstrBotGroupCommands:
         return "检索到的群记忆：\n" + "\n".join(lines)
 
     def export(self, event: Any) -> str:
-        tokens = self._tail(event, "群导出").split()
+        tokens = tail_after_command(event, "群导出").split()
         include_all = any(token.lower() == "all" for token in tokens)
         normalized_format = next(
             (token.lower() for token in tokens if token.lower() != "all"), "json",
@@ -261,7 +253,7 @@ class AstrBotGroupCommands:
         return to_markdown(payload)
 
     async def import_command(self, event: Any) -> str:
-        tail = self._tail(event, "群导入")
+        tail = tail_after_command(event, "群导入")
         identity, sender_id, decision = self._identity_and_decision(event)
         self._require_admin(decision)
         if tail.startswith("回滚"):
@@ -299,8 +291,10 @@ class AstrBotGroupCommands:
         omitted = self._recall.last_omitted_count(scope.id) if scope is not None else 0
         return (
             f"当前群织忆状态：{state}；记忆 {status.count} 条；"
-            f"管理员来源 {status.admin_source.value}；管理员可用 {available}。\n"
+            f"管理员来源 {status.admin_source.value}（启用时快照）；"
+            f"管理员可用 {available}（快照）。\n"
             f"上次注入截断 {omitted} 条；"
             f"群数据保留期建议 {self._retention_days} 天（不自动删除）；"
-            f"销毁备份保留 {self._backup_retention_days} 天。"
+            f"销毁备份保留 {self._backup_retention_days} 天；"
+            "实际命令权限按当前平台角色实时解析。"
         )

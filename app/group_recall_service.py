@@ -160,10 +160,6 @@ class GroupContextComposer:
         self._max_memories = max_memories
         self._candidate_limit = candidate_limit
 
-    @staticmethod
-    def _escape_untrusted(content: str) -> str:
-        return content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
         candidates, trace = self._recall.recall_group_with_trace(
             query, scope, limit=self._candidate_limit,

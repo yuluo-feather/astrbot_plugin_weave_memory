@@ -902,6 +902,8 @@ class WeaveMemoryPlugin(Star):
         if not self._ready or self._injector is None:
             return
         try:
+            # Hosts without is_private_chat fall through to the group injector,
+            # which fails closed for personal scopes: no memory is injected.
             is_private = getattr(event, "is_private_chat", None)
             if callable(is_private) and is_private():
                 context = await self._injector.context_for(event)

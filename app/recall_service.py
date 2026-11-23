@@ -282,10 +282,6 @@ class MemoryContextComposer:
         self._max_memories = max_memories
         self._candidate_limit = candidate_limit
 
-    @staticmethod
-    def _escape_untrusted(content: str) -> str:
-        return escape_untrusted(content)
-
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
         candidates, trace = self._recall.recall_with_trace(
             query, scope, limit=self._candidate_limit,
