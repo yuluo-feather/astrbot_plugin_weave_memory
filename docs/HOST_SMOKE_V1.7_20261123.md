@@ -1,6 +1,6 @@
 # V1.7 宿主烟测记录（2026-11-23）
 
-状态：通过（个人命令导入导出的完整链路、v8 迁移、管理 API 失败/鉴权路径）；群命令与管理员白名单下的 API 成功路径未在宿主执行。
+状态：通过（个人命令导入导出的完整链路、白名单下的群管理 API 成功路径、v8 迁移、API 失败/鉴权路径）；群命令本身仍需真实群管理员执行。
 
 ## 环境
 
@@ -54,9 +54,19 @@
 | `GET /v1/memories?scope=PERSONAL&...` | 403 `AuthorizationDenied` |
 | 未登录 `GET /v1/export` | 401（`Missing API key`） |
 
+## 白名单下的群 API 成功路径（临时配置）
+
+- 临时将 `api_admin_usernames` 设为 `["astrbot"]`（原配置备份 `astrbot_plugin_weave_memory_config.json.bak_smoke_20261123_231327`），重载后验证；完成后已恢复空白名单并再次重载。
+- `GET /v1/export`（群）→ 200，v2 payload，初始 0 条。
+- `POST /v1/import?dry_run=1` → 200；`imported=1`、`metadata_only=1`、`dry_run=true`。
+- `POST /v1/import` → 200；任务 `70c9947b455648078762f55ab0db715e`，`imported=1`、`metadata_only=1`。
+- 再次 `GET /v1/export` → 200，1 条 ACTIVE 正文；`all=1` 仍为 1 条（ARCHIVED 条目只写 `IMPORT_METADATA` 审计，不创建 `memories` 行，符合设计）。
+- 重复导入同一文件 → 200；`imported=0`，返回「该文件已完成导入」幂等摘要。
+- 清理：用服务层 `LifecycleService.delete_memory` 删除测试群记忆（`purged=true`），任务置 `FAILED`；群 ACTIVE 0 条、IMPORTED sources 0 条。
+- 恢复空白名单并重载后：`api_admin_whitelist_enabled=false`、`GET /v1/export` 403、匿名 401。
+
 ## 限制
 
-- `api_admin_usernames` 当前为空，管理 API 的导出/导入成功路径未执行；需主人临时加入 dashboard 用户名后再验证（烟测后应恢复）。
-- 群导入/导出命令需要在真实群聊中以群管理员身份执行；本次 webchat 无法模拟群消息。
-- 烟测写入的源记忆已删除；回滚后的 `FAILED` import job 作为审计保留，可在后续清理演示数据时处理。
+- 群导入/导出命令本身仍需在真实群聊中以群管理员身份执行；本次通过管理 API 验证了同一条导入导出服务链路。
+- 烟测写入的源记忆与群记忆已清理；两条烟测产生的 import job（个人回滚、群清理）作为 `FAILED` 审计保留。
 - dashboard 临时密码仍处于启用状态，烟测后建议主人改回强密码或恢复原密码。
