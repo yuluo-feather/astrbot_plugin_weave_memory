@@ -1,6 +1,6 @@
 # V1.8 宿主烟测记录（2026-11-23）
 
-状态：通过（v8→v9 迁移、ledger-first 删除/清空、备份/列表/dry-run/merge/revert、旧备份不复活删除/清空、维护管理 API、备份产物与脱敏、单文件快照、disaster-rebuild 空库导入、群销毁恢复排除、附件删除恢复排除）。群命令 UI 本身仍需真实群管理员执行；本次群清空/销毁/附件验证走宿主侧服务与真实 SQLite/账本。
+状态：通过（v8→v9 迁移、ledger-first 删除/清空、备份/列表/dry-run/merge/revert、旧备份不复活删除/清空、维护管理 API、备份产物与脱敏、单文件快照、disaster-rebuild 空库导入、群销毁恢复排除、附件删除恢复排除、真实群关闭→销毁成功分支）。群命令 UI 本身仍需真实群管理员执行；本次群清空/销毁/附件验证走宿主侧服务与真实 SQLite/账本。
 
 ## 环境
 
@@ -126,11 +126,28 @@ V1.8 的恢复**不能**回滚 ledger-first 清空（旧备份按 `clear_scope` 
 | 群清空 | 临时群 `smoke_v18_group_clear`（scope `a7626c6d273a51ca97e9a28f43e5c3a1`）写 2 条群记忆 → 备份 → `群清空`：`affected=2`、记忆 0；恢复备份 `excluded_count=2`，记忆未复活且 scope 仍在；随后关闭→销毁，scope 移除 |
 | 清理 | 测试 scope 已清空/销毁；V1.8 备份、恢复前快照、群销毁备份均删除 |
 
+### 第四轮补充：真实群关闭→销毁成功分支
+
+真实群 `aiocqhttp/default/1046500733`（scope `69afeb6795605a08af628c4702c6b149`）此前 `群销毁 确认` 因未关闭而正确拒绝；本轮先删除测试记忆，再执行关闭→销毁成功分支。由于无法以群管理员身份在群里发送消息，本轮使用宿主侧 `GroupLifecycleService` + `AdminDecision(PLATFORM_ROLE, 2834474787)` 走同一服务路径；安全网为整库快照 `weave_memory_data_pre_real_group_destroy_20261124_001652/`。
+
+| 项 | 结果 |
+|---|---|
+| 测试记忆 | `f734f59781914f4db3b701fd473e6523` 已 `delete_memory` 删除，群记忆 0 |
+| 关闭 | `disable_changed=true`；group_memory consent 撤销 |
+| 销毁 | `destroy_affected=0`（记忆已先删）、`backup_mode=REQUIRED`、sha256 64 位 |
+| 备份 | `group_backups/group-69afeb6795605a08af628c4702c6b149-smoke-real-group-destroy-20261123T161717104590.sqlite3/.json` |
+| 销毁后 | scope 不存在、群记忆 0 |
+| 恢复旧 V1.8 备份（merge） | scope/记忆均未复活（`excluded_count=1`） |
+| ledger | `delete_memory`、`consent_change`、`destroy_scope` 各 intent/committed 成对 |
+| 清理 | 本轮 V1.8 备份与恢复前快照已删除；销毁备份按保留策略保留 |
+
+说明：真实群 scope 已销毁；管理员可用 `/织忆 群开启` 重新创建。群命令 UI 的真实管理员发送仍需在群内执行，本次验证的是同一服务/账本路径。
+
 ### 最终状态
 
-- 真实群 `aiocqhttp/default/1046500733` 仍 enabled；原有 2 条个人记忆保留；临时个人 scope `weave_clear_smoke_u1` 0 条；临时群 scope 不存在。
-- `memory_tags=0`、FTS dirty `[]`；`backups/v1.8/`、`restore_snapshots/`、`group_backups/` 无烟测残留；`restore_journal.json` 不存在。
-- 账本保留 `last_seq=24`：`clear_scope` 4、`consent_change` 8、`delete_memory` 6、`destroy_scope` 4、`remove_attachment` 2（intent/committed 各半），均为烟测审计，不回滚账本。
+- 真实群 `aiocqhttp/default/1046500733` 已按成功分支销毁（scope 不存在；可由管理员 `/织忆 群开启` 重建）；原有 2 条个人记忆保留；临时个人 scope `weave_clear_smoke_u1` 0 条；临时群 scope 不存在。
+- `memory_tags=0`、FTS dirty `[]`；`backups/v1.8/`、`restore_snapshots/` 无残留；`restore_journal.json` 不存在；`group_backups/` 保留上述 1 份真实群销毁备份。
+- 账本保留 `last_seq=32`：`clear_scope` 6、`consent_change` 10、`delete_memory` 8、`destroy_scope` 6、`remove_attachment` 2（intent/committed 各半），均为烟测审计，不回滚账本。
 
 ## 清理
 
@@ -141,7 +158,7 @@ V1.8 的恢复**不能**回滚 ledger-first 清空（旧备份按 `clear_scope` 
 ## 限制
 
 - `disaster-rebuild` 空库导入使用生产数据的只读副本 + 空 target 验证，未在运行中的插件 API 上直接清空主库；这是为了避免破坏真实数据。
-- 群销毁/清空/附件删除通过宿主侧服务与真实 SQLite/账本验证；群命令 UI 仍需真实群管理员在真实群聊执行。
+- 群销毁/清空/附件删除通过宿主侧服务与真实 SQLite/账本验证；群命令 UI 仍需真实群管理员在真实群聊执行。真实群 `1046500733` 的成功销毁分支已通过服务路径验证，群 scope 当前已销毁，需要时由管理员 `/织忆 群开启` 重建。
 - V1.8 恢复按设计不会复活已删除/清空/销毁的数据；破坏性烟测的安全网是外部整库快照，不是 `/织忆 恢复`。
 - 未验证多进程/多实例并发、账本分段轮转的宿主长跑（本地测试覆盖轮转与分段读取）。
 - 宿主日志未逐条抓取；迁移与注册以自动备份文件、运行库 schema 和 API/命令结果为准。
