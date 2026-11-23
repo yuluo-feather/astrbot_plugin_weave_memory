@@ -127,3 +127,18 @@ Recall 候选查找与上下文注入之间可能发生 Consent revoke 或 Scope
 - 安全验收：Sensitive Leakage Rate 必须为 0；Sensitive Leakage 与错误归属不能被其他平均指标抵消。
 - 候选确认/拒绝仅用户命令；V1.5 不注册 Agent 候选工具，避免模型代替用户确认推断内容。
 
+## 13. V1.6 候选与只读管理 API 安全边界（M0 契约）
+
+依据：V1.6 计划书 §5.1；ADR-0016。
+
+- 管理 API 通过宿主 `register_web_api` 注册；插件不自行监听端口，不引入第三方依赖。
+- 宿主只透传 dashboard 登录用户名，不提供平台身份或角色；因此 API 全部只读，不映射 dashboard 角色到平台权限。
+- 所有端点要求登录用户名存在；`api_admin_usernames` 非空时用户名必须在白名单。纯私聊、零群部署仍可读实例级端点，不得自举死锁。
+- 群作用域数据（candidates/memories/history/retrieval debug）要求该群 `is_enabled=1` 且 `group_memory=GRANTED`；拒绝时不泄漏其他群存在性或正文。
+- 个人 scope 经 API 一律 `AuthorizationDenied`；Overview 只返回聚合计数，不返回个人正文、ID 或候选内容。
+- 检索调试必须显式指定群 scope；返回候选 ID、评分、过滤原因、最终注入 ID、Token 估算与截断原因，不返回正文、不更新访问时间、不写检索诊断/审计。
+- `GET /v1/settings` 只返回非敏感公开配置，不返回 `api_admin_usernames`、`group_admin_ids` 等名单。
+- 候选确认/拒绝、群 enable/disable、个人 opt-out 全部走命令或 dashboard 原生配置页，API 不提供写端点。
+- 拒绝默认物理清理正文，只保留不含正文的 `CANDIDATE_REJECT` 审计；`rejected_keep_body` 显式开启才保留。
+- API 失败按领域错误映射 HTTP 状态，不阻塞聊天，不扩大日志正文暴露面。
+

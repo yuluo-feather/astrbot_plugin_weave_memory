@@ -92,3 +92,13 @@ V0 计划的清理顺序：墓碑 → 正文 → FTS/标签 → 缓存。V0.4 �
 - `/织忆 清空` 只删除正文/关联数据，不改变 consent/enabled；已关闭 scope 不会因清空恢复。
 - 群 scope 不参与 auto_enroll；群开启/关闭/清空/销毁语义不变。
 - 模型工具写入的 AGENT 记忆与其他 ACTIVE 记忆同样受生命周期、删除、清空、consent 与 scope enabled 约束。
+
+## 10. V1.6 候选工作流（M0 契约）
+
+- 候选创建时写入 `candidate_expires_at = created_at + candidate_ttl_days`；默认 7 天。
+- 候选过期只转 `ARCHIVED`，不物理删除；`EXPIRED` 仍只表示 `ACTIVE` 的语义 `valid_until` 到期。
+- 过期由惰性检查执行：读取候选列表时归档到期候选，写 `CANDIDATE_EXPIRE` 审计；不提供批量过期写端点。
+- 确认/拒绝仅用户命令；确认写 `CANDIDATE_CONFIRM`，拒绝写 `CANDIDATE_REJECT`。
+- 拒绝默认 `rejected_keep_body=false`：拒绝原因与来源元数据保留在 operations 审计中，正文、revisions、sources 与 memories 行在同一事务中物理清理；开启配置才保留 `REJECTED` 行与正文。
+- 拒绝不占用去重键，同内容可重新提交为新候选。
+- 管理 API 只读，不改变生命周期；检索调试不更新访问时间、不写诊断、不返回正文。

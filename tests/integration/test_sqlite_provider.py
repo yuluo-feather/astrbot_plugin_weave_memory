@@ -35,6 +35,45 @@ from data.plugins.astrbot_plugin_weave_memory.core.normalization import (
 )
 
 NOW = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
+_STAMP = "2026-11-22T12:00:00.000000Z"
+
+
+def seed_v4_scope(db, *, scope_id: str, subject_id: str) -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            """INSERT INTO memory_scopes
+            (id, platform, tenant_id, scope_type, scope_external_id, subject_type,
+             subject_id, created_at, is_enabled, disabled_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)""",
+            (scope_id, "astrbot", "default", "PERSONAL", f"platform-{subject_id}",
+             "USER", subject_id, _STAMP),
+        )
+
+
+def seed_v4_memory_row(db, *, scope_id: str, subject_id: str, memory_id: str,
+                       content: str) -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            """INSERT INTO memories
+            (id, scope_id, subject_id, memory_type, content, normalized_content,
+             normalization_version, status, source_type, current_revision,
+             valid_from, valid_until, superseded_by, created_at, updated_at,
+             last_accessed_at, metadata_json)
+            VALUES (?, ?, ?, 'PREFERENCE', ?, ?, 1, 'ACTIVE', 'EXPLICIT', 1,
+                    NULL, NULL, NULL, ?, ?, NULL, '{}')""",
+            (memory_id, scope_id, subject_id, content, normalize_content(content),
+             _STAMP, _STAMP),
+        )
+
+
+def seed_v4_memory(db, *, scope_id: str, subject_id: str, memory_id: str,
+                   content: str) -> None:
+    """Seed a pre-v6 scope and row without the candidate_expires_at column."""
+    seed_v4_scope(db, scope_id=scope_id, subject_id=subject_id)
+    seed_v4_memory_row(
+        db, scope_id=scope_id, subject_id=subject_id, memory_id=memory_id,
+        content=content,
+    )
 
 
 @pytest.fixture
@@ -173,14 +212,14 @@ def test_group_backup_destroy_and_rollback_path(tmp_path):
     db.rollback_to_v10()
     assert db.schema_version() == 4
     db.migrate()
-    assert db.schema_version() == 6
+    assert db.schema_version() == 7
     db.close()
 
 
 def test_migration_is_idempotent_and_creates_required_tables(sqlite_stack):
     db, _, _, _ = sqlite_stack
     assert db.connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
-    assert db.schema_version() == 6
+    assert db.schema_version() == 7
     db.migrate()
     tables = {row[0] for row in db.connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
@@ -293,7 +332,7 @@ def test_schema_can_roll_back_to_empty_and_reapply(tmp_path):
     db.rollback_to_zero()
     assert db.connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memories'").fetchone()[0] == 0
     db.migrate()
-    assert db.schema_version() == 6
+    assert db.schema_version() == 7
     db.close()
 
 
@@ -444,7 +483,7 @@ def test_v3_database_upgrades_to_v5_group_scopes(tmp_path):
     db.rollback_to_v05()
     assert db.schema_version() == 3
     db.migrate()
-    assert db.schema_version() == 6
+    assert db.schema_version() == 7
     assert db.connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone() is not None
@@ -460,12 +499,10 @@ def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
     db.rollback_to_v5()
     db.rollback_to_v10()
     assert db.schema_version() == 4
-    store = SQLiteMemoryStore(db)
-    identity = Identity("astrbot", "default", ScopeType.PERSONAL,
-                        "platform-backup-user", SubjectType.USER, "backup-user")
-    scope = Scope("scope-backup", identity, NOW)
-    store.create_scope(scope)
-    memory = add_memory(store, scope, memory_id="mem-backup", content="迁移前必须保留")
+    seed_v4_memory(
+        db, scope_id="scope-backup", subject_id="backup-user",
+        memory_id="mem-backup", content="迁移前必须保留",
+    )
     db.close()
 
     upgraded = SQLiteDatabase(db_path)
@@ -473,10 +510,14 @@ def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
     assert backup_path is not None
     assert backup_path.exists()
     assert backup_path.parent.name == "migration_backups"
-    assert upgraded.schema_version() == 6
-    assert SQLiteMemoryStore(upgraded).get(
-        memory.id, scope_id=scope.id, subject_id="backup-user",
-    ) == memory
+    assert upgraded.schema_version() == 7
+    assert upgraded.connection.execute(
+        "SELECT content FROM memories WHERE id='mem-backup'",
+    ).fetchone()[0] == "迁移前必须保留"
+    columns = {
+        row["name"] for row in upgraded.connection.execute("PRAGMA table_info(memories)")
+    }
+    assert "candidate_expires_at" in columns
 
     backup = sqlite3.connect(f"file:{backup_path}?mode=ro", uri=True)
     try:
@@ -484,7 +525,7 @@ def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
         ).fetchone()[0]
         content = backup.execute(
-            "SELECT content FROM memories WHERE id=?", (memory.id,),
+            "SELECT content FROM memories WHERE id=?", ("mem-backup",),
         ).fetchone()[0]
     finally:
         backup.close()
@@ -501,12 +542,10 @@ def test_migration_backup_failure_aborts_upgrade(tmp_path, monkeypatch):
     db.migrate()
     db.rollback_to_v5()
     db.rollback_to_v10()
-    store = SQLiteMemoryStore(db)
-    identity = Identity("astrbot", "default", ScopeType.PERSONAL,
-                        "platform-failure-user", SubjectType.USER, "failure-user")
-    scope = Scope("scope-failure", identity, NOW)
-    store.create_scope(scope)
-    memory = add_memory(store, scope, memory_id="mem-failure", content="备份失败也要保留")
+    seed_v4_memory(
+        db, scope_id="scope-failure", subject_id="failure-user",
+        memory_id="mem-failure", content="备份失败也要保留",
+    )
     db.close()
 
     upgraded = SQLiteDatabase(db_path)
@@ -518,9 +557,9 @@ def test_migration_backup_failure_aborts_upgrade(tmp_path, monkeypatch):
     with pytest.raises(StorageError):
         upgraded.migrate()
     assert upgraded.schema_version() == 4
-    assert SQLiteMemoryStore(upgraded).get(
-        memory.id, scope_id=scope.id, subject_id="failure-user",
-    ) == memory
+    assert upgraded.connection.execute(
+        "SELECT content FROM memories WHERE id='mem-failure'",
+    ).fetchone()[0] == "备份失败也要保留"
     upgraded.close()
 
 
@@ -550,17 +589,25 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
     assert db.connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone() is None
-    assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
+    assert db.connection.execute(
+        "SELECT content FROM memories WHERE id=?", (existing.id,),
+    ).fetchone()[0] == "回滚后保留"
     db.migrate()
-    assert db.schema_version() == 6
+    assert db.schema_version() == 7
     assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
     db.rollback_to_v5()
     db.rollback_to_v10()
-    first = add_memory(store, scope, memory_id="rollback-a", content="第一条")
-    second = add_memory(store, scope, memory_id="rollback-b", content="第二条")
+    seed_v4_memory_row(
+        db, scope_id=scope.id, subject_id="u1", memory_id="rollback-a",
+        content="第一条",
+    )
+    seed_v4_memory_row(
+        db, scope_id=scope.id, subject_id="u1", memory_id="rollback-b",
+        content="第二条",
+    )
     db.connection.execute(
         "INSERT INTO memory_relations(id,source_memory_id,target_memory_id,relation_type,created_at) VALUES(?,?,?,?,?)",
-        ("rollback-rel", first.id, second.id, "RELATED_TO", "2026-11-22T12:00:00.000000Z"),
+        ("rollback-rel", "rollback-a", "rollback-b", "RELATED_TO", "2026-11-22T12:00:00.000000Z"),
     )
     with pytest.raises(StorageError):
         db.rollback_to_v05()

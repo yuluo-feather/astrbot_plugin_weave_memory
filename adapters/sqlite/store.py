@@ -21,6 +21,7 @@ from ...core.model import (
     AdminSource,
     Identity,
     MemoryEntity,
+    MemoryOperation,
     MemoryRevision,
     MemorySource,
     MemoryStatus,
@@ -165,6 +166,7 @@ class SQLiteMemoryStore:
                         memory.content, memory.normalized_content, NORMALIZATION_VERSION,
                         memory.status.value, memory.source_type.value, memory.current_revision,
                         _time_dump(memory.valid_from), _time_dump(memory.valid_until),
+                        _time_dump(memory.candidate_expires_at),
                         memory.superseded_by, _time_dump(memory.created_at),
                         _time_dump(memory.updated_at), _time_dump(memory.last_accessed_at),
                         _json_dump(memory.metadata),
@@ -172,7 +174,8 @@ class SQLiteMemoryStore:
                     stored_memory = tuple(existing[key] for key in (
                         "id", "scope_id", "subject_id", "memory_type", "content",
                         "normalized_content", "normalization_version", "status", "source_type",
-                        "current_revision", "valid_from", "valid_until", "superseded_by",
+                        "current_revision", "valid_from", "valid_until",
+                        "candidate_expires_at", "superseded_by",
                         "created_at", "updated_at", "last_accessed_at", "metadata_json",
                     ))
                     existing_revision = conn.execute(
@@ -209,13 +212,14 @@ class SQLiteMemoryStore:
                     """INSERT INTO memories
                     (id, scope_id, subject_id, memory_type, content, normalized_content,
                      normalization_version, status, source_type, current_revision,
-                     valid_from, valid_until, superseded_by, created_at, updated_at,
-                     last_accessed_at, metadata_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     valid_from, valid_until, candidate_expires_at, superseded_by,
+                     created_at, updated_at, last_accessed_at, metadata_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (memory.id, memory.scope_id, memory.subject_id, memory.memory_type.value,
                      memory.content, memory.normalized_content, NORMALIZATION_VERSION,
                      memory.status.value, memory.source_type.value, memory.current_revision,
                      _time_dump(memory.valid_from), _time_dump(memory.valid_until),
+                     _time_dump(memory.candidate_expires_at),
                      memory.superseded_by, _time_dump(memory.created_at),
                      _time_dump(memory.updated_at), _time_dump(memory.last_accessed_at),
                      _json_dump(memory.metadata)),
@@ -231,13 +235,18 @@ class SQLiteMemoryStore:
             raise StorageError("could not create memory transaction") from exc
 
     def update(self, memory: MemoryEntity, *, expected_revision: int,
-               revision: MemoryRevision, source: MemorySource | None = None) -> None:
+               revision: MemoryRevision, source: MemorySource | None = None,
+               operation: MemoryOperation | None = None) -> None:
         if memory.current_revision != expected_revision + 1:
             raise Conflict("updated entity revision must increment exactly once")
         if revision.memory_id != memory.id or revision.revision != memory.current_revision:
             raise Conflict("revision record does not match updated entity")
         if revision.content != memory.content or revision.status is not memory.status:
             raise Conflict("revision snapshot must match updated entity")
+        if operation is not None and (
+            operation.memory_id != memory.id or operation.scope_id != memory.scope_id
+        ):
+            raise ValidationError("operation must belong to the updated memory scope")
         try:
             with self.db.transaction() as conn:
                 scope = conn.execute("SELECT subject_id, is_enabled FROM memory_scopes WHERE id = ?", (memory.scope_id,)).fetchone()
@@ -256,13 +265,14 @@ class SQLiteMemoryStore:
                 cursor = conn.execute(
                     """UPDATE memories SET scope_id=?, subject_id=?, memory_type=?, content=?, normalized_content=?,
                     normalization_version=?, status=?, source_type=?, current_revision=?,
-                    valid_from=?, valid_until=?, superseded_by=?, updated_at=?,
-                    last_accessed_at=?, metadata_json=?
+                    valid_from=?, valid_until=?, candidate_expires_at=?, superseded_by=?,
+                    updated_at=?, last_accessed_at=?, metadata_json=?
                     WHERE id=? AND current_revision=?""",
                     (memory.scope_id, memory.subject_id, memory.memory_type.value,
                      memory.content, memory.normalized_content, NORMALIZATION_VERSION,
                      memory.status.value, memory.source_type.value, memory.current_revision,
                      _time_dump(memory.valid_from), _time_dump(memory.valid_until),
+                     _time_dump(memory.candidate_expires_at),
                      memory.superseded_by, _time_dump(memory.updated_at),
                      _time_dump(memory.last_accessed_at), _json_dump(memory.metadata),
                      memory.id, expected_revision),
@@ -275,6 +285,16 @@ class SQLiteMemoryStore:
                 self._insert_revision(conn, revision)
                 if source is not None:
                     self._insert_source(conn, source)
+                if operation is not None:
+                    self._insert_operation(
+                        conn, operation_id=operation.id, scope_id=operation.scope_id,
+                        memory_id=operation.memory_id,
+                        operation_type=operation.operation_type,
+                        operator_type=operation.operator_type,
+                        operator_id=operation.operator_id,
+                        occurred_at=operation.occurred_at,
+                        metadata=operation.metadata,
+                    )
                 self._mark_fts_dirty(conn, memory.id)
         except (AuthorizationDenied, Conflict, NotFound, ValidationError):
             raise
@@ -350,6 +370,24 @@ class SQLiteMemoryStore:
         except sqlite3.Error as exc:
             raise StorageError("could not list candidate memories") from exc
         return tuple(self._row_to_memory(row) for row in rows), total
+
+    def list_expired_candidates(
+        self, *, scope_id: str, subject_id: str, at: datetime, limit: int = 100,
+    ) -> tuple[MemoryEntity, ...]:
+        if type(limit) is not int or limit < 1 or limit > 1000:
+            raise ValidationError("limit must be between 1 and 1000")
+        try:
+            rows = self.db.connection.execute(
+                """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                WHERE m.scope_id=? AND m.subject_id=? AND m.status='CANDIDATE'
+                  AND m.candidate_expires_at IS NOT NULL
+                  AND m.candidate_expires_at <= ? AND s.is_enabled=1
+                ORDER BY m.candidate_expires_at, m.id LIMIT ?""",
+                (scope_id, subject_id, _time_dump(at), limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list expired candidates") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
 
     def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]:
         try:
@@ -476,6 +514,143 @@ class SQLiteMemoryStore:
             "by_source": by_source,
         }
 
+    def overview_counts(self) -> dict[str, object]:
+        """Aggregate counts for the read-only management API; never includes bodies."""
+        try:
+            with self.db.transaction(immediate=False) as conn:
+                scope_rows = conn.execute(
+                    """SELECT scope_type, is_enabled, count(*) AS total
+                    FROM memory_scopes GROUP BY scope_type, is_enabled""",
+                ).fetchall()
+                memory_rows = conn.execute(
+                    """SELECT status, memory_type, source_type, count(*) AS total
+                    FROM memories GROUP BY status, memory_type, source_type""",
+                ).fetchall()
+                candidate_rows = conn.execute(
+                    """SELECT s.scope_type, count(*) AS total
+                    FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                    WHERE m.status='CANDIDATE' GROUP BY s.scope_type""",
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read management overview") from exc
+        scopes: dict[str, dict[str, int]] = {}
+        for row in scope_rows:
+            bucket = scopes.setdefault(row["scope_type"], {"total": 0, "enabled": 0})
+            bucket["total"] += int(row["total"])
+            if row["is_enabled"] == 1:
+                bucket["enabled"] += int(row["total"])
+        by_status: dict[str, int] = {}
+        by_type: dict[str, int] = {}
+        by_source: dict[str, int] = {}
+        memory_total = 0
+        for row in memory_rows:
+            count = int(row["total"])
+            memory_total += count
+            by_status[row["status"]] = by_status.get(row["status"], 0) + count
+            by_type[row["memory_type"]] = by_type.get(row["memory_type"], 0) + count
+            by_source[row["source_type"]] = by_source.get(row["source_type"], 0) + count
+        candidates = {row["scope_type"]: int(row["total"]) for row in candidate_rows}
+        return {
+            "scopes": scopes,
+            "memories": {
+                "total": memory_total,
+                "by_status": by_status,
+                "by_type": by_type,
+                "by_source": by_source,
+            },
+            "candidates": {
+                "total": sum(candidates.values()),
+                "by_scope_type": candidates,
+            },
+        }
+
+    def recent_operations(self, *, limit: int = 5) -> tuple[dict[str, object], ...]:
+        if type(limit) is not int or limit < 1 or limit > 50:
+            raise ValidationError("limit must be between 1 and 50")
+        try:
+            rows = self.db.connection.execute(
+                """SELECT o.operation_type, o.operator_type, o.occurred_at,
+                o.metadata_json, s.scope_type
+                FROM memory_operations o JOIN memory_scopes s ON s.id=o.scope_id
+                ORDER BY o.rowid DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read recent operations") from exc
+        results: list[dict[str, object]] = []
+        for row in rows:
+            metadata = _json_load(row["metadata_json"])
+            results.append({
+                "operation_type": row["operation_type"],
+                "operator_type": row["operator_type"],
+                "scope_type": row["scope_type"],
+                "occurred_at": row["occurred_at"],
+                "result": metadata.get("result", "SUCCESS"),
+            })
+        return tuple(results)
+
+    def list_group_scopes(self) -> tuple[dict[str, object], ...]:
+        try:
+            rows = self.db.connection.execute(
+                """SELECT id, platform, tenant_id, scope_external_id, is_enabled,
+                admin_source, created_at,
+                (SELECT count(*) FROM memories m
+                 WHERE m.scope_id=memory_scopes.id AND m.status='ACTIVE') AS active_count
+                FROM memory_scopes WHERE scope_type='GROUP'
+                ORDER BY platform, tenant_id, scope_external_id""",
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list group scopes") from exc
+        return tuple({
+            "scope_id": row["id"],
+            "platform": row["platform"],
+            "tenant_id": row["tenant_id"],
+            "group_id": row["scope_external_id"],
+            "enabled": bool(row["is_enabled"]),
+            "admin_source": row["admin_source"],
+            "active_count": int(row["active_count"]),
+            "created_at": row["created_at"],
+        } for row in rows)
+
+    def maintenance_status(self) -> dict[str, object]:
+        try:
+            version = int(self.db.connection.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+            ).fetchone()[0])
+            meta_rows = self.db.connection.execute(
+                "SELECT key, value FROM memory_meta WHERE key IN (?, ?)",
+                (SECURE_PURGE_KEY, "secure_purge_baseline_done"),
+            ).fetchall()
+            memory_total = int(self.db.connection.execute(
+                "SELECT count(*) FROM memories",
+            ).fetchone()[0])
+            candidate_total = int(self.db.connection.execute(
+                "SELECT count(*) FROM memories WHERE status='CANDIDATE'",
+            ).fetchone()[0])
+            operation_total = int(self.db.connection.execute(
+                "SELECT count(*) FROM memory_operations",
+            ).fetchone()[0])
+            scope_counts = {
+                row["scope_type"]: int(row["total"])
+                for row in self.db.connection.execute(
+                    "SELECT scope_type, count(*) AS total FROM memory_scopes GROUP BY scope_type",
+                ).fetchall()
+            }
+            database_bytes = Path(self.db.path).stat().st_size if self.db.path != ":memory:" else 0
+        except (OSError, sqlite3.Error) as exc:
+            raise StorageError("could not read maintenance status") from exc
+        meta = {row["key"]: row["value"] for row in meta_rows}
+        return {
+            "schema_version": version,
+            "secure_purge_pending": meta.get(SECURE_PURGE_KEY) == "1",
+            "secure_purge_baseline_done": meta.get("secure_purge_baseline_done") == "1",
+            "memory_total": memory_total,
+            "candidate_total": candidate_total,
+            "operation_total": operation_total,
+            "scope_counts": scope_counts,
+            "database_bytes": database_bytes,
+        }
+
     def list_operations(
         self, *, scope_id: str, subject_id: str, limit: int, offset: int,
     ) -> tuple[tuple[dict[str, object], ...], int]:
@@ -572,6 +747,79 @@ class SQLiteMemoryStore:
             raise Conflict("delete operation identifier already exists") from exc
         except sqlite3.Error as exc:
             raise StorageError("could not delete memory transaction") from exc
+
+    def reject_candidate(self, memory: MemoryEntity, *, expected_revision: int,
+                         revision: MemoryRevision, operation: MemoryOperation,
+                         purge_body: bool) -> None:
+        """Persist CANDIDATE → REJECTED and its audit in one transaction.
+
+        With purge_body the content, revisions, sources and memory row are removed
+        in the same transaction, leaving only the body-free operation record.
+        """
+        if memory.status is not MemoryStatus.REJECTED:
+            raise Conflict("reject_candidate requires a REJECTED entity")
+        if memory.current_revision != expected_revision + 1:
+            raise Conflict("rejected entity revision must increment exactly once")
+        if revision.memory_id != memory.id or revision.revision != memory.current_revision:
+            raise Conflict("revision record does not match rejected entity")
+        if revision.content != memory.content or revision.status is not memory.status:
+            raise Conflict("revision snapshot must match rejected entity")
+        if operation.memory_id != memory.id or operation.scope_id != memory.scope_id:
+            raise ValidationError("operation must belong to the rejected memory scope")
+        try:
+            with self.db.transaction() as conn:
+                scope = conn.execute(
+                    "SELECT subject_id, is_enabled FROM memory_scopes WHERE id=?",
+                    (memory.scope_id,),
+                ).fetchone()
+                if scope is None:
+                    raise NotFound("scope not found")
+                if scope["subject_id"] != memory.subject_id:
+                    raise Conflict("memory subject does not match target scope identity")
+                if scope["is_enabled"] != 1:
+                    raise AuthorizationDenied("scope is disabled")
+                cursor = conn.execute(
+                    """UPDATE memories SET status=?, current_revision=?, candidate_expires_at=?,
+                    superseded_by=?, updated_at=?, metadata_json=?
+                    WHERE id=? AND current_revision=? AND status='CANDIDATE'""",
+                    (memory.status.value, memory.current_revision,
+                     _time_dump(memory.candidate_expires_at), memory.superseded_by,
+                     _time_dump(memory.updated_at), _json_dump(memory.metadata),
+                     memory.id, expected_revision),
+                )
+                if cursor.rowcount != 1:
+                    exists = conn.execute("SELECT 1 FROM memories WHERE id=?", (memory.id,)).fetchone()
+                    if exists is None:
+                        raise NotFound("memory not found")
+                    raise Conflict("revision conflict")
+                self._insert_operation(
+                    conn, operation_id=operation.id, scope_id=operation.scope_id,
+                    memory_id=operation.memory_id,
+                    operation_type=operation.operation_type,
+                    operator_type=operation.operator_type,
+                    operator_id=operation.operator_id,
+                    occurred_at=operation.occurred_at,
+                    metadata=operation.metadata,
+                )
+                self._mark_fts_dirty(conn, memory.id)
+                if purge_body:
+                    conn.execute(
+                        "DELETE FROM memory_relations WHERE source_memory_id=? OR target_memory_id=?",
+                        (memory.id, memory.id),
+                    )
+                    conn.execute("DELETE FROM memory_tags WHERE memory_id=?", (memory.id,))
+                    conn.execute("DELETE FROM memory_sources WHERE memory_id=?", (memory.id,))
+                    conn.execute("DELETE FROM memory_revisions WHERE memory_id=?", (memory.id,))
+                    conn.execute("DELETE FROM memories WHERE id=?", (memory.id,))
+                    self._mark_secure_purge_pending(conn)
+                else:
+                    self._insert_revision(conn, revision)
+        except (AuthorizationDenied, Conflict, NotFound, ValidationError):
+            raise
+        except sqlite3.IntegrityError as exc:
+            raise Conflict("candidate rejection violates a storage constraint") from exc
+        except sqlite3.Error as exc:
+            raise StorageError("could not reject candidate transaction") from exc
 
     def clear_scope(self, scope_id: str, *, operation_id: str,
                     operator_type: OperatorType, operator_id: str,
@@ -974,6 +1222,7 @@ class SQLiteMemoryStore:
             created_at=_time_load_required(row["created_at"], "memory.created_at"),
             updated_at=_time_load_required(row["updated_at"], "memory.updated_at"),
             valid_from=_time_load(row["valid_from"]), valid_until=_time_load(row["valid_until"]),
+            candidate_expires_at=_time_load(row["candidate_expires_at"]),
             superseded_by=row["superseded_by"], last_accessed_at=_time_load(row["last_accessed_at"]),
             metadata=_json_load(row["metadata_json"]),
         )

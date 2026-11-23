@@ -173,7 +173,7 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - COMMIT 后立即异常退出：已提交数据保留。
 - v3→v4 DDL 与 marker 写入中途强制终止：DDL/marker 一起回滚，重启后可重试迁移。
 - 已提交 FTS dirty marker 与索引差异后进程退出：启动恢复从权威表重建 FTS。
-- 当前全量测试：174 passed（V1.0 P3 补测后 132；V1.1 M1/M2 实现后 143；迁移备份补测后 146；V1.2 默认登记/agent 工具后 153；导出/审计补测后 157；schema 校验补测后 158；审查裁定与 P1/P2/P3 修复后 174）。
+- 当前全量测试：283 passed（V1.0 P3 补测后 132；V1.1 M1/M2 实现后 143；迁移备份补测后 146；V1.2 默认登记/agent 工具后 153；导出/审计补测后 157；schema 校验补测后 158；审查裁定与 P1/P2/P3 修复后 174；V1.3/V1.4 修复后 203–213；V1.5 M1 与计划书对齐后 247–258；V1.6 候选 TTL/管理 API 后 283）。
 - 限制：不代表物理断电、存储介质损坏或多进程并发恢复已验证。详见 `V1.0_M3_CRASH_RECOVERY_REPORT_20261123.md`。
 
 ### V1.2 Personal 默认登记与 agent 工具（2026-11-23）
@@ -358,3 +358,30 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - 群注入诊断记录 `omitted_count`；`群状态` 显示上次注入截断条数。
 - V1.4 `conflict_temporal` 类别覆盖同 scope 新旧 ACTIVE；报告输出 `conflict_co_injection_rate`，只作诊断。
 - V1.5 候选生成时通知摘要、ID 与确认/拒绝命令；通知失败不影响任务与聊天。
+
+## 18. V1.6 候选 TTL 与只读管理 API
+
+### Schema 与迁移
+
+- v6→v7 迁移新增 `candidate_expires_at` 与索引，既有候选回填 `created_at + 7 天`。
+- 迁移幂等、迁移前备份并校验；备份失败中止。
+- v7→v6 回滚守卫：存在 `CANDIDATE` 时拒绝；为空时回滚成功且正文不受影响。
+
+### 候选 TTL 与审计
+
+- 新候选写入 `candidate_expires_at = created_at + candidate_ttl_days`。
+- 到期候选在读取列表时转 `ARCHIVED`，写 `CANDIDATE_EXPIRE`，不物理删除。
+- 确认写 `CANDIDATE_CONFIRM`；拒绝写 `CANDIDATE_REJECT`；metadata 不含正文。
+- 拒绝默认清理正文与关联行，`memory_id` 只留在 operation 审计；`rejected_keep_body=true` 时保留 `REJECTED`。
+- 拒绝后同内容可重新提交为新候选。
+- 候选确认/拒绝后 `expected_revision` 冲突仍拒绝覆盖。
+
+### 管理 API
+
+- 未登录用户名拒绝；`api_admin_usernames` 非空时名单外拒绝。
+- 群作用域端点：群不存在/未开启/撤销授权分别拒绝；跨群不可读。
+- 个人 scope 的 memories/candidates/debug 一律 `AuthorizationDenied`；Overview 只含聚合计数。
+- 检索调试字段完整（候选 ID、评分、过滤原因、最终注入 ID、Token、截断原因），不出现正文、不更新访问时间、不写诊断。
+- Settings 不返回管理员名单；Maintenance 只读。
+- 分页 `limit`/`cursor` 边界正确；错误映射 400/403/404/409/503。
+- API 失败不阻塞聊天；关闭 API 后退回命令能力。

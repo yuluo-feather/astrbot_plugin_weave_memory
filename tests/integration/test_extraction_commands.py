@@ -41,7 +41,10 @@ from data.plugins.astrbot_plugin_weave_memory.app.scope_service import (
 from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
     WriteCoordinator,
 )
-from data.plugins.astrbot_plugin_weave_memory.core.errors import AuthorizationDenied
+from data.plugins.astrbot_plugin_weave_memory.core.errors import (
+    AuthorizationDenied,
+    NotFound,
+)
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     ExtractionCandidate,
     MemoryStatus,
@@ -195,10 +198,10 @@ def test_candidate_list_confirm_and_reject(command_stack):
         FakeEvent(f"/织忆 候选 拒绝 {candidate_id} 不准确"),
     ))
     assert "已拒绝候选" in rejected
-    memory = stack["store"].get(
-        candidate_id, scope_id=stack["scope"].id, subject_id="u1",
-    )
-    assert memory.status is MemoryStatus.REJECTED
+    with pytest.raises(NotFound):
+        stack["store"].get(
+            candidate_id, scope_id=stack["scope"].id, subject_id="u1",
+        )
 
 
 def test_group_command_is_rejected(command_stack):

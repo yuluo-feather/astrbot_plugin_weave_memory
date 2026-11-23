@@ -16,7 +16,13 @@ from ..core.errors import (
     ServiceClosed,
     StorageError,
 )
-from ..core.model import MemoryEntity, MemoryRevision, MemorySource, OperatorType
+from ..core.model import (
+    MemoryEntity,
+    MemoryOperation,
+    MemoryRevision,
+    MemorySource,
+    OperatorType,
+)
 from ..core.policy.dedup import DedupKey
 from ..core.ports import MemoryStore, SearchIndex
 
@@ -146,18 +152,35 @@ class WriteCoordinator:
                                            revision=revision, source=source)
 
     async def update_lifecycle(self, memory: MemoryEntity, *, expected_revision: int,
-                               revision: MemoryRevision) -> WriteReceipt:
+                               revision: MemoryRevision,
+                               operation: MemoryOperation | None = None) -> WriteReceipt:
         """Persist a status transition after the LifecycleService guard."""
         async with self._lock:
             with self._write_lock:
                 self._ensure_open()
                 return self._update_locked(memory, expected_revision=expected_revision,
-                                           revision=revision, source=None)
+                                           revision=revision, source=None,
+                                           operation=operation)
+
+    async def reject_candidate(self, memory: MemoryEntity, *, expected_revision: int,
+                               revision: MemoryRevision, operation: MemoryOperation,
+                               purge_body: bool) -> WriteReceipt:
+        """Persist candidate rejection and optional body purge atomically."""
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                self._store.reject_candidate(
+                    memory, expected_revision=expected_revision, revision=revision,
+                    operation=operation, purge_body=purge_body,
+                )
+                return WriteReceipt(memory.id, memory.current_revision,
+                                    self._sync_one(memory.id))
 
     def _update_locked(self, memory: MemoryEntity, *, expected_revision: int,
-                       revision: MemoryRevision, source: MemorySource | None) -> WriteReceipt:
+                       revision: MemoryRevision, source: MemorySource | None,
+                       operation: MemoryOperation | None = None) -> WriteReceipt:
         self._store.update(memory, expected_revision=expected_revision,
-                           revision=revision, source=source)
+                           revision=revision, source=source, operation=operation)
         return WriteReceipt(memory.id, memory.current_revision, self._sync_one(memory.id))
 
     def _secure_purge(self) -> bool:

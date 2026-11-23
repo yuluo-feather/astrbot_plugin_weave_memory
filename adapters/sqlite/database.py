@@ -26,7 +26,7 @@ class SQLiteDatabase:
     multi-process write coordination.
     """
 
-    CURRENT_SCHEMA_VERSION = 6
+    CURRENT_SCHEMA_VERSION = 7
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -215,6 +215,16 @@ class SQLiteDatabase:
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (6, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("extraction_jobs",),
                     )
+                    version = 6
+                if version < 7:
+                    migration_v7 = (Path(__file__).parent / "migrations" / "007_candidate_expiry.sql").read_text(encoding="utf-8")
+                    for statement in migration_v7.split(";"):
+                        if statement.strip():
+                            conn.execute(statement)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, name, applied_at) VALUES (7, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        ("candidate_expiry",),
+                    )
         except sqlite3.Error as exc:
             raise StorageError("SQLite schema migration failed") from exc
         finally:
@@ -226,8 +236,15 @@ class SQLiteDatabase:
 
         Refuse rollback if relations exist; V1.0 deliberately exposes no relation
         write API, so an empty table is the expected safe downgrade condition.
+        Later schema versions are rolled back first, each with its own guard.
         """
         self._ensure_open()
+        if self.schema_version() == 7:
+            self.rollback_to_v6()
+        if self.schema_version() == 6:
+            self.rollback_to_v5()
+        if self.schema_version() == 5:
+            self.rollback_to_v10()
         try:
             with self.transaction() as conn:
                 version = int(conn.execute(
@@ -246,8 +263,13 @@ class SQLiteDatabase:
             raise StorageError("could not roll back V1.0 schema to V0.5") from exc
 
     def rollback_to_v5(self) -> None:
-        """Roll v6 back to v5 only when no extraction job remains."""
+        """Roll v6 back to v5 only when no extraction job remains.
+
+        A v7 database is first rolled back to v6 (requiring no candidate rows).
+        """
         self._ensure_open()
+        if self.schema_version() == 7:
+            self.rollback_to_v6()
         try:
             with self.transaction() as conn:
                 version = int(conn.execute(
@@ -264,6 +286,27 @@ class SQLiteDatabase:
                 conn.execute("DELETE FROM schema_migrations WHERE version=6")
         except sqlite3.Error as exc:
             raise StorageError("could not roll back V1.5 schema to V1.4") from exc
+
+    def rollback_to_v6(self) -> None:
+        """Roll v7 back to v6 only when no candidate row depends on the TTL column."""
+        self._ensure_open()
+        try:
+            with self.transaction() as conn:
+                version = int(conn.execute(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                ).fetchone()[0])
+                if version != 7:
+                    raise StorageError("V1.6 rollback requires schema version 7")
+                candidates = int(conn.execute(
+                    "SELECT count(*) FROM memories WHERE status='CANDIDATE'",
+                ).fetchone()[0])
+                if candidates:
+                    raise StorageError("cannot roll back while CANDIDATE memories exist")
+                conn.execute("DROP INDEX ix_memories_candidate_expiry")
+                conn.execute("ALTER TABLE memories DROP COLUMN candidate_expires_at")
+                conn.execute("DELETE FROM schema_migrations WHERE version=7")
+        except sqlite3.Error as exc:
+            raise StorageError("could not roll back V1.6 schema to V1.5") from exc
 
     def rollback_preview(self) -> dict[str, object]:
         """Return a read-only report of what a v5→v4 rollback would remove."""
@@ -286,17 +329,30 @@ class SQLiteDatabase:
                 FROM memory_scopes WHERE scope_type='GROUP'
                 ORDER BY platform, tenant_id, scope_external_id""",
             ).fetchall()
+            extraction_jobs = 0
+            if version >= 6:
+                extraction_jobs = int(self.connection.execute(
+                    "SELECT count(*) FROM extraction_jobs",
+                ).fetchone()[0])
+            candidates = 0
+            if version >= 7:
+                candidates = int(self.connection.execute(
+                    "SELECT count(*) FROM memories WHERE status='CANDIDATE'",
+                ).fetchone()[0])
         except sqlite3.Error as exc:
             raise StorageError("could not preview V1.1 rollback") from exc
         can_rollback = (
-            version == 5
+            version in (5, 6, 7)
             and not group_scopes and not group_memories and not group_consents
+            and not extraction_jobs and not candidates
         )
         return {
             "schema_version": version,
             "group_scope_count": group_scopes,
             "group_memory_count": group_memories,
             "group_consent_count": group_consents,
+            "extraction_job_count": extraction_jobs,
+            "candidate_count": candidates,
             "groups": [
                 {
                     "scope_id": row["id"], "platform": row["platform"],
@@ -307,17 +363,26 @@ class SQLiteDatabase:
             ],
             "can_rollback": can_rollback,
             "steps": [
+                "（v7）归档/清理候选，或接受 rollback_to_v6 拒绝",
+                "（v6）清空 extraction_jobs 或接受 rollback_to_v5 拒绝",
                 "关闭 → [清空 →] 销毁每个群（会写入备份）",
-                "确认无群 scope / 群记忆 / 群 consent",
+                "确认无群 scope / 群记忆 / 群 consent / 候选 / 提取任务",
                 "执行 rollback_to_v10() 回到 v4",
             ],
         }
 
     def rollback_to_v10(self, *, dry_run: bool = False) -> dict[str, object] | None:
-        """Roll v5 back to v4 only when no group data remains."""
+        """Roll v5 back to v4 only when no group data remains.
+
+        Newer schemas are rolled back first with their own guards.
+        """
         if dry_run:
             return self.rollback_preview()
         self._ensure_open()
+        if self.schema_version() == 7:
+            self.rollback_to_v6()
+        if self.schema_version() == 6:
+            self.rollback_to_v5()
         self.connection.execute("PRAGMA foreign_keys = OFF")
         try:
             with self.transaction() as conn:

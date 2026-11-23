@@ -99,8 +99,27 @@
 
 群保存的类型映射：`topic → FACT`、`agreement / atmosphere → PREFERENCE`、`experience → EVENT`。
 
-## ⚙ 工作流程
+## 🧭 只读管理 API（V1.6）
 
+V1.6 通过 AstrBot 的 `register_web_api` 注册只读管理 JSON API，宿主暴露在
+`/api/v1/plugins/extensions/astrbot_plugin_weave_memory/v1/...`（旧版宿主为 `/api/plug/...`）：
+
+| 端点 | 说明 |
+|---|---|
+| `GET /v1/overview` | 记忆/候选/索引聚合与最近操作；不含正文 |
+| `GET /v1/candidates` | 群作用域候选只读列表 |
+| `GET /v1/memories`、`GET /v1/memories/<id>` | 群作用域 ACTIVE 记忆分页与详情 |
+| `GET /v1/memories/<id>/history` | 版本与来源 |
+| `GET /v1/groups` | 群列表（enabled、管理员来源、ACTIVE 计数） |
+| `POST /v1/retrieval/debug` | 只读检索调试：候选 ID/评分/过滤原因、最终注入 ID、Token 估算 |
+| `GET /v1/settings`、`GET /v1/maintenance/status` | 只读配置与维护状态 |
+
+- 所有端点要求 dashboard 登录用户名；配置 `api_admin_usernames` 后只允许名单内用户。
+- 群作用域端点要求该群 `enabled=1` 且 `group_memory=GRANTED`；个人正文不经 API，个人 scope 一律拒绝。
+- 检索调试不返回正文、不更新访问时间、不写诊断；API 不提供任何写端点，确认/拒绝与群开关仍走命令。
+- 部署者带外工具：`python scripts/weave_admin.py candidates|expire-candidates|maintenance-status ...`。
+
+## ⚙ 工作流程
 ```
 首次私聊（auto_enroll=true）
    └─ 自动登记 personal_memory=GRANTED + 一次性告知
@@ -200,10 +219,10 @@ python scripts/build_astrbot_plugin.py
 - **身份与授权**：身份键为 `platform + tenant_id + scope_type + scope_external_id + subject_type + subject_id`；先做身份、授权、状态与有效期过滤，再检索、排序和注入，不把跨作用域候选交给上层。
 - **注入不可信文本**：记忆正文按不可信参考文本处理并做转义，不得覆盖系统或开发者指令；注入使用临时 `TextPart`，不修改持久会话历史。
 - **删除与物理擦除**：删除/清空在同一权威事务内写不含正文的最小墓碑审计、标记 FTS dirty 并物理删除正文关联数据；所有应用连接启用 `PRAGMA secure_delete = ON`；索引恢复健康后执行 `wal_checkpoint(TRUNCATE)` → `VACUUM` → `wal_checkpoint(TRUNCATE)`。checkpoint busy 时保留 pending，下次启动重试。该保证以应用自身连接、无其他读快照、checkpoint 成功为条件，不承诺 SSD、操作系统缓存、文件系统空闲块或备份层面的取证级擦除，也不等同于数据库加密。
-- **SQLite schema v5**：V1.0 为 v4（`memory_relations` 预留表），V1.1 升到 v5（群 Scope/admin 字段）。从 v1–v4 升级到 v5 前，插件会自动在数据目录的 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移。升级前仍建议自行备份整个插件数据目录。有群数据时拒绝回滚到 V1.0，降级前对每个群执行 `群关闭 → 群销毁`（想保留群记忆就不要先做 `群清空`，否则备份只是清空后的快照），或按 `群关闭 → 群清空 → 群销毁` 处理。
+- **SQLite schema v7**：V1.0 为 v4（`memory_relations` 预留表），V1.1 升到 v5（群 Scope/admin 字段），V1.5 升到 v6（`extraction_jobs`），V1.6 升到 v7（`memories.candidate_expires_at`）。从任意旧版本升级前，插件会在数据目录的 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移。升级前仍建议自行备份整个插件数据目录。有群数据/候选/提取任务时对应回滚会被拒绝；降级前对每个群执行 `群关闭 → 群销毁`（想保留群记忆就不要先做 `群清空`，否则备份只是清空后的快照），或按 `群关闭 → 群清空 → 群销毁` 处理。
 - **群生命周期**：群开启/关闭/清空/销毁均写操作审计；群关闭可逆，个人关闭永久；群销毁必须已经关闭，服务内自动备份并写 sidecar manifest，删除顺序为记忆/关联 → consent 历史 → operations 审计 → scope，提交后先恢复 FTS 再 secure purge。
 - **按作用域导出与审计**：`export_personal` / `export_group` 只导当前 scope 的 ACTIVE 记忆；个人导出需 consent，群导出需管理员，序列化在 `app/export.py`（命令 UX 留到 V1.3）。`memory_operations` 写入 `result=SUCCESS` 与操作元数据，不含正文；注入无缓存，删除/清空/关闭后下一次请求重新检索。
-- **测试与 CI**：本地 `dev`（2026-11-23）完整测试 `199 passed`（Python 3.13.5）；`compileall`、配置 JSON 与差异检查通过。当前本地环境未安装 ruff/mypy，未执行。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
+- **测试与 CI**：本地 `dev`（2026-11-23）完整测试 `283 passed`（Python 3.12.10）；ruff、mypy、`mypy .`、compileall 与插件包构建通过。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
 
 ## 📜 版本与验收
 
@@ -216,6 +235,7 @@ python scripts/build_astrbot_plugin.py
 | V1.3「整经」 | 部分交付开发版本；Agent 读写工具已启用并记录插件侧 `evidence_ref`；私聊真机烟测通过，群聊/跨账号待补 |
 | V1.4「验线」 | 进行中：60 条合成 Golden Set（含有效期与冲突/时序覆盖）、离线 Harness 与基线已建立，评分校验工具已补；人工标注复核及双人注入有效性评分待完成 |
 | V1.5「添线」 | 核心实现：schema v6、分层 consent、单条/批量私聊捕获、敏感前置过滤、候选确认/拒绝、任务恢复与离线指标 harness；默认关闭，真实宿主模型调用与质量采集待补 |
+| V1.6「候线」 | 核心实现：schema v7、候选 TTL/惰性归档、确认/拒绝/过期审计、拒绝默认清正文、只读管理 JSON API（9 个端点）与 `weave_admin` 候选/维护命令；WebUI 留 V2.1 |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 
 已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响。

@@ -367,3 +367,34 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - 迁移前自动备份并校验；失败中止迁移。
 - v6→v5 回滚守卫：`extraction_jobs` 为空，或保留表停用且不删除数据；回滚后关闭全部提取行为。
 
+## 14. V1.6 候选 TTL 与只读管理 API（M0 冻结）
+
+依据：`星羽塔罗_织忆_V1.6_候线_计划书.md`；ADR-0016；ADR-0014（schema v7）。
+
+### 候选 TTL 与拒绝
+
+- `candidate_ttl_days`（默认 7）在候选创建时写入 `candidate_expires_at = created_at + ttl`；候选 TTL 与语义 `valid_until` 分离。
+- 过期由惰性检查执行：读取候选列表（命令或管理 API）时，把 `candidate_expires_at <= now` 的 `CANDIDATE` 转 `ARCHIVED`，写 `CANDIDATE_EXPIRE` 审计（操作者 `system`），不物理删除正文。
+- 确认：`CANDIDATE → ACTIVE`，写 `CANDIDATE_CONFIRM`；拒绝：`CANDIDATE → REJECTED`，写 `CANDIDATE_REJECT`。
+- 拒绝默认 `rejected_keep_body=false`：同一事务清理正文、revisions、sources、tags、relations 与 memories 行，只保留不含正文的 operation 审计；开启后保留 `REJECTED` 行与正文。
+- `memory_operations.metadata_json` 记录 `from_status/to_status/memory_type/source_type/result`；拒绝额外记录 `reason` 与 `body_retained`，不记录正文。
+- 候选确认/拒绝仍只允许用户命令；不注册 Agent 工具，管理 API 不提供写端点。
+
+### 管理 API
+
+- 通过 `Context.register_web_api` 注册，route 以插件名开头：`/astrbot_plugin_weave_memory/v1/...`；路径参数使用 `<id>`；宿主暴露为 `/api/v1/plugins/extensions/astrbot_plugin_weave_memory/v1/...`（旧版 `/api/plug/...`）。
+- 端点：
+  - `GET /v1/overview`：聚合计数、候选数、索引状态、最近操作摘要；不含正文。
+  - `GET /v1/candidates`：群作用域候选只读列表；个人 scope 拒绝。
+  - `GET /v1/memories`、`GET /v1/memories/<id>`、`GET /v1/memories/<id>/history`：群作用域只读；分页用 `limit` / `cursor`（cursor 为下一偏移量）。
+  - `GET /v1/groups`：实例级群列表；不含记忆正文。
+  - `POST /v1/retrieval/debug`：显式群 scope 的只读检索调试；返回候选 ID/评分/过滤原因、最终注入 ID、Token 估算与截断原因；不返回正文、不更新访问时间、不写检索诊断。
+  - `GET /v1/settings`：只读公开配置；不含管理员名单等敏感值。
+  - `GET /v1/maintenance/status`：schema 版本、索引健康、待擦除状态、任务计数；只读。
+- 鉴权：
+  - 所有端点要求 dashboard 登录用户名存在；`api_admin_usernames` 非空时用户名必须在白名单。
+  - 群作用域端点要求目标群 `is_enabled=1` 且 `group_memory=GRANTED`；无法解析或未授权返回 `AuthorizationDenied`/`NotFound`，不泄漏其他群存在性。
+  - 个人 scope 经 API 一律 `AuthorizationDenied`；个人正文与候选确认/拒绝只走命令。
+- 错误映射：`ValidationError=400`、`AuthorizationDenied=403`、`NotFound=404`、`Conflict=409`、`IndexUnavailable/StorageError/ServiceClosed=503`。
+- API 失败不得阻塞聊天；关闭 API 不改变候选/命令/检索语义。
+

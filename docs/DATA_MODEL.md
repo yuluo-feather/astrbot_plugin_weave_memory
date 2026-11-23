@@ -230,3 +230,31 @@ V1.0 该表没有 `scope_id` 列，也没有应用层写入/查询 API；跨 Sco
 - 迁移前自动备份并校验，失败中止。
 - v6→v5 回滚守卫：`extraction_jobs` 为空，或保留表停用、不删除数据。
 
+## 16. V1.6 候选 TTL 与审计（M0 契约）
+
+依据：V1.6 计划书 §4、§6；ADR-0016；ADR-0014（schema v7）。
+
+### memories.candidate_expires_at（schema v7）
+
+| 列 | 类型/约束 | 说明 |
+|---|---|---|
+| `candidate_expires_at` | TEXT | 候选 workflow TTL；非 `CANDIDATE` 行为 `NULL` |
+
+- 迁移 `007_candidate_expiry.sql` 新增列与 `(status, candidate_expires_at)` 索引。
+- 回填：既有 `status='CANDIDATE'` 行使用 `created_at + 7 天`（迁移时固定默认值）；迁移后新候选按 `candidate_ttl_days` 写入。
+- 候选 TTL 与 `valid_from/valid_until` 语义分离；语义过期仍只作用于 `ACTIVE`。
+- `MemoryEntity.candidate_expires_at` 为可选 UTC 时间；存储层按既有 ISO-8601 `...Z` 格式读写。
+
+### memory_operations 扩展
+
+- 候选确认/拒绝/过期不新增列；沿用 `metadata_json`。
+- `operation_type`：`CANDIDATE_CONFIRM` / `CANDIDATE_REJECT` / `CANDIDATE_EXPIRE`。
+- `metadata_json` 字段：`from_status`、`to_status`、`memory_type`、`source_type`、`result=SUCCESS`；拒绝追加 `reason`、`body_retained`；过期追加 `candidate_expires_at`。不得写正文。
+- 拒绝默认清理正文时，operations 行保留，`memory_id` 可以指向已物理删除的记忆（与 `DELETE_MEMORY` 墓碑一致）。
+
+### 迁移与回滚
+
+- v7 迁移前自动备份并校验；失败中止。
+- v7→v6 回滚守卫：不存在任何 `CANDIDATE` 行；否则拒绝，避免丢失候选 TTL。
+- 回滚只删除 `candidate_expires_at` 列与相关索引，不影响正文、revisions、sources、consent。
+

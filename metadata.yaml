@@ -22,6 +22,8 @@ help: |
   [Agent 工具] weave_memory_search/get/list/history 仅访问当前用户 Personal Scope；weave_memory_remember/update 已启用写入，来源记录插件侧 evidence_ref（message/session + 内容哈希），不冒充宿主 tool_call_id
   [群命令] 群聊内发送 /织忆 群帮助 查看；群开启/群关闭/群清空/群销毁/群保存仅群管理员，成员可读 群列表/群查询/群状态
   [提取命令 V1.5] 默认关闭；/织忆 提取 开启 <capture|auto_extract|external_model|store_candidate|全部>；/织忆 提取 状态；/织忆 候选 列表/确认/拒绝
+  [候选 V1.6] 候选默认 7 天有效（candidate_ttl_days）；过期在读取列表时转归档；拒绝默认清除正文，只保留审计
+  [只读管理 API V1.6] 插件路由 /astrbot_plugin_weave_memory/v1/{overview|candidates|memories|groups|retrieval/debug|settings|maintenance/status}；全部只读，需 dashboard 登录
   触发：个人命令仅私聊生效，群命令仅群聊生效；统一前缀 /织忆
   状态：开发预览 v1.0.0-dev.1，未正式发版；V1.3 宿主烟测按用户要求跳过、未测
 version: v1.0.0-dev.1

@@ -107,3 +107,17 @@ V0 目标为单进程、单实例、SQLite。写操作由应用层统一协调�
 - M1 已实现：schema v6、分层 consent、`extraction_jobs`、`ExtractionService`、私聊捕获（累计阈值/“记住…”/回合结束）、敏感前置过滤、候选命令与离线指标 harness。真实宿主模型调用与质量采集待补。
 - 实现不改 V1.4 显式写入、检索、注入与群路径语义。
 
+## 11. V1.6 候选 TTL 与只读管理 API 边界（M0 契约）
+
+依据：V1.6 计划书 §4–§6；ADR-0016。
+
+- 组件边界：
+  - `core`：`MemoryOperation` 值对象与 `MemoryStore` 的候选过期/拒绝/审计端口；不依赖宿主或 SQLite。
+  - `app`：`ExtractionService` 负责候选 TTL 写入、惰性过期、确认/拒绝与审计；`ManagementService` 负责只读聚合、群作用域解析与管理视图，不监听 HTTP。
+  - `adapters/sqlite`：迁移 `007_candidate_expiry.sql`，实现 `candidate_expires_at`、`list_expired_candidates` 与带 operation 的事务写入。
+  - `adapters/astrbot/web_api.py`：把宿主 `register_web_api` 的请求收窄成用户名/query/JSON body，再调用 `ManagementService`；不承载领域规则。
+- 管理 API 全部只读；候选确认/拒绝、群开关、个人 opt-out 仍走命令。
+- 个人正文不经 API；Overview 只返回聚合计数；检索调试只返回 ID/评分/过滤原因/Token，不返回正文。
+- 关闭管理 API 只移除 HTTP 入口；候选、命令、检索、注入语义不变。
+- V1.6 不实现 WebUI、导出/导入与向量检索。
+

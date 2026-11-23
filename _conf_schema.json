@@ -41,6 +41,25 @@
     "default": 100,
     "hint": "超过上限时新任务直接记 queue_full 失败，不长期占用内存；可用 /织忆 提取 状态 查看积压。"
   },
+  "candidate_ttl_days": {
+    "description": "候选记忆有效期（天）",
+    "type": "int",
+    "default": 7,
+    "hint": "候选创建时写入 candidate_expires_at；到期在读取候选列表时转 ARCHIVED，不物理删除。与记忆的语义有效期 valid_until 不同。"
+  },
+  "rejected_keep_body": {
+    "description": "拒绝候选时保留正文",
+    "type": "bool",
+    "default": false,
+    "hint": "默认关闭：拒绝后正文、版本与来源在同一事务中物理清理，只保留不含正文的审计记录；开启后保留 REJECTED 行与正文。"
+  },
+  "api_admin_usernames": {
+    "description": "只读管理 API 用户名白名单",
+    "type": "list",
+    "items": { "type": "string" },
+    "default": [],
+    "hint": "为空表示任意 dashboard 登录用户可读实例级管理端点；非空时只允许名单内用户名。API 全部只读，不提供写端点。"
+  },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",
     "type": "dict",

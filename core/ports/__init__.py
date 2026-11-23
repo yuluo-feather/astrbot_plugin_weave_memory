@@ -16,6 +16,7 @@ from ..model import (
     Identity,
     MemoryConsent,
     MemoryEntity,
+    MemoryOperation,
     MemoryRevision,
     MemorySource,
     MemoryStatus,
@@ -59,7 +60,16 @@ class MemoryStore(Protocol):
     ) -> tuple[tuple[MemoryEntity, ...], int]: ...
 
     def update(self, memory: MemoryEntity, *, expected_revision: int,
-               revision: MemoryRevision, source: MemorySource | None = None) -> None: ...
+               revision: MemoryRevision, source: MemorySource | None = None,
+               operation: MemoryOperation | None = None) -> None: ...
+
+    def list_expired_candidates(
+        self, *, scope_id: str, subject_id: str, at: datetime, limit: int = 100,
+    ) -> tuple[MemoryEntity, ...]: ...
+
+    def reject_candidate(self, memory: MemoryEntity, *, expected_revision: int,
+                         revision: MemoryRevision, operation: MemoryOperation,
+                         purge_body: bool) -> None: ...
 
     def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]: ...
 
@@ -123,12 +133,16 @@ class PlatformAdapter(Protocol):
     def resolve_identity(self, event: object) -> Identity: ...
 
 
-class ManagementService(Protocol):
-    """Reserved V1.6/V2 boundary for the JSON management API.
+class ManagementRepository(Protocol):
+    """Read-only aggregate queries for the V1.6 management API (ADR-0016)."""
 
-    V1.0 defines no methods and provides no implementation; signatures freeze
-    when V1.6 starts.
-    """
+    def overview_counts(self) -> dict[str, object]: ...
+
+    def recent_operations(self, *, limit: int = 5) -> tuple[dict[str, object], ...]: ...
+
+    def list_group_scopes(self) -> tuple[dict[str, object], ...]: ...
+
+    def maintenance_status(self) -> dict[str, object]: ...
 
 
 class LlmExtractor(Protocol):

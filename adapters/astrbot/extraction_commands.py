@@ -96,7 +96,7 @@ class AstrBotExtractionCommands:
             return _USAGE
         subcommand = parts[0]
         if subcommand == "状态":
-            return self._status(scope)
+            return await self._status(scope)
         if subcommand in {"开启", "关闭"}:
             if len(parts) < 2:
                 return _USAGE
@@ -156,10 +156,10 @@ class AstrBotExtractionCommands:
             return "已清空敏感类别白名单；敏感内容不会进入候选。"
         return f"已允许敏感类别进入候选：{'、'.join(categories)}；仍需手动确认候选。"
 
-    def _status(self, scope) -> str:
+    async def _status(self, scope) -> str:
         gates = self._extraction.gates(scope)
         counts = self._extraction.job_summary(scope)
-        _, candidate_total = self._extraction.list_candidates(scope, limit=1)
+        _, candidate_total = await self._extraction.list_candidates(scope, limit=1)
         def state(value: bool) -> str:
             return "开" if value else "关"
         lines = [
@@ -188,28 +188,31 @@ class AstrBotExtractionCommands:
             return _USAGE
         subcommand = parts[0]
         if subcommand == "列表":
-            return self._list_candidates(scope)
+            return await self._list_candidates(scope)
         if subcommand in {"确认", "拒绝"}:
             if len(parts) < 2:
                 return _USAGE
             candidate_id = parts[1]
             candidate = self._extraction.get_candidate(scope, candidate_id)
+            operator_id = self._operator(event, scope)
             if subcommand == "确认":
                 await self._extraction.confirm_candidate(
                     scope, candidate_id,
                     expected_revision=candidate.current_revision,
+                    operator_id=operator_id,
                 )
                 return f"已确认候选 {candidate_id}，现在会参与检索与注入。"
             reason = " ".join(parts[2:]).strip()
             await self._extraction.reject_candidate(
                 scope, candidate_id,
                 expected_revision=candidate.current_revision, reason=reason,
+                operator_id=operator_id,
             )
             return f"已拒绝候选 {candidate_id}。"
         return _USAGE
 
-    def _list_candidates(self, scope) -> str:
-        candidates, total = self._extraction.list_candidates(scope, limit=20)
+    async def _list_candidates(self, scope) -> str:
+        candidates, total = await self._extraction.list_candidates(scope, limit=20)
         if total == 0:
             return "当前没有待确认的提取候选。"
         lines = [f"待确认候选：{total} 条（显示 {len(candidates)} 条）"]

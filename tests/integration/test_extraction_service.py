@@ -38,6 +38,7 @@ from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     AuthorizationDenied,
     Conflict,
+    NotFound,
     StorageError,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
@@ -193,7 +194,7 @@ def test_sensitive_whitelist_allows_candidate(extraction_stack):
     )
     job = _submit(stack, "我的密码是 hunter2")
     assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
-    candidates, total = stack["service"].list_candidates(stack["scope"])
+    candidates, total = asyncio.run(stack["service"].list_candidates(stack["scope"]))
     assert total == 1
     assert candidates[0].status is MemoryStatus.CANDIDATE
 
@@ -206,7 +207,7 @@ def test_candidate_is_inferred_not_searchable_until_confirmed(extraction_stack):
     )
     job = _submit(stack, "我喜欢黑咖啡")
     assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
-    candidates, total = stack["service"].list_candidates(stack["scope"])
+    candidates, total = asyncio.run(stack["service"].list_candidates(stack["scope"]))
     assert total == 1
     candidate = candidates[0]
     assert candidate.status is MemoryStatus.CANDIDATE
@@ -229,7 +230,7 @@ def test_active_duplicate_skips_candidate(extraction_stack):
     )
     job = _submit(stack, "我喜欢黑咖啡")
     assert job is not None and job.status is ExtractionJobStatus.SKIPPED_DUPLICATE_ACTIVE
-    assert stack["service"].list_candidates(stack["scope"])[1] == 0
+    assert asyncio.run(stack["service"].list_candidates(stack["scope"]))[1] == 0
 
 
 def test_repeated_submission_reuses_job_and_candidate(extraction_stack):
@@ -242,7 +243,7 @@ def test_repeated_submission_reuses_job_and_candidate(extraction_stack):
     second = _submit(stack, "我喜欢黑咖啡", message_id="msg-2")
     assert first is not None and second is not None
     assert first.id == second.id
-    assert stack["service"].list_candidates(stack["scope"])[1] == 1
+    assert asyncio.run(stack["service"].list_candidates(stack["scope"]))[1] == 1
 
 
 def test_confirm_revision_conflict_and_reject(extraction_stack):
@@ -252,7 +253,7 @@ def test_confirm_revision_conflict_and_reject(extraction_stack):
         ExtractionCandidate(MemoryType.FACT, "用户住在杭州"),
     )
     _submit(stack, "我住在杭州")
-    candidate = stack["service"].list_candidates(stack["scope"])[0][0]
+    candidate = asyncio.run(stack["service"].list_candidates(stack["scope"]))[0][0]
     with pytest.raises(Conflict):
         asyncio.run(stack["service"].confirm_candidate(
             stack["scope"], candidate.id, expected_revision=99,
@@ -261,8 +262,19 @@ def test_confirm_revision_conflict_and_reject(extraction_stack):
         stack["scope"], candidate.id, expected_revision=candidate.current_revision,
         reason="不准确",
     ))
-    assert rejected.status is MemoryStatus.REJECTED
-    assert stack["service"].list_candidates(stack["scope"])[1] == 0
+    assert rejected is None
+    with pytest.raises(NotFound):
+        stack["store"].get(
+            candidate.id, scope_id=stack["scope"].id, subject_id="u1",
+        )
+    operations = stack["store"].db.connection.execute(
+        "SELECT operation_type, metadata_json FROM memory_operations "
+        "WHERE memory_id=? ORDER BY rowid", (candidate.id,),
+    ).fetchall()
+    assert [row["operation_type"] for row in operations] == ["CANDIDATE_REJECT"]
+    assert "不准确" in operations[0]["metadata_json"]
+    assert "用户住在杭州" not in operations[0]["metadata_json"]
+    assert asyncio.run(stack["service"].list_candidates(stack["scope"]))[1] == 0
 
 
 def test_extractor_failure_does_not_raise_and_job_can_retry(extraction_stack):
@@ -306,7 +318,7 @@ def test_batch_messages_drops_blocked_sensitive_messages(extraction_stack):
     ))
     assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
     assert stack["extractor"].calls[0].messages == ("我喜欢黑咖啡",)
-    assert stack["service"].list_candidates(stack["scope"])[1] == 1
+    assert asyncio.run(stack["service"].list_candidates(stack["scope"]))[1] == 1
 
 
 def test_global_flag_off_blocks_capture_even_when_user_opted_in(extraction_stack):
@@ -366,7 +378,7 @@ def test_candidate_write_rechecks_consent_gate(extraction_stack, monkeypatch):
     monkeypatch.setattr(stack["service"], "_require_store_gate", fail_on_write)
     job = _submit(stack, "我喜欢黑咖啡")
     assert job is not None and job.status is ExtractionJobStatus.FAILED
-    assert stack["service"].list_candidates(stack["scope"])[1] == 0
+    assert asyncio.run(stack["service"].list_candidates(stack["scope"]))[1] == 0
 
 
 def test_explicit_save_rejects_same_content_candidate_with_friendly_message(extraction_stack):

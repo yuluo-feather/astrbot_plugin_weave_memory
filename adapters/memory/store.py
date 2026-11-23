@@ -7,7 +7,7 @@ from datetime import datetime
 from threading import RLock
 
 from ...core.errors import Conflict, NotFound
-from ...core.model import MemoryEntity, MemoryRevision, MemorySource
+from ...core.model import MemoryEntity, MemoryOperation, MemoryRevision, MemorySource
 from ...core.policy.dedup import DedupKey, participates_in_unique_key
 
 
@@ -17,6 +17,7 @@ class InMemoryMemoryStore:
         self._memories: dict[str, MemoryEntity] = {}
         self._revisions: dict[str, list[MemoryRevision]] = {}
         self._sources: dict[str, list[MemorySource]] = {}
+        self._operations: list[MemoryOperation] = []
 
     def create(self, memory: MemoryEntity, revision: MemoryRevision,
                source: MemorySource) -> None:
@@ -62,7 +63,8 @@ class InMemoryMemoryStore:
             return None
 
     def update(self, memory: MemoryEntity, *, expected_revision: int,
-               revision: MemoryRevision, source: MemorySource | None = None) -> None:
+               revision: MemoryRevision, source: MemorySource | None = None,
+               operation: MemoryOperation | None = None) -> None:
         with self._lock:
             current = self._memories.get(memory.id)
             if current is None:
@@ -89,6 +91,40 @@ class InMemoryMemoryStore:
             self._revisions[memory.id].append(revision)
             if source is not None:
                 self._sources[memory.id].append(source)
+            if operation is not None:
+                self._operations.append(operation)
+
+    def list_expired_candidates(
+        self, *, scope_id: str, subject_id: str, at: datetime, limit: int = 100,
+    ) -> tuple[MemoryEntity, ...]:
+        with self._lock:
+            expired = [
+                memory for memory in self._memories.values()
+                if memory.scope_id == scope_id and memory.subject_id == subject_id
+                and memory.status.value == "CANDIDATE"
+                and memory.candidate_expires_at is not None
+                and memory.candidate_expires_at <= at
+            ]
+            expired.sort(key=lambda memory: (memory.candidate_expires_at, memory.id))
+            return tuple(expired[:limit])
+
+    def reject_candidate(self, memory: MemoryEntity, *, expected_revision: int,
+                         revision: MemoryRevision, operation: MemoryOperation,
+                         purge_body: bool) -> None:
+        with self._lock:
+            current = self._memories.get(memory.id)
+            if current is None:
+                raise NotFound("memory not found")
+            if current.current_revision != expected_revision:
+                raise Conflict("revision conflict")
+            self._operations.append(operation)
+            if purge_body:
+                del self._memories[memory.id]
+                self._revisions.pop(memory.id, None)
+                self._sources.pop(memory.id, None)
+            else:
+                self._memories[memory.id] = memory
+                self._revisions[memory.id].append(revision)
 
     def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]:
         with self._lock:

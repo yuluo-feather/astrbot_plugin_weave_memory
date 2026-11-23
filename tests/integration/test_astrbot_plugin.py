@@ -165,7 +165,8 @@ def install_astrbot_stubs(monkeypatch, data_dir, *, with_llm_tool=True):
     return star_module
 
 
-def load_plugin(monkeypatch, tmp_path, config=None, *, with_llm_tool=True):
+def load_plugin(monkeypatch, tmp_path, config=None, *, with_llm_tool=True,
+                context=None):
     star_module = install_astrbot_stubs(monkeypatch, tmp_path, with_llm_tool=with_llm_tool)
     root = Path(__file__).parents[2]
     source_main = root / "main.py"
@@ -187,11 +188,43 @@ def load_plugin(monkeypatch, tmp_path, config=None, *, with_llm_tool=True):
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
-    return module.WeaveMemoryPlugin(object(), config), star_module
+    return module.WeaveMemoryPlugin(
+        context if context is not None else object(), config,
+    ), star_module
 
 
 async def collect(generator):
     return [item async for item in generator]
+
+
+class FakeContext:
+    def __init__(self):
+        self.routes = []
+
+    def register_web_api(self, route, handler, methods, desc):
+        self.routes.append((route, handler, methods, desc))
+
+
+def test_plugin_registers_read_only_management_api(monkeypatch, tmp_path):
+    import asyncio
+
+    context = FakeContext()
+    plugin, _ = load_plugin(monkeypatch, tmp_path, context=context)
+    routes = {route: methods for route, _, methods, _ in context.routes}
+    assert len(context.routes) == 9
+    assert routes["/astrbot_plugin_weave_memory/v1/overview"] == ["GET"]
+    assert routes["/astrbot_plugin_weave_memory/v1/retrieval/debug"] == ["POST"]
+    assert routes["/astrbot_plugin_weave_memory/v1/memories/<id>"] == ["GET"]
+    assert "/astrbot_plugin_weave_memory/v2" not in " ".join(routes)
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_registers_without_management_api_support(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    assert plugin._ready is True
+    asyncio.run(plugin.terminate())
 
 
 def bind_plugin_tool(plugin, event, *, name, handler_name, args):
@@ -273,6 +306,15 @@ def test_plugin_group_shared_enable_save_inject_close_clear_destroy(monkeypatch,
         FakeEvent(message="/织忆 群保存 agreement 周五复盘", **admin),
     )))[0]
     assert "已保存群记忆" in saved
+    saved_alias = asyncio.run(collect(plugin.memory_group_save(
+        FakeEvent(message="/织忆 群保存 我的偏好 周五复盘别名", **admin),
+    )))[0]
+    assert "已保存群记忆" in saved_alias
+    invalid_label = asyncio.run(collect(plugin.memory_group_save(
+        FakeEvent(message="/织忆 群保存 游戏 我在玩崩坏星穹铁道", **admin),
+    )))[0]
+    assert "第一个参数" in invalid_label
+    assert "topic" in invalid_label
     listed = asyncio.run(collect(plugin.memory_group_list(
         FakeEvent(message="/织忆 群列表", **member),
     )))[0]

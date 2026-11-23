@@ -171,6 +171,29 @@ class MemoryRevision:
 
 
 @dataclass(frozen=True, slots=True)
+class MemoryOperation:
+    """Audit-only operation record; metadata must never contain memory bodies."""
+
+    id: str
+    scope_id: str
+    memory_id: str | None
+    operation_type: str
+    operator_type: OperatorType
+    operator_id: str
+    occurred_at: datetime
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in ("id", "scope_id", "operation_type", "operator_id"):
+            if not getattr(self, name).strip():
+                raise ValidationError(f"{name} must be non-empty")
+        object.__setattr__(
+            self, "occurred_at", require_aware_utc(self.occurred_at, "occurred_at"),
+        )
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+
+
+@dataclass(frozen=True, slots=True)
 class MemoryEntity:
     id: str
     scope_id: str
@@ -185,6 +208,7 @@ class MemoryEntity:
     updated_at: datetime
     valid_from: datetime | None = None
     valid_until: datetime | None = None
+    candidate_expires_at: datetime | None = None
     superseded_by: str | None = None
     last_accessed_at: datetime | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
@@ -203,12 +227,14 @@ class MemoryEntity:
             raise ValidationError("normalized_content does not match normalization v1")
         for name in ("created_at", "updated_at"):
             object.__setattr__(self, name, require_aware_utc(getattr(self, name), name))
-        for name in ("valid_from", "valid_until", "last_accessed_at"):
+        for name in ("valid_from", "valid_until", "candidate_expires_at", "last_accessed_at"):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, require_aware_utc(value, name))
         if self.valid_from and self.valid_until and self.valid_until <= self.valid_from:
             raise ValidationError("valid_until must be later than valid_from")
+        if self.candidate_expires_at is not None and self.status is not MemoryStatus.CANDIDATE:
+            raise ValidationError("candidate_expires_at is only valid for CANDIDATE memory")
         if self.status is MemoryStatus.SUPERSEDED and not self.superseded_by:
             raise ValidationError("SUPERSEDED memory requires superseded_by")
         if self.status is not MemoryStatus.SUPERSEDED and self.superseded_by is not None:

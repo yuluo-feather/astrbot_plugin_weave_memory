@@ -5,16 +5,23 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import sha256
 
-from ..core.errors import AuthorizationDenied, Conflict, NotFound, ValidationError
+from ..core.errors import (
+    AuthorizationDenied,
+    Conflict,
+    InvalidTransition,
+    NotFound,
+    ValidationError,
+)
 from ..core.model import (
     ExtractionCandidate,
     ExtractionJob,
     ExtractionJobStatus,
     ExtractionWindow,
     MemoryEntity,
+    MemoryOperation,
     MemoryRevision,
     MemorySource,
     MemoryStatus,
@@ -44,6 +51,56 @@ _ALLOWED_TYPES = (MemoryType.PREFERENCE, MemoryType.FACT, MemoryType.EVENT)
 CandidateNotifier = Callable[[tuple[MemoryEntity, ...]], Awaitable[None]]
 
 
+async def expire_due_candidates(
+    *, store: MemoryStore, lifecycle: LifecycleService, clock: Clock,
+    ids: IdGenerator, scope: Scope, limit: int = 100, max_rounds: int = 10,
+    operator_id: str = "extraction_service",
+) -> int:
+    """Archive candidates whose workflow TTL elapsed, writing CANDIDATE_EXPIRE."""
+    now = clock.now()
+    archived = 0
+    for _ in range(max_rounds):
+        expired = store.list_expired_candidates(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            at=now, limit=limit,
+        )
+        if not expired:
+            break
+        progressed = 0
+        for memory in expired:
+            expires_at = memory.candidate_expires_at
+            if expires_at is None:
+                continue
+            operation = MemoryOperation(
+                id=ids.new_id("operation"), scope_id=scope.id,
+                memory_id=memory.id, operation_type="CANDIDATE_EXPIRE",
+                operator_type=OperatorType.SYSTEM,
+                operator_id=operator_id, occurred_at=now,
+                metadata={
+                    "from_status": MemoryStatus.CANDIDATE.value,
+                    "to_status": MemoryStatus.ARCHIVED.value,
+                    "memory_type": memory.memory_type.value,
+                    "source_type": memory.source_type.value,
+                    "candidate_expires_at": expires_at.isoformat(),
+                    "result": "SUCCESS",
+                },
+            )
+            try:
+                receipt = await lifecycle.archive_candidate(
+                    memory, candidate_expires_at=expires_at,
+                    revision_id=ids.new_id("revision"), at=now,
+                    operation=operation,
+                )
+            except (Conflict, InvalidTransition, NotFound):
+                continue
+            if receipt is not None:
+                progressed += 1
+                archived += 1
+        if progressed == 0:
+            break
+    return archived
+
+
 class ExtractionService:
     def __init__(
         self, *, store: MemoryStore, jobs: ExtractionJobStore,
@@ -52,6 +109,7 @@ class ExtractionService:
         extractor: LlmExtractor, clock: Clock, ids: IdGenerator,
         global_enabled: bool = False, max_retries: int = 3,
         timeout_seconds: float = 30.0, queue_size: int = 100,
+        candidate_ttl_days: int = 7, rejected_keep_body: bool = False,
     ) -> None:
         self._store = store
         self._jobs = jobs
@@ -66,6 +124,8 @@ class ExtractionService:
         self._max_retries = max(1, max_retries)
         self._timeout = max(1.0, timeout_seconds)
         self._queue_size = max(1, queue_size)
+        self._candidate_ttl_days = max(1, candidate_ttl_days)
+        self._rejected_keep_body = rejected_keep_body
 
     def gates(self, scope: Scope) -> ExtractionGates:
         return resolve_gates(
@@ -259,7 +319,9 @@ class ExtractionService:
             memory_type=candidate.memory_type, content=candidate.content,
             normalized_content=normalized, status=MemoryStatus.CANDIDATE,
             source_type=SourceType.INFERRED, current_revision=1,
-            created_at=now, updated_at=now, metadata=metadata,
+            created_at=now, updated_at=now,
+            candidate_expires_at=now + timedelta(days=self._candidate_ttl_days),
+            metadata=metadata,
         )
         revision = MemoryRevision(
             id=self._ids.new_id("revision"), memory_id=memory_id, revision=1,
@@ -287,10 +349,18 @@ class ExtractionService:
         )
         return memory
 
-    def list_candidates(
+    async def _expire_due_candidates(self, scope: Scope) -> int:
+        """Archive candidates whose workflow TTL has elapsed, writing audit records."""
+        return await expire_due_candidates(
+            store=self._store, lifecycle=self._lifecycle, clock=self._clock,
+            ids=self._ids, scope=scope,
+        )
+
+    async def list_candidates(
         self, scope: Scope, *, limit: int = 20, offset: int = 0,
     ) -> tuple[tuple[MemoryEntity, ...], int]:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        await self._expire_due_candidates(scope)
         return self._store.list_candidates(
             scope_id=scope.id, subject_id=scope.identity.subject_id,
             limit=limit, offset=offset,
@@ -305,10 +375,30 @@ class ExtractionService:
             raise NotFound("candidate not found")
         return memory
 
+    @staticmethod
+    def _candidate_operation_metadata(
+        memory: MemoryEntity, target: MemoryStatus, *,
+        reason: str = "", body_retained: bool = True,
+    ) -> dict[str, object]:
+        metadata: dict[str, object] = {
+            "from_status": MemoryStatus.CANDIDATE.value,
+            "to_status": target.value,
+            "memory_type": memory.memory_type.value,
+            "source_type": memory.source_type.value,
+            "result": "SUCCESS",
+        }
+        if reason:
+            metadata["reason"] = reason
+        if target is MemoryStatus.REJECTED:
+            metadata["body_retained"] = body_retained
+        return metadata
+
     async def confirm_candidate(
         self, scope: Scope, memory_id: str, *, expected_revision: int,
+        operator_id: str | None = None,
     ) -> MemoryEntity:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        await self._expire_due_candidates(scope)
         memory = self._store.get(
             memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
         )
@@ -317,11 +407,18 @@ class ExtractionService:
         if memory.current_revision != expected_revision:
             raise Conflict("revision conflict")
         now = self._clock.now()
+        operation = MemoryOperation(
+            id=self._ids.new_id("operation"), scope_id=scope.id,
+            memory_id=memory.id, operation_type="CANDIDATE_CONFIRM",
+            operator_type=OperatorType.USER,
+            operator_id=operator_id or scope.identity.subject_id, occurred_at=now,
+            metadata=self._candidate_operation_metadata(memory, MemoryStatus.ACTIVE),
+        )
         await self._lifecycle.transition_memory(
             memory, MemoryStatus.ACTIVE,
             revision_id=self._ids.new_id("revision"), at=now,
             reason="user confirmed extraction candidate",
-            operator_type=OperatorType.USER,
+            operator_type=OperatorType.USER, operation=operation,
         )
         return self._store.get(
             memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
@@ -329,9 +426,10 @@ class ExtractionService:
 
     async def reject_candidate(
         self, scope: Scope, memory_id: str, *, expected_revision: int,
-        reason: str = "",
-    ) -> MemoryEntity:
+        reason: str = "", operator_id: str | None = None,
+    ) -> MemoryEntity | None:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        await self._expire_due_candidates(scope)
         memory = self._store.get(
             memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
         )
@@ -339,14 +437,30 @@ class ExtractionService:
             raise Conflict("only CANDIDATE memories can be rejected")
         if memory.current_revision != expected_revision:
             raise Conflict("revision conflict")
+        now = self._clock.now()
+        trimmed_reason = reason.strip()[:200]
+        purge_body = not self._rejected_keep_body
         change_reason = "user rejected extraction candidate"
-        if reason.strip():
-            change_reason = f"{change_reason}: {reason.strip()}"
-        await self._lifecycle.transition_memory(
-            memory, MemoryStatus.REJECTED,
-            revision_id=self._ids.new_id("revision"), at=self._clock.now(),
-            reason=change_reason, operator_type=OperatorType.USER,
+        if trimmed_reason:
+            change_reason = f"{change_reason}: {trimmed_reason}"
+        operation = MemoryOperation(
+            id=self._ids.new_id("operation"), scope_id=scope.id,
+            memory_id=memory.id, operation_type="CANDIDATE_REJECT",
+            operator_type=OperatorType.USER,
+            operator_id=operator_id or scope.identity.subject_id, occurred_at=now,
+            metadata=self._candidate_operation_metadata(
+                memory, MemoryStatus.REJECTED, reason=trimmed_reason,
+                body_retained=not purge_body,
+            ),
         )
+        await self._lifecycle.reject_candidate(
+            memory, expected_revision=expected_revision,
+            revision_id=self._ids.new_id("revision"), at=now,
+            reason=change_reason, operator_type=OperatorType.USER,
+            operation=operation, purge_body=purge_body,
+        )
+        if purge_body:
+            return None
         return self._store.get(
             memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
         )

@@ -36,6 +36,10 @@ def transition(memory: MemoryEntity, target: MemoryStatus, *, at: datetime,
     else:
         superseded_by = None
     return replace(memory, status=target, superseded_by=superseded_by,
+                   candidate_expires_at=(
+                       memory.candidate_expires_at
+                       if target is MemoryStatus.CANDIDATE else None
+                   ),
                    current_revision=memory.current_revision + 1, updated_at=at)
 
 

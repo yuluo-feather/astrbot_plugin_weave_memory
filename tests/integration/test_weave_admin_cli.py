@@ -130,3 +130,76 @@ def test_cli_group_destroy_requires_confirm_and_supports_no_backup(admin_env):
         "SELECT 1 FROM memory_scopes WHERE id=?",
         (admin_env["scope"].id,),
     ).fetchone() is None
+
+
+def _seed_expired_personal_candidate(admin_env) -> str:
+    identity = Identity(
+        "astrbot", "default", ScopeType.PERSONAL, "u1", SubjectType.USER, "u1",
+    )
+    scope_id = stable_scope_id(identity)
+    stamp = "2020-01-01T00:00:00.000000Z"
+    memory_id = "candidate-cli-expired"
+    with admin_env["db"].transaction() as conn:
+        conn.execute(
+            """INSERT INTO memory_scopes
+            (id, platform, tenant_id, scope_type, scope_external_id, subject_type,
+             subject_id, created_at, is_enabled, disabled_at, admin_ids_json,
+             admin_source)
+            VALUES (?, 'astrbot', 'default', 'PERSONAL', 'u1', 'USER', 'u1', ?,
+                    1, NULL, '[]', 'NONE')""",
+            (scope_id, stamp),
+        )
+        conn.execute(
+            """INSERT INTO memories
+            (id, scope_id, subject_id, memory_type, content, normalized_content,
+             normalization_version, status, source_type, current_revision,
+             valid_from, valid_until, candidate_expires_at, superseded_by,
+             created_at, updated_at, last_accessed_at, metadata_json)
+            VALUES (?, ?, 'u1', 'PREFERENCE', '过期候选', '过期候选', 1,
+                    'CANDIDATE', 'INFERRED', 1, NULL, NULL,
+                    '2020-01-02T00:00:00.000000Z', NULL, ?, ?, NULL, '{}')""",
+            (memory_id, scope_id, stamp, stamp),
+        )
+    return memory_id
+
+
+def test_cli_lists_and_expires_candidates(admin_env):
+    memory_id = _seed_expired_personal_candidate(admin_env)
+    result = _run(
+        "candidates", "--data-dir", str(admin_env["data_dir"]),
+        "--platform", "astrbot", "--tenant", "default", "--user", "u1",
+        "--show-content",
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["total"] == 0
+    assert payload["items"] == []
+    assert payload["archived"] == 1
+    row = admin_env["db"].connection.execute(
+        "SELECT status, content, candidate_expires_at FROM memories WHERE id=?",
+        (memory_id,),
+    ).fetchone()
+    assert row["status"] == "ARCHIVED"
+    assert row["content"] == "过期候选"
+    assert row["candidate_expires_at"] is None
+    assert admin_env["db"].connection.execute(
+        "SELECT count(*) FROM memory_operations WHERE operation_type='CANDIDATE_EXPIRE'",
+    ).fetchone()[0] == 1
+
+
+def test_cli_expire_candidates_handles_missing_scope(admin_env):
+    result = _run(
+        "expire-candidates", "--data-dir", str(admin_env["data_dir"]),
+        "--platform", "astrbot", "--tenant", "default", "--user", "missing",
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["archived"] == 0
+
+
+def test_cli_maintenance_status_reports_schema_and_index(admin_env):
+    result = _run("maintenance-status", "--data-dir", str(admin_env["data_dir"]))
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 7
+    assert payload["index"]["healthy"] is True
+    assert payload["secure_purge_pending"] is False

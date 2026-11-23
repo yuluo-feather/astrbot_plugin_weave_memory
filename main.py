@@ -21,6 +21,7 @@ from .adapters.astrbot.group_injection import AstrBotGroupMemoryInjector
 from .adapters.astrbot.injection import AstrBotMemoryInjector
 from .adapters.astrbot.recall_diagnostics import JsonlRecallDiagnostics
 from .adapters.astrbot.tool_call_binding import AstrBotToolCallBinding
+from .adapters.astrbot.web_api import AstrBotManagementApi
 from .adapters.sqlite.consents import SQLiteConsentStore
 from .adapters.sqlite.database import SQLiteDatabase
 from .adapters.sqlite.extraction_jobs import SQLiteExtractionJobStore
@@ -33,6 +34,7 @@ from .app.group_lifecycle_service import GroupLifecycleService
 from .app.group_memory_service import GroupMemoryService
 from .app.group_recall_service import GroupContextComposer, GroupRecallService
 from .app.lifecycle_service import LifecycleService
+from .app.management_service import ManagementService
 from .app.memory_service import MemoryApplicationService
 from .app.recall_service import MemoryContextComposer, RecallService
 from .app.scope_service import GroupScopeService, PersonalScopeService
@@ -190,6 +192,8 @@ class WeaveMemoryPlugin(Star):
                 max_retries=self._config_int("extraction_max_retries", 3),
                 timeout_seconds=self._config_int("extraction_timeout_seconds", 30),
                 queue_size=self._config_int("extraction_queue_size", 100),
+                candidate_ttl_days=self._config_int("candidate_ttl_days", 7),
+                rejected_keep_body=self._config_bool("rejected_keep_body", False),
             )
             if extraction_enabled:
                 recovered = extraction.recover_interrupted()
@@ -221,6 +225,52 @@ class WeaveMemoryPlugin(Star):
             self._group_injector = AstrBotGroupMemoryInjector(
                 group_scopes, consent, group_composer,
             )
+            api_admin_usernames = self._config_list("api_admin_usernames")
+            management = ManagementService(
+                repository=store, store=store, index=index, groups=group_scopes,
+                group_recall=group_recall, consent=consent,
+                settings={
+                    "auto_enroll": auto_enroll,
+                    "agent_write_enabled": self._config_bool("agent_write_enabled", True),
+                    "extraction_enabled": extraction_enabled,
+                    "extraction_min_messages": self._config_int(
+                        "extraction_min_messages", 5,
+                    ),
+                    "extraction_max_retries": self._config_int("extraction_max_retries", 3),
+                    "extraction_timeout_seconds": self._config_int(
+                        "extraction_timeout_seconds", 30,
+                    ),
+                    "extraction_queue_size": self._config_int("extraction_queue_size", 100),
+                    "candidate_ttl_days": self._config_int("candidate_ttl_days", 7),
+                    "rejected_keep_body": self._config_bool("rejected_keep_body", False),
+                    "group_max_tokens": self._config_int("group_max_tokens", 192),
+                    "group_max_memories": self._config_int("group_max_memories", 2),
+                    "group_candidate_limit": self._config_int("group_candidate_limit", 8),
+                    "group_max_active": self._config_int("group_max_active", 200),
+                    "group_retention_days": self._config_int("group_retention_days", 90),
+                    "group_destroy_backup_retention_days": destroy_backup_retention,
+                    "recall_diagnostics_enabled": diagnostics_enabled,
+                    "recall_diagnostics_retention_days": self._config_int(
+                        "recall_diagnostics_retention_days", 7,
+                    ),
+                    "recall_diagnostics_include_query": self._config_bool(
+                        "recall_diagnostics_include_query", False,
+                    ),
+                    "api_admin_whitelist_enabled": bool(api_admin_usernames),
+                },
+                group_max_tokens=self._config_int("group_max_tokens", 192),
+                group_max_memories=self._config_int("group_max_memories", 2),
+            )
+            management_api = AstrBotManagementApi(
+                management, admin_usernames=api_admin_usernames,
+            )
+            try:
+                registered = management_api.register(self.context)
+            except Exception as exc:  # noqa: BLE001 - API must not block plugin startup
+                logger.warning(f"织忆只读管理 API 注册失败：{type(exc).__name__}")
+            else:
+                if registered:
+                    logger.info("织忆只读管理 API 已注册。")
             self._ready = True
         except (OSError, RuntimeError, ValueError, StorageError, IndexUnavailable) as exc:
             logger.error(f"织忆初始化失败，记忆功能暂不可用：{type(exc).__name__}")
@@ -305,6 +355,17 @@ class WeaveMemoryPlugin(Star):
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return default
+
+    def _config_list(self, key: str) -> tuple[str, ...]:
+        if not hasattr(self._config, "get"):
+            return ()
+        raw = self._config.get(key, [])  # type: ignore[union-attr]
+        if not isinstance(raw, list):
+            return ()
+        return tuple(
+            item.strip() for item in raw
+            if isinstance(item, str) and item.strip()
+        )
 
     @staticmethod
     def _error_text(action: str, exc: Exception) -> str:

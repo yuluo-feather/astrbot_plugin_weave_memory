@@ -283,12 +283,12 @@ def test_group_clear_then_destroy_rolls_back_and_remigrates(group_stack):
     assert receipt.affected_count == 0
 
     db = group_stack["db"]
-    assert db.schema_version() == 6
+    assert db.schema_version() == 7
     db.rollback_to_v5()
     db.rollback_to_v10()
     assert db.schema_version() == 4
     db.migrate()
-    assert db.schema_version() == 6
+    assert db.schema_version() == 7
 
 
 def test_group_enable_does_not_enable_when_grant_fails(group_stack, monkeypatch):
@@ -379,6 +379,20 @@ def test_group_labels_map_to_memory_types(group_stack):
             operator_id="admin-1", decision=decision,
         ))
         assert memory.memory_type is memory_type
+
+    aliases = {
+        "话题": "topic",
+        "我的偏好": "agreement",
+        "氛围": "atmosphere",
+        "经历": "experience",
+    }
+    for index, (raw_label, canonical) in enumerate(aliases.items()):
+        memory, _ = asyncio.run(group_stack["memories"].save_group(
+            scope, f"{raw_label}-别名-{index}", group_label=raw_label,
+            operator_id="admin-1", decision=decision,
+        ))
+        assert memory.memory_type is expected[canonical]
+        assert memory.metadata["group_label"] == canonical
 
 
 def test_group_destroy_requires_disabled_scope(group_stack):

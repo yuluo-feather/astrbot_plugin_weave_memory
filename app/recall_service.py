@@ -62,6 +62,49 @@ class MemoryContext:
 
 
 @dataclass(frozen=True, slots=True)
+class BudgetSelection:
+    content: str
+    selected_ids: tuple[str, ...]
+    omitted: tuple[dict[str, object], ...]
+    estimated_tokens: int
+
+
+def escape_untrusted(content: str) -> str:
+    return content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def select_with_budget(
+    memories: tuple[MemoryEntity, ...], *, prefix: str, suffix: str,
+    max_tokens: int, max_memories: int,
+) -> BudgetSelection:
+    """Shared Personal/Group budget selection; never mutates access metadata."""
+    lines: list[str] = []
+    selected: list[str] = []
+    omitted: list[dict[str, object]] = []
+    for memory in memories:
+        if len(selected) >= max_memories:
+            omitted.append({"id": memory.id, "reason": "max_memories"})
+            continue
+        line = (
+            f"- [{memory.memory_type.value}] {escape_untrusted(memory.content)}"
+            f"（{memory.created_at.date().isoformat()}）"
+        )
+        candidate_content = prefix + "\n".join((*lines, line)) + suffix
+        if estimate_tokens(candidate_content) > max_tokens:
+            omitted.append({"id": memory.id, "reason": "token_budget"})
+            continue
+        lines.append(line)
+        selected.append(memory.id)
+    if not lines:
+        return BudgetSelection("", (), tuple(omitted), 0)
+    content = prefix + "\n".join(lines) + suffix
+    return BudgetSelection(
+        content=content, selected_ids=tuple(selected),
+        omitted=tuple(omitted), estimated_tokens=estimate_tokens(content),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class RecallTrace:
     trace_id: str
     occurred_at: str
@@ -241,7 +284,7 @@ class MemoryContextComposer:
 
     @staticmethod
     def _escape_untrusted(content: str) -> str:
-        return content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return escape_untrusted(content)
 
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
         candidates, trace = self._recall.recall_with_trace(
@@ -250,38 +293,24 @@ class MemoryContextComposer:
         if not candidates:
             self._recall.record_diagnostics(trace)
             return None
-        lines: list[str] = []
-        selected: list[str] = []
-        omitted: list[dict[str, object]] = []
-        for memory in candidates:
-            if len(selected) >= self._max_memories:
-                omitted.append({"id": memory.id, "reason": "max_memories"})
-                continue
-            line = (
-                f"- [{memory.memory_type.value}] {self._escape_untrusted(memory.content)}"
-                f"（{memory.created_at.date().isoformat()}）"
-            )
-            candidate_content = self._PREFIX + "\n".join((*lines, line)) + self._SUFFIX
-            if estimate_tokens(candidate_content) > self._max_tokens:
-                omitted.append({"id": memory.id, "reason": "token_budget"})
-                continue
-            lines.append(line)
-            selected.append(memory.id)
-        if not lines:
+        selection = select_with_budget(
+            candidates, prefix=self._PREFIX, suffix=self._SUFFIX,
+            max_tokens=self._max_tokens, max_memories=self._max_memories,
+        )
+        if not selection.selected_ids:
             self._recall.record_diagnostics(
-                trace, estimated_tokens=0,
-                omitted=tuple(omitted),
+                trace, estimated_tokens=0, omitted=selection.omitted,
             )
             return None
-        content = self._PREFIX + "\n".join(lines) + self._SUFFIX
-        await self._recall.record_access(tuple(selected), scope)
-        estimated_tokens = estimate_tokens(content)
+        await self._recall.record_access(selection.selected_ids, scope)
         self._recall.record_diagnostics(
-            trace, injected_ids=tuple(selected), estimated_tokens=estimated_tokens,
-            omitted=tuple(omitted),
+            trace, injected_ids=selection.selected_ids,
+            estimated_tokens=selection.estimated_tokens,
+            omitted=selection.omitted,
         )
         return MemoryContext(
-            content=content, selected_memory_ids=tuple(selected),
-            estimated_tokens=estimated_tokens, omitted_count=len(omitted),
-            omitted_reason="budget_or_max_memories" if omitted else None,
+            content=selection.content, selected_memory_ids=selection.selected_ids,
+            estimated_tokens=selection.estimated_tokens,
+            omitted_count=len(selection.omitted),
+            omitted_reason="budget_or_max_memories" if selection.omitted else None,
         )

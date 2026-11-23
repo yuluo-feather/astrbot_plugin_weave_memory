@@ -63,17 +63,25 @@ from data.plugins.astrbot_plugin_weave_memory.adapters.system import (
     UUID4IdGenerator,
 )
 from data.plugins.astrbot_plugin_weave_memory.app.consent_service import ConsentService
+from data.plugins.astrbot_plugin_weave_memory.app.extraction_service import (
+    expire_due_candidates,
+)
 from data.plugins.astrbot_plugin_weave_memory.app.group_lifecycle_service import (
     GroupLifecycleService,
+)
+from data.plugins.astrbot_plugin_weave_memory.app.lifecycle_service import (
+    LifecycleService,
 )
 from data.plugins.astrbot_plugin_weave_memory.app.scope_service import stable_scope_id
 from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
     WriteCoordinator,
 )
+from data.plugins.astrbot_plugin_weave_memory.core.errors import NotFound
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     AdminDecision,
     AdminSource,
     Identity,
+    Scope,
     ScopeType,
     SubjectType,
 )
@@ -95,11 +103,12 @@ def _lifecycle(db: SQLiteDatabase, data_dir: str):
     clock = SystemClock()
     ids = UUID4IdGenerator()
     consent = ConsentService(SQLiteConsentStore(db), coordinator, clock, ids)
-    lifecycle = GroupLifecycleService(
+    lifecycle = LifecycleService(coordinator, store, consent)
+    group_lifecycle = GroupLifecycleService(
         store, coordinator, consent, index, clock, ids,
         Path(data_dir) / "group_backups",
     )
-    return store, lifecycle
+    return store, group_lifecycle, lifecycle
 
 
 def cmd_groups(args: argparse.Namespace) -> int:
@@ -149,7 +158,7 @@ def cmd_group_destroy(args: argparse.Namespace) -> int:
         return 2
     db = _database(args.data_dir)
     try:
-        store, lifecycle = _lifecycle(db, args.data_dir)
+        store, lifecycle, _ = _lifecycle(db, args.data_dir)
         scope = store.get_scope(scope_id)
         decision = AdminDecision(
             AdminSource.EXPLICIT_CONFIG, (args.admin_id,), True, True,
@@ -167,12 +176,130 @@ def cmd_group_destroy(args: argparse.Namespace) -> int:
 def cmd_cleanup_backups(args: argparse.Namespace) -> int:
     db = _database(args.data_dir)
     try:
-        _, lifecycle = _lifecycle(db, args.data_dir)
+        _, lifecycle, _ = _lifecycle(db, args.data_dir)
         removed = lifecycle.cleanup_destroy_backups(args.days)
         print(json.dumps({"removed": removed}, ensure_ascii=True))
     finally:
         db.close()
     return 0
+
+
+def _target_identity(args: argparse.Namespace) -> Identity:
+    if args.user:
+        return Identity(
+            args.platform, args.tenant, ScopeType.PERSONAL,
+            args.user, SubjectType.USER, args.user,
+        )
+    return Identity(
+        args.platform, args.tenant, ScopeType.GROUP,
+        args.group, SubjectType.GROUP, args.group,
+    )
+
+
+def _expire_scope(db: SQLiteDatabase, data_dir: str, args: argparse.Namespace
+                  ) -> tuple[SQLiteMemoryStore, Scope, int]:
+    store, _, lifecycle = _lifecycle(db, data_dir)
+    scope_id = stable_scope_id(_target_identity(args))
+    scope = store.get_scope(scope_id)
+    archived = asyncio.run(expire_due_candidates(
+        store=store, lifecycle=lifecycle, clock=SystemClock(),
+        ids=UUID4IdGenerator(), scope=scope, operator_id="weave_admin",
+    ))
+    return store, scope, archived
+
+
+def cmd_candidates(args: argparse.Namespace) -> int:
+    if not 1 <= args.limit <= 100:
+        print(json.dumps({
+            "error": "limit must be between 1 and 100",
+        }, ensure_ascii=True))
+        return 2
+    db = _database(args.data_dir)
+    try:
+        try:
+            store, scope, archived = _expire_scope(db, args.data_dir, args)
+        except NotFound:
+            print(json.dumps({
+                "scope_id": stable_scope_id(_target_identity(args)),
+                "items": [],
+                "total": 0,
+                "archived": 0,
+            }, ensure_ascii=True, indent=2))
+            return 0
+        rows, total = store.list_candidates(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            limit=args.limit, offset=0,
+        )
+        items = []
+        for memory in rows:
+            item = {
+                "id": memory.id,
+                "memory_type": memory.memory_type.value,
+                "status": memory.status.value,
+                "current_revision": memory.current_revision,
+                "created_at": memory.created_at.isoformat(),
+                "candidate_expires_at": (
+                    memory.candidate_expires_at.isoformat()
+                    if memory.candidate_expires_at else None
+                ),
+            }
+            if args.show_content:
+                item["content"] = memory.content
+            items.append(item)
+        print(json.dumps({
+            "scope_id": scope.id,
+            "items": items,
+            "total": total,
+            "archived": archived,
+        }, ensure_ascii=True, indent=2))
+    finally:
+        db.close()
+    return 0
+
+
+def cmd_expire_candidates(args: argparse.Namespace) -> int:
+    db = _database(args.data_dir)
+    try:
+        try:
+            _, scope, archived = _expire_scope(db, args.data_dir, args)
+        except NotFound:
+            print(json.dumps({
+                "scope_id": stable_scope_id(_target_identity(args)),
+                "archived": 0,
+            }, ensure_ascii=True, indent=2))
+            return 0
+        print(json.dumps({
+            "scope_id": scope.id,
+            "archived": archived,
+        }, ensure_ascii=True, indent=2))
+    finally:
+        db.close()
+    return 0
+
+
+def cmd_maintenance_status(args: argparse.Namespace) -> int:
+    db = _database(args.data_dir)
+    try:
+        store, _, _ = _lifecycle(db, args.data_dir)
+        status = store.maintenance_status()
+        index = SQLiteFTSIndex(db)
+        status["index"] = {
+            "healthy": index.is_healthy(),
+            "documents": index.document_count(),
+        }
+        print(json.dumps(status, ensure_ascii=True, indent=2))
+    finally:
+        db.close()
+    return 0
+
+
+def _add_scope_target(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--platform", required=True)
+    parser.add_argument("--tenant", required=True)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--user", help="personal scope subject id")
+    target.add_argument("--group", help="group id")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -201,6 +328,26 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--data-dir", required=True)
     cleanup.add_argument("--days", type=int, default=30)
     cleanup.set_defaults(func=cmd_cleanup_backups)
+
+    candidates = sub.add_parser(
+        "candidates", help="list candidates and lazily archive expired ones",
+    )
+    _add_scope_target(candidates)
+    candidates.add_argument("--limit", type=int, default=50)
+    candidates.add_argument("--show-content", action="store_true")
+    candidates.set_defaults(func=cmd_candidates)
+
+    expire = sub.add_parser(
+        "expire-candidates", help="archive only expired candidates",
+    )
+    _add_scope_target(expire)
+    expire.set_defaults(func=cmd_expire_candidates)
+
+    maintenance = sub.add_parser(
+        "maintenance-status", help="show schema, index and purge status",
+    )
+    maintenance.add_argument("--data-dir", required=True)
+    maintenance.set_defaults(func=cmd_maintenance_status)
     return parser
 
 

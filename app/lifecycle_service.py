@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..core.errors import ConsentRevocationPending, InvalidTransition, StorageError
-from ..core.model import MemoryEntity, MemoryRevision, MemoryStatus, OperatorType
+from ..core.model import (
+    MemoryEntity,
+    MemoryOperation,
+    MemoryRevision,
+    MemoryStatus,
+    OperatorType,
+)
 from ..core.policy.lifecycle import archive_expired_candidate, expire_if_due, transition
 from ..core.ports import ScopeStore
 from .consent_service import ConsentService, PersonalConsentType
@@ -22,7 +28,8 @@ class LifecycleService:
     async def transition_memory(self, memory: MemoryEntity, target: MemoryStatus, *,
                                 revision_id: str, at: datetime, reason: str,
                                 operator_type: OperatorType,
-                                superseded_by: str | None = None) -> WriteReceipt:
+                                superseded_by: str | None = None,
+                                operation: MemoryOperation | None = None) -> WriteReceipt:
         if target is MemoryStatus.DELETED:
             raise InvalidTransition("use delete_memory for irreversible physical deletion")
         updated = transition(
@@ -40,6 +47,7 @@ class LifecycleService:
         )
         return await self._coordinator.update_lifecycle(
             updated, expected_revision=memory.current_revision, revision=revision,
+            operation=operation,
         )
 
     async def expire_active(self, memory: MemoryEntity, *, revision_id: str,
@@ -54,7 +62,8 @@ class LifecycleService:
 
     async def archive_candidate(self, memory: MemoryEntity, *,
                                 candidate_expires_at: datetime,
-                                revision_id: str, at: datetime) -> WriteReceipt | None:
+                                revision_id: str, at: datetime,
+                                operation: MemoryOperation | None = None) -> WriteReceipt | None:
         updated = archive_expired_candidate(
             memory, candidate_expires_at=candidate_expires_at, at=at,
         )
@@ -63,6 +72,27 @@ class LifecycleService:
         return await self.transition_memory(
             memory, updated.status, revision_id=revision_id, at=at,
             reason="candidate workflow TTL expired", operator_type=OperatorType.SYSTEM,
+            operation=operation,
+        )
+
+    async def reject_candidate(self, memory: MemoryEntity, *, expected_revision: int,
+                               revision_id: str, at: datetime, reason: str,
+                               operator_type: OperatorType,
+                               operation: MemoryOperation,
+                               purge_body: bool) -> WriteReceipt:
+        updated = transition(memory, MemoryStatus.REJECTED, at=at,
+                             operator_type=operator_type)
+        revision = MemoryRevision(
+            id=revision_id, memory_id=updated.id, revision=updated.current_revision,
+            content=updated.content, status=updated.status, changed_at=at,
+            change_reason=reason,
+            snapshot={"scope_id": updated.scope_id, "subject_id": updated.subject_id,
+                      "memory_type": updated.memory_type.value,
+                      "source_type": updated.source_type.value},
+        )
+        return await self._coordinator.reject_candidate(
+            updated, expected_revision=expected_revision, revision=revision,
+            operation=operation, purge_body=purge_body,
         )
 
     async def delete_memory(self, memory_id: str, *, scope_id: str,
