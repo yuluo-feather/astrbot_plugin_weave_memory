@@ -111,3 +111,19 @@ Recall 候选查找与上下文注入之间可能发生 Consent revoke 或 Scope
 - AstrBot 4.29.4 的工具执行前 Hook 不暴露 `tool_call_id`，完成后的 LLMResponse Hook 时序太晚；V1.3 写工具改用插件侧 `evidence_ref`：`tool:<name>#message:<message_id>#sha256:<content_hash>`，缺 message_id 时退回 `session:<unified_msg_origin>`，两者都没有才 fail-closed。该值不冒充宿主 ID。`MemorySource.metadata` 记录 `origin=agent_tool`、`tool_name`、`session_id`、`message_id`、`content_sha256`、`requested_persistence` 与可选 `reason`；命令写入继续标记 `EXPLICIT` / `USER`。
 - Personal/Group 检索诊断写入插件数据目录 `recall_diagnostics/recall-YYYY-MM-DD.jsonl`，每请求一行，含 trace_id、identity/scope 摘要、候选 ID/BM25 排名/过滤原因、最终注入 ID、Token 估算与 query hash；默认不写查询原文或记忆正文，默认保留 7 天。查询原文需显式 opt-in，并对邮箱、手机号与长数字串做常见模式脱敏；该脱敏不保证识别所有个人信息。
 - 后台自动提取仍只产 `INFERRED` 候选，不自动升级 `ACTIVE`；本次变更不等于开启无确认的推断记忆。
+
+## 12. V1.5 自动提取安全边界（M0 契约）
+
+依据：V1.5 计划书 §4、§9；ADR-0015。
+
+- 默认关闭：全局 `extraction_enabled=false`；V1.2 默认登记与 V1.3 Agent 工具写入都不构成捕获/提取/外部模型授权。
+- 分层 opt-in：`capture / auto_extract / external_model / store_candidate` 分别记录、append-only；`external_model` 未授予时自动提取不执行，不静默外发。
+- 捕获范围：仅 `scope_type=personal` 的私聊；群聊、群共享、Group personal 一律不捕获、不进入窗口或 LLM。
+- 闸门顺序：身份 → scope 启用 → `personal_memory` 与 `extraction_*` 授权 → 敏感预过滤 → 窗口 → `LlmExtractor`。不得先建窗口或调用模型再过滤。
+- 敏感前置过滤：凭据/密码/令牌/API key、身份证件号、银行卡号、精确住址默认拦截或脱敏；无法可靠识别但疑似敏感的内容默认不送外部模型；不记录正文到运行日志。
+- 敏感类别进入候选必须命中 `extraction_sensitive_categories` 白名单；白名单为空时一律不保存敏感类别。
+- 候选隔离：`CANDIDATE` 不参与检索/注入/导出；只有用户确认后转 `ACTIVE` 并进入 FTS。
+- 失败隔离：模型超时、输出不合法、任务失败均不阻塞聊天；任务错误只记录类型化摘要，不记录正文。
+- 安全验收：Sensitive Leakage Rate 必须为 0；Sensitive Leakage 与错误归属不能被其他平均指标抵消。
+- 候选确认/拒绝仅用户命令；V1.5 不注册 Agent 候选工具，避免模型代替用户确认推断内容。
+

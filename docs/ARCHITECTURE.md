@@ -90,3 +90,20 @@ V0 目标为单进程、单实例、SQLite。写操作由应用层统一协调�
 - `AstrBotMemoryCommands.remember` 作为模型工具入口，调用 `MemoryApplicationService.save_agent`；来源 `AGENT`，不绕过 Consent/Scope/WriteCoordinator。
 - 群共享路径（`AstrBotGroupCommands` / `GroupContextComposer`）不参与 auto_enroll。
 - 后台自动提取组件（`LlmExtractor` / `ExtractionService`）仍为预留边界，不在 V1.2 实现；V1.5 只产候选。
+
+## 10. V1.5 自动提取边界（M0 契约）
+
+依据：V1.5 计划书 §4–§7；ADR-0015。
+
+- 组件边界：
+  - `core`：提取相关的领域约束（允许类型、候选状态、授权有效条件）与 `LlmExtractor` 端口，不调用 LLM、不读取宿主事件。
+  - `app`：`ExtractionService` 负责闸门、任务幂等、候选写入、失败隔离与恢复；复用 `WriteCoordinator`、`MemoryStore`、`ConsentService`。
+  - `adapters/sqlite`：实现 `extraction_jobs` 与候选读写；迁移 `006_extraction_jobs.sql`。
+  - `adapters/astrbot`：私聊事件捕获、提取命令、候选命令与模型 Provider 适配；不承载领域规则。
+- 数据流：私聊事件 → 身份/scope/consent 闸门 → 敏感预过滤 → 窗口 → `LlmExtractor` → Schema 校验 → 归一化/去重/冲突 → `CANDIDATE`。
+- `CANDIDATE` 不进入召回/注入/FTS；确认后由生命周期服务转 `ACTIVE`。
+- 群事件不进入该管线；Group personal 与群提取不在 V1.5。
+- 失败隔离：提取任务异常不影响聊天；注入与显式写入路径不变。
+- M1 已实现：schema v6、分层 consent、`extraction_jobs`、`ExtractionService`、私聊捕获（单条/批量）、敏感前置过滤、候选命令与离线指标 harness。真实宿主模型调用与质量采集待补。
+- 实现不改 V1.4 显式写入、检索、注入与群路径语义。
+

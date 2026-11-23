@@ -144,6 +144,7 @@ def test_group_backup_destroy_and_rollback_path(tmp_path):
     digest = store.backup_group_scope(scope.id, str(backup))
     assert backup.exists() and len(digest) == 64
 
+    db.rollback_to_v5()
     with pytest.raises(StorageError):
         db.rollback_to_v10()
     assert db.schema_version() == 5
@@ -171,14 +172,14 @@ def test_group_backup_destroy_and_rollback_path(tmp_path):
     db.rollback_to_v10()
     assert db.schema_version() == 4
     db.migrate()
-    assert db.schema_version() == 5
+    assert db.schema_version() == 6
     db.close()
 
 
 def test_migration_is_idempotent_and_creates_required_tables(sqlite_stack):
     db, _, _, _ = sqlite_stack
     assert db.connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
-    assert db.schema_version() == 5
+    assert db.schema_version() == 6
     db.migrate()
     tables = {row[0] for row in db.connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
@@ -291,7 +292,7 @@ def test_schema_can_roll_back_to_empty_and_reapply(tmp_path):
     db.rollback_to_zero()
     assert db.connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memories'").fetchone()[0] == 0
     db.migrate()
-    assert db.schema_version() == 5
+    assert db.schema_version() == 6
     db.close()
 
 
@@ -409,6 +410,7 @@ def test_v4_migration_failure_rolls_back_ddl_and_version_marker(tmp_path, monkey
 
     db = SQLiteDatabase(tmp_path / "failed-v4-migration.db")
     db.migrate()
+    db.rollback_to_v5()
     db.rollback_to_v10()
     db.rollback_to_v05()
     assert db.schema_version() == 3
@@ -436,11 +438,12 @@ def test_v4_migration_failure_rolls_back_ddl_and_version_marker(tmp_path, monkey
 def test_v3_database_upgrades_to_v5_group_scopes(tmp_path):
     db = SQLiteDatabase(tmp_path / "upgrade-v3.db")
     db.migrate()
+    db.rollback_to_v5()
     db.rollback_to_v10()
     db.rollback_to_v05()
     assert db.schema_version() == 3
     db.migrate()
-    assert db.schema_version() == 5
+    assert db.schema_version() == 6
     assert db.connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone() is not None
@@ -453,6 +456,7 @@ def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
     db_path = tmp_path / "backup-before-v5.db"
     db = SQLiteDatabase(db_path)
     db.migrate()
+    db.rollback_to_v5()
     db.rollback_to_v10()
     assert db.schema_version() == 4
     store = SQLiteMemoryStore(db)
@@ -468,7 +472,7 @@ def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
     assert backup_path is not None
     assert backup_path.exists()
     assert backup_path.parent.name == "migration_backups"
-    assert upgraded.schema_version() == 5
+    assert upgraded.schema_version() == 6
     assert SQLiteMemoryStore(upgraded).get(
         memory.id, scope_id=scope.id, subject_id="backup-user",
     ) == memory
@@ -494,6 +498,7 @@ def test_migration_backup_failure_aborts_upgrade(tmp_path, monkeypatch):
     db_path = tmp_path / "backup-failure.db"
     db = SQLiteDatabase(db_path)
     db.migrate()
+    db.rollback_to_v5()
     db.rollback_to_v10()
     store = SQLiteMemoryStore(db)
     identity = Identity("astrbot", "default", ScopeType.PERSONAL,
@@ -537,6 +542,7 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
     store = SQLiteMemoryStore(db)
     store.create_scope(scope)
     existing = add_memory(store, scope, memory_id="rollback-existing", content="回滚后保留")
+    db.rollback_to_v5()
     db.rollback_to_v10()
     db.rollback_to_v05()
     assert db.schema_version() == 3
@@ -545,8 +551,9 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
     ).fetchone() is None
     assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
     db.migrate()
-    assert db.schema_version() == 5
+    assert db.schema_version() == 6
     assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
+    db.rollback_to_v5()
     db.rollback_to_v10()
     first = add_memory(store, scope, memory_id="rollback-a", content="第一条")
     second = add_memory(store, scope, memory_id="rollback-b", content="第二条")

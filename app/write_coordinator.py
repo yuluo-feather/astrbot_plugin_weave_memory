@@ -91,10 +91,13 @@ class WriteCoordinator:
         return self._index_state()
 
     async def create(self, memory: MemoryEntity, revision: MemoryRevision,
-                     source: MemorySource) -> WriteReceipt:
+                     source: MemorySource, *,
+                     guard: Callable[[], None] | None = None) -> WriteReceipt:
         async with self._lock:
             with self._write_lock:
                 self._ensure_open()
+                if guard is not None:
+                    guard()
                 self._store.create(memory, revision, source)
                 return WriteReceipt(memory.id, memory.current_revision,
                                     self._sync_one(memory.id))

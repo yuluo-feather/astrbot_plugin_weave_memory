@@ -1,0 +1,363 @@
+"""V1.5 personal extraction pipeline (ADR-0015)."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import replace
+from datetime import datetime
+from hashlib import sha256
+
+from ..core.errors import AuthorizationDenied, Conflict, NotFound, ValidationError
+from ..core.model import (
+    ExtractionCandidate,
+    ExtractionJob,
+    ExtractionJobStatus,
+    ExtractionWindow,
+    MemoryEntity,
+    MemoryRevision,
+    MemorySource,
+    MemoryStatus,
+    MemoryType,
+    OperatorType,
+    Scope,
+    ScopeType,
+    SourceType,
+)
+from ..core.normalization import normalize_content
+from ..core.policy.dedup import DedupKey
+from ..core.ports import (
+    Clock,
+    ExtractionJobStore,
+    IdGenerator,
+    LlmExtractor,
+    MemoryStore,
+    ScopeStore,
+)
+from .consent_service import ConsentService, PersonalConsentType
+from .extraction_gates import ExtractionGates, resolve_gates
+from .lifecycle_service import LifecycleService
+from .sensitive_filter import scan_sensitive
+from .write_coordinator import WriteCoordinator
+
+_ALLOWED_TYPES = (MemoryType.PREFERENCE, MemoryType.FACT, MemoryType.EVENT)
+
+
+class ExtractionService:
+    def __init__(
+        self, *, store: MemoryStore, jobs: ExtractionJobStore,
+        coordinator: WriteCoordinator, consent: ConsentService,
+        scopes: ScopeStore, lifecycle: LifecycleService,
+        extractor: LlmExtractor, clock: Clock, ids: IdGenerator,
+        global_enabled: bool = False, max_retries: int = 3,
+        timeout_seconds: float = 30.0, queue_size: int = 100,
+    ) -> None:
+        self._store = store
+        self._jobs = jobs
+        self._coordinator = coordinator
+        self._consent = consent
+        self._scopes = scopes
+        self._lifecycle = lifecycle
+        self._extractor = extractor
+        self._clock = clock
+        self._ids = ids
+        self._global_enabled = global_enabled
+        self._max_retries = max(1, max_retries)
+        self._timeout = max(1.0, timeout_seconds)
+        self._queue_size = max(1, queue_size)
+
+    def gates(self, scope: Scope) -> ExtractionGates:
+        return resolve_gates(
+            scope, self._consent, self._scopes, global_enabled=self._global_enabled,
+        )
+
+    def _require_store_gate(self, scope: Scope) -> None:
+        if not self.gates(scope).can_store:
+            raise AuthorizationDenied("extraction consent no longer allows storing candidates")
+
+    async def submit(
+        self, scope: Scope, *, conversation_id: str, message_id: str,
+        content: str, watermark: int = 0,
+    ) -> ExtractionJob | None:
+        """Capture one private message and run the bounded extraction pipeline."""
+        return await self.submit_messages(
+            scope, conversation_id=conversation_id,
+            messages=((message_id, content),), watermark=watermark,
+        )
+
+    async def submit_messages(
+        self, scope: Scope, *, conversation_id: str,
+        messages: tuple[tuple[str, str], ...], watermark: int = 0,
+    ) -> ExtractionJob | None:
+        """Capture a message batch; sensitive messages are dropped before the model."""
+        if scope.identity.scope_type is not ScopeType.PERSONAL:
+            return None
+        gates = self.gates(scope)
+        if not gates.can_store:
+            return None
+        allowed: list[str] = []
+        message_ids: list[str] = []
+        detected: set[str] = set()
+        for message_id, content in messages:
+            normalized = normalize_content(content)
+            if not normalized:
+                continue
+            scan = scan_sensitive(content, gates.sensitive_categories)
+            detected.update(scan.detected)
+            if scan.is_blocked:
+                continue
+            allowed.append(content)
+            message_ids.append(message_id)
+        if not allowed:
+            return None
+
+        now = self._clock.now()
+        content_hash = sha256(
+            "\n".join(normalize_content(message) for message in allowed).encode("utf-8")
+        ).hexdigest()
+        job = ExtractionJob(
+            id=self._ids.new_id("extraction_job"),
+            platform=scope.identity.platform, tenant_id=scope.identity.tenant_id,
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            conversation_id=conversation_id, watermark=watermark,
+            content_hash=content_hash,
+            status=ExtractionJobStatus.PENDING, attempts=0,
+            created_at=now, updated_at=now,
+            metadata={
+                "message_ids": message_ids,
+                "message_count": len(message_ids),
+                "sensitive_categories": sorted(detected),
+            },
+        )
+        if self._pending_count(scope) >= self._queue_size:
+            full = replace(job, status=ExtractionJobStatus.FAILED,
+                           last_error="queue_full")
+            stored, _created = self._jobs.create_or_get(full)
+            return stored
+        stored, created = self._jobs.create_or_get(job)
+        if not created and stored.status is not ExtractionJobStatus.PENDING:
+            return stored
+        window = ExtractionWindow(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            conversation_id=conversation_id, watermark=watermark,
+            content_hash=job.content_hash, messages=tuple(allowed),
+        )
+        return await self._run(scope, stored, window, gates)
+
+    def _pending_count(self, scope: Scope) -> int:
+        counts = self._jobs.count_by_status(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        return counts.get(ExtractionJobStatus.PENDING.value, 0)
+
+    async def _run(
+        self, scope: Scope, job: ExtractionJob, window: ExtractionWindow,
+        gates: ExtractionGates,
+    ) -> ExtractionJob:
+        running = replace(
+            job, status=ExtractionJobStatus.RUNNING, attempts=job.attempts + 1,
+            updated_at=self._clock.now(),
+        )
+        try:
+            self._jobs.update(running, expected_status=ExtractionJobStatus.PENDING)
+        except Conflict:
+            return self._jobs.get(job.id)
+
+        try:
+            async with asyncio.timeout(self._timeout):
+                candidates = await self._extractor.extract(
+                    window, allowed_types=_ALLOWED_TYPES,
+                    sensitive_categories=gates.sensitive_categories,
+                )
+            created_any, skipped_any = await self._materialize(
+                scope, job.id, candidates,
+            )
+        except (AuthorizationDenied, ValidationError) as exc:
+            return self._finish(
+                running, ExtractionJobStatus.FAILED, last_error=type(exc).__name__,
+            )
+        except Exception as exc:  # Boundary: extractor/task failure must not block chat.
+            return self._finish(
+                running,
+                ExtractionJobStatus.FAILED
+                if running.attempts >= self._max_retries
+                else ExtractionJobStatus.PENDING,
+                last_error=type(exc).__name__,
+            )
+        if created_any:
+            return self._finish(running, ExtractionJobStatus.SUCCEEDED)
+        if skipped_any:
+            return self._finish(running, ExtractionJobStatus.SKIPPED_DUPLICATE_ACTIVE)
+        return self._finish(running, ExtractionJobStatus.SUCCEEDED)
+
+    def _finish(
+        self, job: ExtractionJob, status: ExtractionJobStatus, *,
+        last_error: str | None = None,
+    ) -> ExtractionJob:
+        finished = replace(
+            job, status=status, last_error=last_error, updated_at=self._clock.now(),
+        )
+        try:
+            self._jobs.update(finished, expected_status=ExtractionJobStatus.RUNNING)
+        except Conflict:
+            return self._jobs.get(job.id)
+        return finished
+
+    async def _materialize(
+        self, scope: Scope, job_id: str, candidates: tuple[ExtractionCandidate, ...],
+    ) -> tuple[bool, bool]:
+        created_any = False
+        skipped_any = False
+        now = self._clock.now()
+        for candidate in candidates:
+            if candidate.memory_type not in _ALLOWED_TYPES:
+                continue
+            normalized = normalize_content(candidate.content)
+            if not normalized:
+                continue
+            key = DedupKey(
+                scope.id, scope.identity.subject_id, candidate.memory_type.value,
+                normalized,
+            )
+            if self._store.find_active_duplicate(key) is not None:
+                skipped_any = True
+                continue
+            if self._store.find_candidate_duplicate(key) is not None:
+                skipped_any = True
+                continue
+            try:
+                await self._create_candidate(scope, candidate, job_id, now)
+            except Conflict:
+                skipped_any = True
+                continue
+            created_any = True
+        return created_any, skipped_any
+
+    async def _create_candidate(
+        self, scope: Scope, candidate: ExtractionCandidate, job_id: str,
+        now: datetime,
+    ) -> None:
+        memory_id = self._ids.new_id("memory")
+        normalized = normalize_content(candidate.content)
+        metadata = {
+            "extraction_job_id": job_id,
+            "confidence": candidate.confidence,
+        }
+        memory = MemoryEntity(
+            id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+            memory_type=candidate.memory_type, content=candidate.content,
+            normalized_content=normalized, status=MemoryStatus.CANDIDATE,
+            source_type=SourceType.INFERRED, current_revision=1,
+            created_at=now, updated_at=now, metadata=metadata,
+        )
+        revision = MemoryRevision(
+            id=self._ids.new_id("revision"), memory_id=memory_id, revision=1,
+            content=candidate.content, status=MemoryStatus.CANDIDATE,
+            changed_at=now, change_reason="background extraction candidate",
+            snapshot={
+                "scope_id": scope.id, "subject_id": scope.identity.subject_id,
+                "memory_type": candidate.memory_type.value,
+                "source_type": SourceType.INFERRED.value,
+            },
+        )
+        source = MemorySource(
+            id=self._ids.new_id("source"), memory_id=memory_id,
+            source_type=SourceType.INFERRED, operator_type=OperatorType.SYSTEM,
+            operator_id="extraction_service", captured_at=now,
+            evidence_ref=f"extraction_job:{job_id}",
+            metadata={
+                "source_message_ids": list(candidate.source_message_ids),
+                "confidence": candidate.confidence,
+            },
+        )
+        await self._coordinator.create(
+            memory, revision, source,
+            guard=lambda: self._require_store_gate(scope),
+        )
+
+    def list_candidates(
+        self, scope: Scope, *, limit: int = 20, offset: int = 0,
+    ) -> tuple[tuple[MemoryEntity, ...], int]:
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        return self._store.list_candidates(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            limit=limit, offset=offset,
+        )
+
+    def get_candidate(self, scope: Scope, memory_id: str) -> MemoryEntity:
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        if memory.status is not MemoryStatus.CANDIDATE:
+            raise NotFound("candidate not found")
+        return memory
+
+    async def confirm_candidate(
+        self, scope: Scope, memory_id: str, *, expected_revision: int,
+    ) -> MemoryEntity:
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        if memory.status is not MemoryStatus.CANDIDATE:
+            raise Conflict("only CANDIDATE memories can be confirmed")
+        if memory.current_revision != expected_revision:
+            raise Conflict("revision conflict")
+        now = self._clock.now()
+        await self._lifecycle.transition_memory(
+            memory, MemoryStatus.ACTIVE,
+            revision_id=self._ids.new_id("revision"), at=now,
+            reason="user confirmed extraction candidate",
+            operator_type=OperatorType.USER,
+        )
+        return self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+
+    async def reject_candidate(
+        self, scope: Scope, memory_id: str, *, expected_revision: int,
+        reason: str = "",
+    ) -> MemoryEntity:
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        if memory.status is not MemoryStatus.CANDIDATE:
+            raise Conflict("only CANDIDATE memories can be rejected")
+        if memory.current_revision != expected_revision:
+            raise Conflict("revision conflict")
+        change_reason = "user rejected extraction candidate"
+        if reason.strip():
+            change_reason = f"{change_reason}: {reason.strip()}"
+        await self._lifecycle.transition_memory(
+            memory, MemoryStatus.REJECTED,
+            revision_id=self._ids.new_id("revision"), at=self._clock.now(),
+            reason=change_reason, operator_type=OperatorType.USER,
+        )
+        return self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+
+    def job_summary(self, scope: Scope) -> dict[str, int]:
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        return self._jobs.count_by_status(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+
+    def recover_interrupted(self) -> int:
+        """Mark jobs interrupted by restart as FAILED; windows are not persisted."""
+        now = self._clock.now()
+        recovered = 0
+        for job in self._jobs.list_by_status(
+            statuses=(ExtractionJobStatus.RUNNING,), limit=1000,
+        ):
+            failed = replace(
+                job, status=ExtractionJobStatus.FAILED,
+                last_error="interrupted_by_restart", updated_at=now,
+            )
+            try:
+                self._jobs.update(failed, expected_status=ExtractionJobStatus.RUNNING)
+            except Conflict:
+                continue
+            recovered += 1
+        return recovered

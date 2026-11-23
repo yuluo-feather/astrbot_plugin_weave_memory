@@ -216,6 +216,93 @@ class MemoryEntity:
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
+class ExtractionJobStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    SKIPPED_DUPLICATE_ACTIVE = "SKIPPED_DUPLICATE_ACTIVE"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionJob:
+    id: str
+    platform: str
+    tenant_id: str
+    scope_id: str
+    subject_id: str
+    conversation_id: str
+    watermark: int
+    content_hash: str
+    status: ExtractionJobStatus
+    attempts: int
+    created_at: datetime
+    updated_at: datetime
+    last_error: str | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in (
+            "id", "platform", "tenant_id", "scope_id", "subject_id",
+            "conversation_id", "content_hash",
+        ):
+            value = getattr(self, name)
+            if not value or not value.strip():
+                raise ValidationError(f"{name} must be non-empty")
+        if self.watermark < 0:
+            raise ValidationError("watermark must be non-negative")
+        if self.attempts < 0:
+            raise ValidationError("attempts must be non-negative")
+        for name in ("created_at", "updated_at"):
+            object.__setattr__(self, name, require_aware_utc(getattr(self, name), name))
+        if self.updated_at < self.created_at:
+            raise ValidationError("updated_at must not be earlier than created_at")
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionWindow:
+    scope_id: str
+    subject_id: str
+    conversation_id: str
+    watermark: int
+    content_hash: str
+    messages: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("scope_id", "subject_id", "conversation_id", "content_hash"):
+            value = getattr(self, name)
+            if not value or not value.strip():
+                raise ValidationError(f"{name} must be non-empty")
+        if self.watermark < 0:
+            raise ValidationError("watermark must be non-negative")
+        messages = tuple(self.messages)
+        if not messages:
+            raise ValidationError("extraction window requires at least one message")
+        if any(not message.strip() for message in messages):
+            raise ValidationError("extraction window messages must be non-empty")
+        object.__setattr__(self, "messages", messages)
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionCandidate:
+    memory_type: MemoryType
+    content: str
+    confidence: float | None = None
+    source_message_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.content.strip():
+            raise ValidationError("candidate content must be non-empty")
+        if self.confidence is not None and not 0.0 <= self.confidence <= 1.0:
+            raise ValidationError("confidence must be between 0 and 1")
+        source_ids = tuple(self.source_message_ids)
+        if any(not message_id.strip() for message_id in source_ids):
+            raise ValidationError("source_message_ids must be non-empty")
+        object.__setattr__(self, "source_message_ids", source_ids)
+
+
 @dataclass(frozen=True, slots=True)
 class MemoryConsent:
     id: str

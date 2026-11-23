@@ -176,3 +176,57 @@ V1.0 该表没有 `scope_id` 列，也没有应用层写入/查询 API；跨 Sco
 - 模型工具写入使用既有 `SourceType.AGENT` 与 `OperatorType.AGENT`；`memories.source_type=AGENT`，不引入新列。
 - `MemoryApplicationService.save_agent` 与显式保存共用 `(scope_id, subject_id, memory_type, normalized_content)` 去重键、Revision/Source 和 WriteCoordinator guard。
 - 后台自动提取仍使用 `SourceType.INFERRED` 与 `CANDIDATE`；不在 V1.2 写入 ACTIVE。
+
+## 15. V1.5 自动提取数据模型（M0 契约）
+
+依据：V1.5 计划书 §7；ADR-0015；ADR-0014。
+
+### Consent
+
+- `memory_consents.consent_type` 新增：
+  - `extraction_capture`
+  - `extraction_auto_extract`
+  - `extraction_external_model`
+  - `extraction_store_candidate`
+  - `extraction_sensitive_categories`
+- 事件 append-only；按 `(subject_id, scope_id, consent_type)` 最后一条为准。
+- `extraction_sensitive_categories` 在白名单事件中写 `metadata_json.categories: []`；空列表表示不保存敏感类别。
+- `auto_enroll` 只写 `personal_memory`，不写以上类型。
+
+### extraction_jobs（schema v6）
+
+| 列 | 类型/约束 | 说明 |
+|---|---|---|
+| `id` | TEXT PRIMARY KEY | 任务 ID |
+| `platform` | TEXT NOT NULL | 平台 |
+| `tenant_id` | TEXT NOT NULL | 平台实例/租户 |
+| `scope_id` | TEXT NOT NULL | 只允许 Personal scope |
+| `subject_id` | TEXT NOT NULL | 用户主体 |
+| `conversation_id` | TEXT NOT NULL | 会话标识 |
+| `watermark` | INTEGER NOT NULL | 窗口水位线 |
+| `content_hash` | TEXT NOT NULL | 窗口内容指纹 |
+| `status` | TEXT NOT NULL CHECK | 六态之一 |
+| `attempts` | INTEGER NOT NULL DEFAULT 0 | 重试次数 |
+| `last_error` | TEXT | 类型化错误摘要，不含正文 |
+| `created_at` / `updated_at` | TEXT NOT NULL | UTC ISO-8601 |
+| `metadata_json` | TEXT NOT NULL DEFAULT '{}' | 任务扩展信息 |
+
+- 唯一索引：`(platform, tenant_id, scope_id, conversation_id, watermark, content_hash)`。
+- 按 `status, created_at` 建索引，便于恢复与积压统计。
+- 任务不保存完整对话原文；`metadata_json` 不得写正文。
+
+### 候选
+
+- 提取写入 `memories`：`status=CANDIDATE`、`source_type=INFERRED`，类型限 `PREFERENCE/FACT/EVENT`。
+- 去重键沿用 `(scope_id, subject_id, memory_type, normalized_content)`；`ACTIVE` 与 `CANDIDATE` 互斥唯一索引不变。
+- 同键 `ACTIVE` 存在时不创建候选；同键 `CANDIDATE` 存在时幂等更新。
+- 候选来源证据写 `memory_sources`，`source_type=INFERRED`，`operator_type=system`；不得写成 `EXPLICIT/AGENT`。
+- 候选不进入 FTS；确认后转为 `ACTIVE` 并进入索引。
+- 候选过期转 `ARCHIVED`，不物理删除；`candidate_expires_at` 列与 TTL 在 V1.6。
+
+### 迁移与回滚
+
+- 迁移 `006_extraction_jobs.sql` 只新增 `extraction_jobs`；`memory_consents` 的 `consent_type` 无 CHECK 约束扩展，沿用现有表。
+- 迁移前自动备份并校验，失败中止。
+- v6→v5 回滚守卫：`extraction_jobs` 为空，或保留表停用、不删除数据。
+

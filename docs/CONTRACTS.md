@@ -292,3 +292,74 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - V1.3 个人删除、清空、关闭均需二次确认；删除格式为 `/织忆 删除 <记忆ID> 确认`。状态/统计/操作记录/导出只读取当前 Personal Scope，操作记录不含正文。
 - `memory_operations.metadata_json` 默认包含 `result=SUCCESS`，不记录正文；失败以类型化异常/日志呈现，ledger 级 result 留到 V1.8。
 - 注入无缓存；删除/清空/关闭后下一次注入重新检索，不得出现旧记忆。
+
+## 13. V1.5 自动提取契约（M0 冻结）
+
+依据：`星羽塔罗_织忆_V1.5_添线_计划书.md` V1.5；ADR-0015；ADR-0014（schema v6）。
+
+### 授权类型
+
+- `PersonalConsentType` 新增 `EXTRACTION_CAPTURE`、`EXTRACTION_AUTO_EXTRACT`、`EXTRACTION_EXTERNAL_MODEL`、`EXTRACTION_STORE_CANDIDATE`、`EXTRACTION_SENSITIVE_CATEGORIES`，值分别为 `extraction_capture / extraction_auto_extract / extraction_external_model / extraction_store_candidate / extraction_sensitive_categories`。
+- 全部 append-only；按 `(subject_id, scope_id, consent_type)` 取最后一条事件为准，不 UPDATE 历史行。
+- `extraction_sensitive_categories` 的 `metadata_json.categories` 保存敏感类别白名单；空列表表示不保存敏感类别。
+- V1.2 的 `auto_enroll` 只写 `personal_memory`，不授予以上任何一项。
+
+### 有效条件
+
+有效条件是执行闸门，不是新的 consent 事件；拒绝某一能力不改写其他能力的记录。
+
+| 动作 | 必须同时满足 |
+|---|---|
+| 捕获 | 私聊事件 + `personal_memory=GRANTED` + scope enabled + `extraction_capture=GRANTED` + `extraction.enabled=true` |
+| 自动提取 | 捕获条件 + `extraction_auto_extract=GRANTED` + `extraction_external_model=GRANTED` |
+| 保存候选 | 自动提取条件 + `extraction_store_candidate=GRANTED` |
+| 敏感类别入候选 | 保存候选条件 + 类别在白名单 |
+
+- `external_model` 未授予时自动提取不执行，不做本地模型兜底、不静默外发；`auto_extract` 的 consent 记录保持不变。
+- `提取 开启` 不重开已关闭 scope；scope 关闭时返回 `AuthorizationDenied` 并提示先恢复 scope。
+- `提取 开启 全部` 逐项追加四项 GRANTED 事件；部分失败必须报告已授予项与失败项。
+
+### 命令面
+
+| 命令 | 私聊 | 群聊 |
+|---|---|---|
+| `/织忆 提取 开启 <capture\|auto_extract\|external_model\|store_candidate>` | 允许（本人） | 拒绝 |
+| `/织忆 提取 开启 全部` | 允许（本人） | 拒绝 |
+| `/织忆 提取 关闭 <能力>` | 允许（本人） | 拒绝 |
+| `/织忆 提取 敏感 <类别...>` | 允许（本人） | 拒绝 |
+| `/织忆 提取 状态` | 允许（本人，无正文） | 拒绝 |
+| `/织忆 候选 列表` | 允许（本人，无正文 ID 泄漏到其他 scope） | 拒绝 |
+| `/织忆 候选 确认 <ID>` / `/织忆 候选 拒绝 <ID> [原因]` | 允许（本人） | 拒绝 |
+
+- 群聊、群共享、Group personal 一律不捕获、不提取、不进入模型。
+- 候选确认/拒绝仅用户命令，不注册 Agent 工具；批量/管理 API 在 V1.6。
+
+### 端口
+
+- `LlmExtractor`：平台无关模型端口；输入受限会话窗口与允许类别，输出结构化提取结果或 `None`；实现位于 Adapter，不进入 `core`。
+- `ExtractionService`：应用服务；负责有效条件、任务幂等、候选写入、失败隔离与启动恢复；不依赖 AstrBot/SQLite 具体实现。
+- `core` 不调用 LLM、不读取宿主事件对象；`adapters/astrbot` 只做事件捕获与命令翻译。
+
+### 任务与候选
+
+- `extraction_jobs` 状态：`PENDING / RUNNING / SUCCEEDED / SKIPPED_DUPLICATE_ACTIVE / FAILED / CANCELLED`。
+- 幂等键：`(platform, tenant_id, scope_id, conversation_id, watermark, content_hash)`；重复提交不重复写入。
+- 同键已有 `ACTIVE`：不创建候选，任务记 `SKIPPED_DUPLICATE_ACTIVE`，状态可见。
+- 同键已有 `CANDIDATE`：幂等更新候选内容与来源，不新增行。
+- 显式保存 / AGENT 工具写入撞到同键 `CANDIDATE`：返回 `Conflict`，要求先确认或拒绝；不静默替换。
+- 候选不参与检索/注入；确认后才进入 FTS；拒绝记录原因；过期转 `ARCHIVED`，不物理删除（TTL 在 V1.6）。
+- 模型失败、超时、输出不合法：任务失败/有限重试，聊天继续；不得传播为聊天失败。
+
+### 配置
+
+- 已实现键：`extraction_enabled=false`、`extraction_min_messages=5`、`extraction_max_retries=3`、`extraction_timeout_seconds=30`、`extraction_queue_size=100`。
+- `extraction_min_messages` 按会话累计私聊消息触发；用户说“记住……”时立即提交当前缓冲。`extraction_queue_size` 超限时新任务记 `FAILED` + `last_error=queue_full`，不阻塞聊天。
+- `extraction_include_assistant` 暂未实现；窗口默认只含用户消息。
+- 关闭 `extraction_enabled` 后行为退回 V1.4；既有候选保留但不自动激活。
+
+### Schema 与回滚
+
+- schema v6，迁移 `006_extraction_jobs.sql`；新增 `extraction_jobs`，不修改既有正文表。
+- 迁移前自动备份并校验；失败中止迁移。
+- v6→v5 回滚守卫：`extraction_jobs` 为空，或保留表停用且不删除数据；回滚后关闭全部提取行为。
+

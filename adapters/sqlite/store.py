@@ -310,6 +310,47 @@ class SQLiteMemoryStore:
             raise StorageError("could not find active duplicate memory") from exc
         return self._row_to_memory(row) if row is not None else None
 
+    def find_candidate_duplicate(self, key: DedupKey) -> MemoryEntity | None:
+        try:
+            row = self.db.connection.execute(
+                """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                WHERE m.scope_id=? AND m.subject_id=? AND m.memory_type=?
+                  AND m.normalized_content=? AND m.status='CANDIDATE' AND s.is_enabled=1
+                ORDER BY m.created_at, m.id LIMIT 1""",
+                (key.scope_id, key.subject_id, key.memory_type,
+                 key.normalized_content),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not find candidate duplicate memory") from exc
+        return self._row_to_memory(row) if row is not None else None
+
+    def list_candidates(
+        self, *, scope_id: str, subject_id: str, limit: int, offset: int,
+    ) -> tuple[tuple[MemoryEntity, ...], int]:
+        if type(limit) is not int or limit < 1 or limit > 100:
+            raise ValidationError("limit must be between 1 and 100")
+        if type(offset) is not int or offset < 0:
+            raise ValidationError("offset must be non-negative")
+        try:
+            with self.db.transaction(immediate=False) as conn:
+                total = int(conn.execute(
+                    """SELECT count(*) AS total FROM memories m
+                    JOIN memory_scopes s ON s.id=m.scope_id
+                    WHERE m.scope_id=? AND m.subject_id=? AND m.status='CANDIDATE'
+                      AND s.is_enabled=1""",
+                    (scope_id, subject_id),
+                ).fetchone()["total"])
+                rows = conn.execute(
+                    """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                    WHERE m.scope_id=? AND m.subject_id=? AND m.status='CANDIDATE'
+                      AND s.is_enabled=1
+                    ORDER BY m.created_at, m.id LIMIT ? OFFSET ?""",
+                    (scope_id, subject_id, limit, offset),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list candidate memories") from exc
+        return tuple(self._row_to_memory(row) for row in rows), total
+
     def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]:
         try:
             rows = self.db.connection.execute(

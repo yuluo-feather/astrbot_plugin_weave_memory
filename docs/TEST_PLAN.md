@@ -291,3 +291,55 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - 本测试矩阵是 M0 契约；V1.1 代码已实现并持续执行，具体测试数以 `TODO.md` 为准。
 - 个人事实口径：主人 2026-11-23 确认管理员责任、不做 NLP 检测；V2.4 再做敏感过滤。
 - 个人事实不提升：V1.2 模型工具写入只写 `ACTIVE`，不得把 `INFERRED` 候选自动升级为 `ACTIVE`。
+
+## 16. V1.5 自动提取测试矩阵（M1 已实现，宿主烟测待补）
+
+状态：核心管线已实现并执行自动化测试（schema v6、分层 consent、单条/批量捕获、敏感前置过滤、候选确认/拒绝、任务恢复、队列上限、指标计算）；真实宿主模型调用与正式质量采集待补。
+
+### 授权与捕获
+
+- 未 opt-in 用户（含 `auto_enroll=true` 但无 `extraction_capture`）的消息不捕获、不进入窗口/LLM。
+- `personal_memory=GRANTED` 但 `extraction_capture` / `auto_extract` / `external_model` / `store_candidate` 任一缺失：按有效条件停止，不产生候选。
+- `external_model` 未授予时：不调用 `LlmExtractor`，不产生候选；`auto_extract` consent 记录不被改写。
+- `extraction_store_candidate` 未授予时：模型结果不落库；不得先保存后丢弃。
+- 群消息、群共享消息、Group personal 消息不捕获、不进入窗口/LLM。
+- scope disabled、consent revoked、全局 `extraction_enabled=false`：全部停止。
+- `提取 开启` 不重开已关闭 scope，返回明确错误。
+- `提取 开启 全部` 部分失败时报告已授予项与失败项。
+- `auto_enroll` 不产生任何 `extraction_*` consent 事件。
+
+### 敏感信息
+
+- 凭据/密码/令牌/API key、身份证件号、银行卡号、精确住址在进入窗口前被拦截或脱敏。
+- 疑似敏感但无法识别的内容默认不送外部模型。
+- 白名单为空时敏感类别不进入候选；白名单命中时需人工确认。
+- Sensitive Leakage Rate = 0；测试日志与 `metadata_json` 不含正文。
+
+### 任务与恢复
+
+- 幂等键重复提交不重复写入。
+- 有限重试、超时、模型异常不阻塞聊天。
+- 启动恢复未完成任务；失败任务可见。
+- 热重载停止接收新任务 → 等待/取消 → 保存状态。
+- 队列有界；积压计数可见。
+
+### 候选
+
+- 候选不参与检索/注入；确认后参与；拒绝后不参与。
+- 同键已有 ACTIVE：不建候选，任务记 `SKIPPED_DUPLICATE_ACTIVE`。
+- 同键已有 CANDIDATE：幂等更新，不新增行。
+- 显式保存 / AGENT 工具写入撞候选：返回 `Conflict`，不静默替换。
+- 候选被更新/删除后确认：`expected_revision` 冲突。
+- 拒绝记录原因；候选过期转 `ARCHIVED`，不物理删除。
+
+### Schema 与回滚
+
+- v5→v6 迁移幂等，迁移前备份并校验；备份失败中止。
+- v6→v5 回滚守卫：`extraction_jobs` 非空时拒绝或保留表停用；回滚后提取关闭。
+- 关闭提取后行为退回 V1.4，显式写入/检索/注入/群路径语义不变。
+
+### 质量指标（V1.5 采集）
+
+- Extraction Precision / Recall、False Memory Rate、Sensitive Leakage Rate、Attribution Accuracy、Candidate Acceptance Rate。
+- Sensitive Leakage Rate 与错误归属为安全验收项；阈值在 V1.5 评测集冻结。
+

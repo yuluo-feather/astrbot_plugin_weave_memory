@@ -180,6 +180,7 @@ def test_group_enable_save_recall_disable_clear_destroy(group_stack):
     assert receipt.backup_path
     assert receipt.backup_sha256
     assert scopes.status(identity).created is False
+    group_stack["db"].rollback_to_v5()
     group_stack["db"].rollback_to_v10()
     assert group_stack["db"].schema_version() == 4
 
@@ -195,6 +196,7 @@ def test_group_destroy_backs_up_memory_and_requires_no_group_data_for_rollback(g
         operator_id="admin-1", decision=decision,
     ))
 
+    group_stack["db"].rollback_to_v5()
     with pytest.raises(StorageError):
         group_stack["db"].rollback_to_v10()
 
@@ -271,11 +273,12 @@ def test_group_clear_then_destroy_rolls_back_and_remigrates(group_stack):
     assert receipt.affected_count == 0
 
     db = group_stack["db"]
-    assert db.schema_version() == 5
+    assert db.schema_version() == 6
+    db.rollback_to_v5()
     db.rollback_to_v10()
     assert db.schema_version() == 4
     db.migrate()
-    assert db.schema_version() == 5
+    assert db.schema_version() == 6
 
 
 def test_group_enable_does_not_enable_when_grant_fails(group_stack, monkeypatch):

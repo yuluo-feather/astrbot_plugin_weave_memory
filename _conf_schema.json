@@ -11,6 +11,36 @@
     "default": true,
     "hint": "控制 Agent 写入入口；来源记录 message/session + 内容哈希与工具 metadata，不冒充宿主 tool_call_id。requested_persistence=false 时不写库；命令入口始终可用。"
   },
+  "extraction_enabled": {
+    "description": "V1.5 私聊自动提取总开关（默认关闭）",
+    "type": "bool",
+    "default": false,
+    "hint": "总开关关闭时不捕获、不调用模型。即使开启，仍需用户逐项授权 capture / auto_extract / external_model / store_candidate；群聊永不捕获。"
+  },
+  "extraction_max_retries": {
+    "description": "提取任务失败重试上限",
+    "type": "int",
+    "default": 3,
+    "hint": "只对可重试错误生效；授权失败与非法输出不重试。失败记录在 extraction_jobs，不阻塞聊天。"
+  },
+  "extraction_timeout_seconds": {
+    "description": "单次提取模型调用超时（秒）",
+    "type": "int",
+    "default": 30,
+    "hint": "超时按任务失败处理，不阻塞聊天；不会把异常传播为宿主聊天失败。"
+  },
+  "extraction_min_messages": {
+    "description": "累计多少条私聊消息后触发一次提取",
+    "type": "int",
+    "default": 5,
+    "hint": "只统计已 opt-in 的私聊消息；用户说“记住……”时会立即提交当前缓冲。设为 1 表示每条消息都尝试提取。"
+  },
+  "extraction_queue_size": {
+    "description": "待处理提取任务上限",
+    "type": "int",
+    "default": 100,
+    "hint": "超过上限时新任务直接记 queue_full 失败，不长期占用内存；可用 /织忆 提取 状态 查看积压。"
+  },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",
     "type": "dict",

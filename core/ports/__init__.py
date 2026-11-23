@@ -9,6 +9,10 @@ from typing import Protocol
 from ..model import (
     AdminDecision,
     AdminSource,
+    ExtractionCandidate,
+    ExtractionJob,
+    ExtractionJobStatus,
+    ExtractionWindow,
     Identity,
     MemoryConsent,
     MemoryEntity,
@@ -47,6 +51,12 @@ class MemoryStore(Protocol):
     def get(self, memory_id: str, *, scope_id: str, subject_id: str) -> MemoryEntity: ...
 
     def find_active_duplicate(self, key: DedupKey) -> MemoryEntity | None: ...
+
+    def find_candidate_duplicate(self, key: DedupKey) -> MemoryEntity | None: ...
+
+    def list_candidates(
+        self, *, scope_id: str, subject_id: str, limit: int, offset: int,
+    ) -> tuple[tuple[MemoryEntity, ...], int]: ...
 
     def update(self, memory: MemoryEntity, *, expected_revision: int,
                revision: MemoryRevision, source: MemorySource | None = None) -> None: ...
@@ -122,11 +132,32 @@ class ManagementService(Protocol):
 
 
 class LlmExtractor(Protocol):
-    """Reserved V1.5 boundary for structured extraction.
+    """V1.5 structured extraction port (ADR-0015).
 
-    V1.0 defines no methods and calls no model; ExtractionService is the V1.5
-    application service built on this port.
+    Implementations live in adapters; core never calls a provider directly.
     """
+
+    async def extract(
+        self, window: ExtractionWindow, *,
+        allowed_types: tuple[MemoryType, ...],
+        sensitive_categories: tuple[str, ...],
+    ) -> tuple[ExtractionCandidate, ...]: ...
+
+
+class ExtractionJobStore(Protocol):
+    """Durable, idempotent extraction job state (schema v6)."""
+
+    def create_or_get(self, job: ExtractionJob) -> tuple[ExtractionJob, bool]: ...
+
+    def get(self, job_id: str) -> ExtractionJob: ...
+
+    def update(self, job: ExtractionJob, *, expected_status: ExtractionJobStatus) -> None: ...
+
+    def list_by_status(
+        self, *, statuses: tuple[ExtractionJobStatus, ...], limit: int = 100,
+    ) -> tuple[ExtractionJob, ...]: ...
+
+    def count_by_status(self, *, scope_id: str, subject_id: str) -> dict[str, int]: ...
 
 
 class SchemaVersionProvider(Protocol):

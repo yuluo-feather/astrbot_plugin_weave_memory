@@ -1,5 +1,6 @@
 """Fail-closed personal memory consent application service."""
 
+from collections.abc import Mapping
 from enum import StrEnum
 
 from ..core.model import ConsentState, MemoryConsent, Scope
@@ -16,7 +17,15 @@ class GroupConsentType(StrEnum):
     GROUP_MEMORY = "group_memory"
 
 
-ConsentType = PersonalConsentType | GroupConsentType
+class ExtractionConsentType(StrEnum):
+    CAPTURE = "extraction_capture"
+    AUTO_EXTRACT = "extraction_auto_extract"
+    EXTERNAL_MODEL = "extraction_external_model"
+    STORE_CANDIDATE = "extraction_store_candidate"
+    SENSITIVE_CATEGORIES = "extraction_sensitive_categories"
+
+
+ConsentType = PersonalConsentType | GroupConsentType | ExtractionConsentType
 
 
 class ConsentService:
@@ -29,13 +38,17 @@ class ConsentService:
 
     def grant(self, scope: Scope, consent_type: ConsentType, *,
               operator_id: str, source: str = "explicit_user_command",
-              allow_disabled_scope: bool = False) -> MemoryConsent:
+              allow_disabled_scope: bool = False,
+              metadata: Mapping[str, object] | None = None) -> MemoryConsent:
         now = self._clock.now()
+        event_metadata: dict[str, object] = {"operator_id": operator_id}
+        if metadata:
+            event_metadata.update(metadata)
         consent = MemoryConsent(
             id=self._ids.new_id("consent"), subject_id=scope.identity.subject_id,
             scope_id=scope.id, consent_type=consent_type.value,
             state=ConsentState.GRANTED, source=source, granted_at=now,
-            metadata={"operator_id": operator_id},
+            metadata=event_metadata,
         )
         self._coordinator.write_metadata(
             lambda: self._repository.record(
@@ -88,6 +101,21 @@ class ConsentService:
             subject_id=scope.identity.subject_id, scope_id=scope.id,
             consent_type=consent_type.value,
         )
+
+    def current(self, scope: Scope, consent_type: ConsentType) -> MemoryConsent | None:
+        return self._repository.current(
+            subject_id=scope.identity.subject_id, scope_id=scope.id,
+            consent_type=consent_type.value,
+        )
+
+    def sensitive_categories(self, scope: Scope) -> tuple[str, ...]:
+        event = self.current(scope, ExtractionConsentType.SENSITIVE_CATEGORIES)
+        if event is None or event.state is not ConsentState.GRANTED:
+            return ()
+        raw = event.metadata.get("categories")
+        if not isinstance(raw, (list, tuple)):
+            return ()
+        return tuple(str(item) for item in raw if isinstance(item, str) and item.strip())
 
     def require(self, scope: Scope, consent_type: ConsentType) -> None:
         events = self._repository.history(

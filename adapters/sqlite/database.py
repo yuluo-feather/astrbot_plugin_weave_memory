@@ -26,7 +26,7 @@ class SQLiteDatabase:
     multi-process write coordination.
     """
 
-    CURRENT_SCHEMA_VERSION = 5
+    CURRENT_SCHEMA_VERSION = 6
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -206,6 +206,15 @@ class SQLiteDatabase:
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (5, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("group_scopes_admin",),
                     )
+                if version < 6:
+                    migration_v6 = (Path(__file__).parent / "migrations" / "006_extraction_jobs.sql").read_text(encoding="utf-8")
+                    for statement in migration_v6.split(";"):
+                        if statement.strip():
+                            conn.execute(statement)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, name, applied_at) VALUES (6, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        ("extraction_jobs",),
+                    )
         except sqlite3.Error as exc:
             raise StorageError("SQLite schema migration failed") from exc
         finally:
@@ -235,6 +244,26 @@ class SQLiteDatabase:
                 conn.execute("DELETE FROM schema_migrations WHERE version=4")
         except sqlite3.Error as exc:
             raise StorageError("could not roll back V1.0 schema to V0.5") from exc
+
+    def rollback_to_v5(self) -> None:
+        """Roll v6 back to v5 only when no extraction job remains."""
+        self._ensure_open()
+        try:
+            with self.transaction() as conn:
+                version = int(conn.execute(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                ).fetchone()[0])
+                if version != 6:
+                    raise StorageError("V1.5 rollback requires schema version 6")
+                jobs = int(conn.execute(
+                    "SELECT count(*) FROM extraction_jobs",
+                ).fetchone()[0])
+                if jobs:
+                    raise StorageError("cannot roll back while extraction_jobs contains data")
+                conn.execute("DROP TABLE extraction_jobs")
+                conn.execute("DELETE FROM schema_migrations WHERE version=6")
+        except sqlite3.Error as exc:
+            raise StorageError("could not roll back V1.5 schema to V1.4") from exc
 
     def rollback_to_v10(self) -> None:
         """Roll v5 back to v4 only when no group data remains."""
@@ -310,6 +339,7 @@ class SQLiteDatabase:
             with self.transaction() as conn:
                 conn.execute("DROP TABLE IF EXISTS memory_fts")
                 for table in (
+                    "extraction_jobs",
                     "memory_relations", "memory_consents", "memory_operations", "memory_tags", "memory_sources",
                     "memory_revisions", "memories", "memory_scopes",
                     "memory_meta", "schema_migrations",

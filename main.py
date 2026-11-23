@@ -10,6 +10,11 @@ from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.agent.message import TextPart
 
 from .adapters.astrbot.commands import AstrBotMemoryCommands
+from .adapters.astrbot.extraction import (
+    AstrBotExtractionCapture,
+    AstrBotLlmExtractor,
+)
+from .adapters.astrbot.extraction_commands import AstrBotExtractionCommands
 from .adapters.astrbot.group_admin import AstrBotGroupAdminResolver
 from .adapters.astrbot.group_commands import AstrBotGroupCommands
 from .adapters.astrbot.group_injection import AstrBotGroupMemoryInjector
@@ -18,10 +23,12 @@ from .adapters.astrbot.recall_diagnostics import JsonlRecallDiagnostics
 from .adapters.astrbot.tool_call_binding import AstrBotToolCallBinding
 from .adapters.sqlite.consents import SQLiteConsentStore
 from .adapters.sqlite.database import SQLiteDatabase
+from .adapters.sqlite.extraction_jobs import SQLiteExtractionJobStore
 from .adapters.sqlite.fts import SQLiteFTSIndex
 from .adapters.sqlite.store import SQLiteMemoryStore
 from .adapters.system import SystemClock, UUID4IdGenerator
 from .app.consent_service import ConsentService
+from .app.extraction_service import ExtractionService
 from .app.group_lifecycle_service import GroupLifecycleService
 from .app.group_memory_service import GroupMemoryService
 from .app.group_recall_service import GroupContextComposer, GroupRecallService
@@ -83,6 +90,8 @@ class WeaveMemoryPlugin(Star):
         self._coordinator: WriteCoordinator | None = None
         self._commands: AstrBotMemoryCommands | None = None
         self._group_commands: AstrBotGroupCommands | None = None
+        self._extraction_commands: AstrBotExtractionCommands | None = None
+        self._extraction_capture: AstrBotExtractionCapture | None = None
         self._injector: AstrBotMemoryInjector | None = None
         self._group_injector: AstrBotGroupMemoryInjector | None = None
         self._tool_call_binding = AstrBotToolCallBinding(
@@ -157,6 +166,27 @@ class WeaveMemoryPlugin(Star):
                 candidate_limit=self._config_int("group_candidate_limit", 8),
             )
 
+            extraction_enabled = self._config_bool("extraction_enabled", False)
+            extraction = ExtractionService(
+                store=store,
+                jobs=SQLiteExtractionJobStore(self._database),
+                coordinator=coordinator,
+                consent=consent,
+                scopes=store,
+                lifecycle=lifecycle,
+                extractor=AstrBotLlmExtractor(self.context),
+                clock=clock,
+                ids=ids,
+                global_enabled=extraction_enabled,
+                max_retries=self._config_int("extraction_max_retries", 3),
+                timeout_seconds=self._config_int("extraction_timeout_seconds", 30),
+                queue_size=self._config_int("extraction_queue_size", 100),
+            )
+            if extraction_enabled:
+                recovered = extraction.recover_interrupted()
+                if recovered:
+                    logger.warning(f"织忆提取任务恢复：{recovered} 个中断任务已标记失败。")
+
             self._coordinator = coordinator
             auto_enroll = self._config_bool("auto_enroll", True)
             self._commands = AstrBotMemoryCommands(
@@ -165,6 +195,13 @@ class WeaveMemoryPlugin(Star):
             )
             self._group_commands = AstrBotGroupCommands(
                 group_scopes, group_lifecycle, group_memories, group_recall,
+            )
+            self._extraction_commands = AstrBotExtractionCommands(
+                scopes, consent, extraction,
+            )
+            self._extraction_capture = AstrBotExtractionCapture(
+                scopes, extraction, enabled=extraction_enabled,
+                min_messages=self._config_int("extraction_min_messages", 5),
             )
             self._injector = AstrBotMemoryInjector(
                 scopes, consent, composer, auto_enroll=auto_enroll,
@@ -188,6 +225,11 @@ class WeaveMemoryPlugin(Star):
         if not self._ready or self._group_commands is None:
             raise ServiceClosed("memory engine is not ready")
         return self._group_commands
+
+    def _extraction_command_service(self) -> AstrBotExtractionCommands:
+        if not self._ready or self._extraction_commands is None:
+            raise ServiceClosed("memory engine is not ready")
+        return self._extraction_commands
 
     @staticmethod
     def _explicit_group_admins(config: object) -> dict[tuple[str, str, str], tuple[str, ...]]:
@@ -381,6 +423,31 @@ class WeaveMemoryPlugin(Star):
             yield event.plain_result(await self._command_service().disable(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("关闭", exc))
+
+    @memory.command("提取")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def extraction_control(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(
+                await self._extraction_command_service().handle_extract(event)
+            )
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("提取", exc))
+
+    @memory.command("候选")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def extraction_candidates(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(
+                await self._extraction_command_service().handle_candidate(event)
+            )
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("候选", exc))
+
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def extraction_capture_event(self, event: AstrMessageEvent):
+        if self._extraction_capture is not None:
+            await self._extraction_capture.capture(event)
 
     @_hook("on_using_llm_tool")()
     async def weave_bind_tool_call(self, event: AstrMessageEvent, tool, tool_args):
@@ -640,6 +707,14 @@ class WeaveMemoryPlugin(Star):
             logger.warning(f"织忆本轮未注入记忆：{type(exc).__name__}")
 
     async def terminate(self):
+        if self._extraction_capture is not None:
+            try:
+                await asyncio.wait_for(
+                    self._extraction_capture.close(), timeout=_TERMINATE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("织忆热重载收尾超时：提取任务未在限定时间内取消。")
+            self._extraction_capture = None
         if self._coordinator is not None:
             try:
                 await asyncio.wait_for(
