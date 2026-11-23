@@ -89,6 +89,14 @@ class MemoryStore(Protocol):
 
     def list_active_all(self) -> tuple[MemoryEntity, ...]: ...
 
+    def list_active_by_tag_text(self, query_text: str, *, scope_id: str,
+                                subject_id: str,
+                                limit: int = 20) -> tuple[MemoryEntity, ...]: ...
+
+    def list_active_in_window(self, start: datetime, end: datetime, *,
+                              scope_id: str, subject_id: str,
+                              limit: int = 20) -> tuple[MemoryEntity, ...]: ...
+
     def list_for_export(
         self, *, scope_id: str, subject_id: str,
         statuses: tuple[MemoryStatus, ...],

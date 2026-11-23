@@ -150,4 +150,6 @@ audits/
 /tests/evaluation/
 /scripts/evaluate_v14.py
 /scripts/evaluate_v15_extraction.py
+/scripts/evaluate_v20.py
+/scripts/build_eval_v20_dataset.py
 /scripts/injection_rubric.py

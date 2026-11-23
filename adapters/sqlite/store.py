@@ -590,6 +590,43 @@ class SQLiteMemoryStore:
             raise StorageError("could not list active memories for rebuild") from exc
         return tuple(self._row_to_memory(row) for row in rows)
 
+    def list_active_by_tag_text(self, query_text: str, *, scope_id: str,
+                                subject_id: str,
+                                limit: int = 20) -> tuple[MemoryEntity, ...]:
+        text = (query_text or "").strip()
+        if not text or limit < 1:
+            return ()
+        try:
+            rows = self.db.connection.execute(
+                """SELECT DISTINCT m.* FROM memories m
+                   JOIN memory_scopes s ON s.id=m.scope_id
+                   JOIN memory_tags t ON t.memory_id=m.id
+                   WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                     AND s.is_enabled=1 AND INSTR(?, t.tag) > 0
+                   ORDER BY m.created_at DESC, m.id LIMIT ?""",
+                (scope_id, subject_id, text, limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list active memories by tag") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
+
+    def list_active_in_window(self, start: datetime, end: datetime, *,
+                              scope_id: str, subject_id: str,
+                              limit: int = 20) -> tuple[MemoryEntity, ...]:
+        if limit < 1 or end <= start:
+            return ()
+        try:
+            rows = self.db.connection.execute(
+                """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                   WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                     AND s.is_enabled=1 AND m.created_at>=? AND m.created_at<?
+                   ORDER BY m.created_at DESC, m.id LIMIT ?""",
+                (scope_id, subject_id, _time_dump(start), _time_dump(end), limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list active memories by time") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
+
     def list_for_export(
         self, *, scope_id: str, subject_id: str,
         statuses: tuple[MemoryStatus, ...],

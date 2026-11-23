@@ -40,6 +40,16 @@ def _str(config: Mapping[str, Any], key: str, default: str = "") -> str:
     return str(value).strip() if value is not None else default
 
 
+def _float(config: Mapping[str, Any], key: str, default: float,
+           minimum: float, maximum: float) -> float:
+    try:
+        value = float(config.get(key, default))
+    except (TypeError, ValueError):
+        logger.warning("config %s is not a number; using %s", key, default)
+        return default
+    return max(minimum, min(maximum, value))
+
+
 def _list(config: Mapping[str, Any], key: str) -> tuple[str, ...]:
     value = config.get(key, [])
     if not isinstance(value, list):
@@ -74,6 +84,10 @@ class ProviderConfig:
     vector_candidate_limit: int
     hybrid_candidate_limit: int
     query_classifier_mode: str
+    tag_candidate_limit: int
+    time_candidate_limit: int
+    vector_relevance_threshold: float
+    fts_relevance_ratio: float
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any]) -> "ProviderConfig":
@@ -128,4 +142,16 @@ class ProviderConfig:
             query_classifier_mode=_str(
                 config, "query_classifier_mode", "rules",
             ) or "rules",
+            tag_candidate_limit=_int(
+                config, "tag_candidate_limit", 10, 1, 100,
+            ),
+            time_candidate_limit=_int(
+                config, "time_candidate_limit", 10, 1, 100,
+            ),
+            vector_relevance_threshold=_float(
+                config, "vector_relevance_threshold", 0.3, 0.0, 1.0,
+            ),
+            fts_relevance_ratio=_float(
+                config, "fts_relevance_ratio", 0.5, 0.0, 1.0,
+            ),
         )

@@ -49,10 +49,15 @@ _LEDGER_SCHEMA = (
 
 
 def _row_to_event(row: sqlite3.Row) -> LedgerEvent:
+    raw_type = str(row["event_type"])
+    try:
+        event_type = LedgerEventType(raw_type)
+    except ValueError:
+        event_type = LedgerEventType.UNKNOWN
     return LedgerEvent(
         event_id=row["event_id"],
         seq=int(row["seq"]),
-        event_type=LedgerEventType(row["event_type"]),
+        event_type=event_type,
         state=LedgerState(row["state"]),
         source=row["source"],
         occurred_at=_time_load_required(row["occurred_at"], "ledger.occurred_at"),
@@ -60,6 +65,7 @@ def _row_to_event(row: sqlite3.Row) -> LedgerEvent:
         scope_id=row["scope_id"],
         subject_id=row["subject_id"],
         memory_id=row["memory_id"],
+        raw_event_type=None if event_type is not LedgerEventType.UNKNOWN else raw_type,
     )
 
 

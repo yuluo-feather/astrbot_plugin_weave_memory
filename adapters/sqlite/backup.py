@@ -493,6 +493,10 @@ class BackupService:
         ordered = tuple(sorted(unique.values(), key=lambda item: item.seq))
         try:
             for event in ordered:
+                if event.event_type is LedgerEventType.UNKNOWN:
+                    raise StorageError(
+                        f"unknown ledger event {event.raw_event_type!r}; refusing restore",
+                    )
                 if event.event_type is LedgerEventType.DELETE_MEMORY:
                     lineage_fields_from_payload(event.payload)
                 elif event.event_type is LedgerEventType.CLEAR_SCOPE:

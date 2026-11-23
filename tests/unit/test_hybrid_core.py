@@ -1,6 +1,7 @@
 """Pure core tests for query classification, RRF, privacy and trace DTO."""
 
 import json
+from datetime import UTC, datetime
 
 from data.plugins.astrbot_plugin_weave_memory.core.model.retrieval_trace import (
     ChannelCandidate,
@@ -11,19 +12,35 @@ from data.plugins.astrbot_plugin_weave_memory.core.policy.query_classifier impor
     QueryType,
     classify,
 )
+from data.plugins.astrbot_plugin_weave_memory.core.policy.time_intent import (
+    parse_time_intent,
+)
 from data.plugins.astrbot_plugin_weave_memory.core.privacy import redact_query
 from data.plugins.astrbot_plugin_weave_memory.core.retrieval import (
     reciprocal_rank_fusion,
 )
+
+NOW = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 
 
 def test_query_classifier_rules_and_off_mode():
     assert classify("上次买的咖啡多少钱").query_type is QueryType.TEMPORAL
     assert classify("她和我是什么关系").query_type is QueryType.RELATION
     assert classify("我的工号是多少").query_type is QueryType.FACT
-    assert classify("聊聊今天的感觉").query_type is QueryType.SEMANTIC
+    assert classify("聊聊生活的感觉").query_type is QueryType.SEMANTIC
     off = classify("任何问题", mode="off")
     assert off.mode == "off" and off.query_type is None
+
+
+def test_time_intent_parses_common_phrases():
+    yesterday = parse_time_intent("昨天聊了什么", now=NOW)
+    assert yesterday is not None and yesterday.label == "yesterday"
+    assert yesterday.start < yesterday.end <= NOW
+    today = parse_time_intent("今天的状态", now=NOW)
+    assert today is not None and today.label == "today"
+    recent = parse_time_intent("最近3天的事情", now=NOW)
+    assert recent is not None and recent.label == "last_3_days"
+    assert parse_time_intent("随便聊聊", now=NOW) is None
 
 
 def test_rrf_uses_rank_fusion_and_stable_ties():

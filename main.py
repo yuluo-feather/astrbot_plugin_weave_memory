@@ -50,7 +50,7 @@ from .app.extraction_service import ExtractionService
 from .app.group_lifecycle_service import GroupLifecycleService
 from .app.group_memory_service import GroupMemoryService
 from .app.group_recall_service import GroupContextComposer, GroupRecallService
-from .app.hybrid_recall_service import HybridRecallService
+from .app.hybrid_recall_service import HybridGroupRecallService, HybridRecallService
 from .app.import_service import ImportService
 from .app.index_job_service import IndexJobService
 from .app.index_rebuild_service import IndexRebuildService
@@ -328,6 +328,11 @@ class WeaveMemoryPlugin(Star):
                     classifier_mode=provider_config.query_classifier_mode,
                     rerank_enabled=provider_config.rerank_enabled,
                     rerank_timeout_seconds=provider_config.rerank_timeout_seconds,
+                    tag_candidate_limit=provider_config.tag_candidate_limit,
+                    time_candidate_limit=provider_config.time_candidate_limit,
+                    relevance_threshold=provider_config.vector_relevance_threshold,
+                    fts_relevance_ratio=provider_config.fts_relevance_ratio,
+                    fusion_method="rrf",
                     recorder=trace_recorder,
                     include_query_text=self._config_bool(
                         "recall_diagnostics_include_query", False,
@@ -367,6 +372,31 @@ class WeaveMemoryPlugin(Star):
                 max_memories=self._config_non_negative_int("group_max_memories", 2),
                 candidate_limit=self._config_int("group_candidate_limit", 8),
             )
+            if hybrid is not None:
+                hybrid_group = HybridGroupRecallService(
+                    store, index, consent, clock, store, coordinator,
+                    vector=vector_index, provider=provider_policy,
+                    rerank=None,
+                    vector_candidate_limit=provider_config.vector_candidate_limit,
+                    hybrid_candidate_limit=provider_config.hybrid_candidate_limit,
+                    classifier_mode=provider_config.query_classifier_mode,
+                    tag_candidate_limit=provider_config.tag_candidate_limit,
+                    time_candidate_limit=provider_config.time_candidate_limit,
+                    relevance_threshold=provider_config.vector_relevance_threshold,
+                    fts_relevance_ratio=provider_config.fts_relevance_ratio,
+                    recorder=trace_recorder,
+                    include_query_text=self._config_bool(
+                        "recall_diagnostics_include_query", False,
+                    ),
+                )
+                group_composer = GroupContextComposer(
+                    hybrid_group,
+                    max_tokens=self._config_int("group_max_tokens", 192),
+                    max_memories=self._config_non_negative_int(
+                        "group_max_memories", 2,
+                    ),
+                    candidate_limit=self._config_int("group_candidate_limit", 8),
+                )
 
             extraction_enabled = self._config_bool("extraction_enabled", False)
             extraction = ExtractionService(
@@ -445,6 +475,12 @@ class WeaveMemoryPlugin(Star):
                     "vector_index_enabled": provider_config.vector_index_enabled,
                     "rerank_enabled": provider_config.rerank_enabled,
                     "query_classifier_mode": provider_config.query_classifier_mode,
+                    "tag_candidate_limit": provider_config.tag_candidate_limit,
+                    "time_candidate_limit": provider_config.time_candidate_limit,
+                    "vector_relevance_threshold": (
+                        provider_config.vector_relevance_threshold
+                    ),
+                    "fts_relevance_ratio": provider_config.fts_relevance_ratio,
                     "embedding_provider_id": provider_config.embedding_provider_id,
                     "embedding_model": provider_config.embedding_model,
                     "external_provider_opt_in": provider_config.external_provider_opt_in,

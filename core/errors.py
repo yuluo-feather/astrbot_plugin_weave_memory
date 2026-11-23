@@ -49,6 +49,10 @@ class SensitiveContentBlocked(DomainError):
     """Text was not sent to an external provider because it matched a sensitive category."""
 
 
+class LedgerUnknownDestructive(DomainError):
+    """Ledger contains an event type this binary cannot classify; maintenance is refused."""
+
+
 class StorageError(DomainError):
     pass
 

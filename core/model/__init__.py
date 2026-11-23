@@ -115,6 +115,7 @@ class LedgerEventType(StrEnum):
     RESTORE_MEMORY = "restore_memory"
     PURGE_MEMORY = "purge_memory"
     INDEX_INVALIDATE = "index_invalidate"
+    UNKNOWN = "unknown"
 
 
 class LedgerState(StrEnum):
@@ -136,6 +137,7 @@ class LedgerEvent:
     scope_id: str | None = None
     subject_id: str | None = None
     memory_id: str | None = None
+    raw_event_type: str | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id.strip() or not self.source.strip():

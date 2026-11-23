@@ -101,6 +101,30 @@
     "default": 24,
     "hint": "RRF 后进入 Admission 的候选上限；范围 1–100。"
   },
+  "tag_candidate_limit": {
+    "description": "标签候选数",
+    "type": "int",
+    "default": 10,
+    "hint": "Admission 标签通道最多加入多少条 ACTIVE 记忆；范围 1–100。"
+  },
+  "time_candidate_limit": {
+    "description": "时间候选数",
+    "type": "int",
+    "default": 10,
+    "hint": "时间查询命中时最多加入多少条时间窗口内记忆；范围 1–100。"
+  },
+  "vector_relevance_threshold": {
+    "description": "向量相关性阈值",
+    "type": "float",
+    "default": 0.3,
+    "hint": "0 表示关闭；仅作用于向量通道的余弦分数，不影响 RRF 主序。范围 0–1。"
+  },
+  "fts_relevance_ratio": {
+    "description": "FTS 相对相关性阈值",
+    "type": "float",
+    "default": 0.5,
+    "hint": "仅保留本 query FTS 最高分 × 该比例的候选；0 表示关闭。范围 0–1。"
+  },
   "embedding_provider_id": {
     "description": "Embedding Provider ID",
     "type": "string",

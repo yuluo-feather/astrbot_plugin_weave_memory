@@ -36,6 +36,7 @@ from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     InvalidTransition,
     NotFound,
+    StorageError,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     ArchiveReason,
@@ -342,3 +343,31 @@ def test_pending_archive_intent_is_replayed(ledger_stack):
     assert archived.status is MemoryStatus.ARCHIVED
     assert archived.archive_reason is ArchiveReason.USER_ARCHIVE
     assert ledger_store.pending_intents() == ()
+
+
+def test_unknown_ledger_event_fails_closed_for_maintenance(ledger_stack):
+    import sqlite3
+
+    _, store, _, ledger_store, ledger, consent_repo, _, _, _ = ledger_stack
+    path = ledger_store.path
+    connection = sqlite3.connect(str(path))
+    try:
+        seq = int(connection.execute(
+            "SELECT COALESCE(MAX(seq),0)+1 FROM ledger_events",
+        ).fetchone()[0])
+        connection.execute(
+            """INSERT INTO ledger_events
+               (event_id, state, seq, event_type, scope_id, subject_id, memory_id,
+                source, occurred_at, payload_json)
+               VALUES ('future-1', 'intent', ?, 'future_event', NULL, NULL, NULL,
+                       'system', ?, '{}')""",
+            (seq, NOW.isoformat()),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    applied, failed = ledger.drain_pending(store, consent_repo)
+    assert applied == 0
+    assert "future-1" in failed
+    with pytest.raises(StorageError):
+        ledger.strict_drain(store, consent_repo)

@@ -22,8 +22,9 @@ class QueryClassification:
 
 
 _TEMPORAL = (
-    "之前", "之后", "上次", "最近", "昨天", "明天", "什么时候", "哪天", "时间",
-    "when", "last time", "date", "yesterday", "tomorrow",
+    "今天", "昨天", "明天", "之前", "之后", "上次", "最近", "什么时候", "哪天",
+    "时间", "上周", "这周", "上个月",
+    "when", "last time", "date", "yesterday", "tomorrow", "today",
 )
 _RELATION = (
     "关系", "朋友", "同事", "和他", "和她", "她的", "他的", "谁的", "谁",

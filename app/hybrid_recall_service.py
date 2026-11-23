@@ -10,14 +10,15 @@ from hashlib import sha256
 from time import monotonic
 from uuid import uuid4
 
-from ..core.errors import AuthorizationDenied, DomainError, NotFound
-from ..core.model import MemoryEntity, MemoryStatus, Scope
+from ..core.errors import AuthorizationDenied, DomainError, NotFound, ValidationError
+from ..core.model import MemoryEntity, MemoryStatus, Scope, ScopeType
 from ..core.model.retrieval_trace import (
     ChannelCandidate,
     ChannelTrace,
     RetrievalTrace,
 )
 from ..core.policy.query_classifier import classify
+from ..core.policy.time_intent import parse_time_intent
 from ..core.ports import (
     Clock,
     MemoryStore,
@@ -27,8 +28,8 @@ from ..core.ports import (
     SearchIndex,
     VectorIndex,
 )
-from ..core.retrieval import reciprocal_rank_fusion
-from .consent_service import ConsentService, PersonalConsentType
+from ..core.retrieval import FusedCandidate, reciprocal_rank_fusion
+from .consent_service import ConsentService, GroupConsentType, PersonalConsentType
 from .provider_policy import ProviderPolicy
 from .write_coordinator import WriteCoordinator
 
@@ -63,6 +64,15 @@ class HybridRecallService:
                  classifier_mode: str = "rules",
                  rerank_enabled: bool = False,
                  rerank_timeout_seconds: int = 5,
+                 tag_candidate_limit: int = 10,
+                 time_candidate_limit: int = 10,
+                 relevance_threshold: float = 0.3,
+                 fts_relevance_ratio: float = 0.5,
+                 fusion_method: str = "rrf",
+                 consent_type: PersonalConsentType | GroupConsentType = (
+                     PersonalConsentType.PERSONAL_MEMORY
+                 ),
+                 require_scope_type: ScopeType | None = None,
                  recorder: object | None = None,
                  include_query_text: bool = False) -> None:
         self._store = store
@@ -79,13 +89,24 @@ class HybridRecallService:
         self._classifier_mode = classifier_mode
         self._rerank_enabled = rerank_enabled
         self._rerank_timeout = max(1, rerank_timeout_seconds)
+        self._tag_limit = max(1, tag_candidate_limit)
+        self._time_limit = max(1, time_candidate_limit)
+        self._relevance_threshold = max(0.0, min(1.0, relevance_threshold))
+        self._fts_ratio = max(0.0, min(1.0, fts_relevance_ratio))
+        self._fusion_method = fusion_method
+        self._consent_type = consent_type
+        self._require_scope_type = require_scope_type
+        self._last_omitted: dict[str, int] = {}
         self._recorder = recorder
         self._include_query_text = include_query_text
 
     async def recall_with_trace(self, query: str, scope: Scope, *,
                                 limit: int = 12,
                                 ) -> tuple[tuple[MemoryEntity, ...], RetrievalTrace]:
-        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        if (self._require_scope_type is not None
+                and scope.identity.scope_type is not self._require_scope_type):
+            raise ValidationError("hybrid recall scope type does not match")
+        self._consent.require(scope, self._consent_type)
         now = self._clock.now()
         total_started = monotonic()
         classify_started = monotonic()
@@ -102,6 +123,19 @@ class HybridRecallService:
         fts_ids = [
             item.memory_id for item in fts_items if item.filter_reason == "eligible"
         ]
+        if self._fts_ratio > 0.0 and len(fts_items) > 1:
+            max_score = max(item.raw_score for item in fts_items)
+            cutoff = max_score * self._fts_ratio
+            if max_score < 0:
+                fts_ids = [
+                    item.memory_id for item in fts_items
+                    if item.filter_reason == "eligible" and item.raw_score <= cutoff
+                ]
+            else:
+                fts_ids = [
+                    item.memory_id for item in fts_items
+                    if item.filter_reason == "eligible" and item.raw_score >= cutoff
+                ]
 
         vector_items: list[ChannelCandidate] = []
         vector_ids: list[str] = []
@@ -153,17 +187,70 @@ class HybridRecallService:
             vector_degraded = True
             vector_error = "vector_disabled"
 
+        if self._relevance_threshold > 0.0:
+            vector_items = [
+                item for item in vector_items
+                if item.raw_score >= self._relevance_threshold
+            ]
+            vector_ids = [
+                item.memory_id for item in vector_items
+                if item.filter_reason == "eligible"
+            ]
+
+        tag_memories = self._store.list_active_by_tag_text(
+            query, scope_id=scope.id,
+            subject_id=scope.identity.subject_id, limit=self._tag_limit,
+        )
+        tag_items = self._entity_items(tag_memories)
+        tag_ids = [memory.id for memory in tag_memories]
+        time_memories: tuple[MemoryEntity, ...] = ()
+        time_items: list[ChannelCandidate] = []
+        time_ids: list[str] = []
+        if classification.query_type is not None and classification.query_type.value == "TEMPORAL":
+            intent = parse_time_intent(query, now=now)
+            if intent is not None:
+                time_memories = self._store.list_active_in_window(
+                    intent.start, intent.end, scope_id=scope.id,
+                    subject_id=scope.identity.subject_id,
+                    limit=self._time_limit,
+                )
+                time_items = self._entity_items(time_memories)
+                time_ids = [memory.id for memory in time_memories]
+
         fuse_started = monotonic()
         channels: dict[str, list[str]] = {"FTS": fts_ids}
         if vector_ids:
             channels["VECTOR"] = vector_ids
-        fused = reciprocal_rank_fusion(channels, k=60)
+        if tag_ids:
+            channels["TAGS"] = tag_ids
+        if time_ids:
+            channels["TIME"] = time_ids
+        if self._fusion_method in {"none", "union"}:
+            ordered: list[str] = []
+            seen_ids: set[str] = set()
+            for ids in channels.values():
+                for memory_id in ids:
+                    if memory_id not in seen_ids:
+                        seen_ids.add(memory_id)
+                        ordered.append(memory_id)
+            fused_candidates = tuple(
+                FusedCandidate(memory_id=memory_id, rank=rank, score=0.0,
+                               channel_ranks={})
+                for rank, memory_id in enumerate(ordered, start=1)
+            )
+            fusion_method = "NONE"
+            fusion_k = 60
+        else:
+            fused = reciprocal_rank_fusion(channels, k=60)
+            fused_candidates = fused.candidates
+            fusion_method = fused.method
+            fusion_k = fused.k
         fuse_ms = int((monotonic() - fuse_started) * 1000)
 
         selected: list[MemoryEntity] = []
         omitted: list[dict[str, object]] = []
         seen: set[str] = set()
-        for candidate in fused.candidates[:self._hybrid_limit]:
+        for candidate in fused_candidates[:self._hybrid_limit]:
             if candidate.memory_id in seen:
                 omitted.append({"memory_id": candidate.memory_id, "reason": "duplicate"})
                 continue
@@ -188,10 +275,10 @@ class HybridRecallService:
             selected.append(memory)
             if len(selected) >= limit:
                 break
-        if len(fused.candidates) > self._hybrid_limit:
+        if len(fused_candidates) > self._hybrid_limit:
             omitted.append({
                 "memory_id": "*", "reason": "budget",
-                "count": len(fused.candidates) - self._hybrid_limit,
+                "count": len(fused_candidates) - self._hybrid_limit,
             })
 
         rerank_ms = 0
@@ -260,15 +347,23 @@ class HybridRecallService:
                     degraded=vector_degraded,
                     error_code=vector_error,
                 ),
+                ChannelTrace(
+                    name="TAGS", enabled=bool(tag_ids), limit=self._tag_limit,
+                    ok=True, latency_ms=0, candidates=tuple(tag_items),
+                ),
+                ChannelTrace(
+                    name="TIME", enabled=bool(time_ids), limit=self._time_limit,
+                    ok=True, latency_ms=0, candidates=tuple(time_items),
+                ),
             ),
             fusion={
-                "method": fused.method, "k": fused.k,
+                "method": fusion_method, "k": fusion_k,
                 "candidates": [
                     {
                         "memory_id": item.memory_id, "rank": item.rank,
                         "score": item.score,
                     }
-                    for item in fused.candidates[:self._hybrid_limit]
+                    for item in fused_candidates[:self._hybrid_limit]
                 ],
             },
             rerank=rerank_info,
@@ -305,6 +400,16 @@ class HybridRecallService:
             for rank, candidate in enumerate(candidates, start=1)
         ]
 
+    @staticmethod
+    def _entity_items(memories: tuple[MemoryEntity, ...]) -> list[ChannelCandidate]:
+        return [
+            ChannelCandidate(
+                memory_id=memory.id, rank=rank, raw_score=0.0,
+                normalized_score=0.0, filter_reason="eligible",
+            )
+            for rank, memory in enumerate(memories, start=1)
+        ]
+
     def record_diagnostics(self, trace: RetrievalTrace, *,
                            injected_ids: tuple[str, ...] = (),
                            estimated_tokens: int = 0,
@@ -322,9 +427,9 @@ class HybridRecallService:
 
     async def record_access(self, memory_ids: tuple[str, ...], scope: Scope) -> None:
         def require_access() -> None:
-            self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+            self._consent.require(scope, self._consent_type)
             if not self._scopes.is_scope_enabled(scope.id):
-                raise AuthorizationDenied("personal memory scope is disabled")
+                raise AuthorizationDenied("memory scope is disabled")
 
         await self._coordinator.record_access(
             memory_ids, scope_id=scope.id,
@@ -332,3 +437,21 @@ class HybridRecallService:
             guard=require_access,
         )
         require_access()
+
+    def record_omitted(self, scope_id: str, count: int) -> None:
+        self._last_omitted[scope_id] = max(0, count)
+
+    def last_omitted_count(self, scope_id: str) -> int:
+        return self._last_omitted.get(scope_id, 0)
+
+
+class HybridGroupRecallService(HybridRecallService):
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs.setdefault("consent_type", GroupConsentType.GROUP_MEMORY)
+        kwargs.setdefault("require_scope_type", ScopeType.GROUP)
+        super().__init__(*args, **kwargs)
+
+    async def recall_group_with_trace(
+        self, query: str, scope: Scope, *, limit: int = 8,
+    ) -> tuple[tuple[MemoryEntity, ...], RetrievalTrace]:
+        return await self.recall_with_trace(query, scope, limit=limit)

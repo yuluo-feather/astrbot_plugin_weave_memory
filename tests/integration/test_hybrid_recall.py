@@ -27,12 +27,14 @@ from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.vector import (
 from data.plugins.astrbot_plugin_weave_memory.adapters.system import UUID4IdGenerator
 from data.plugins.astrbot_plugin_weave_memory.app.consent_service import (
     ConsentService,
+    GroupConsentType,
     PersonalConsentType,
 )
 from data.plugins.astrbot_plugin_weave_memory.app.embedding_cache import (
     EmbeddingLRUCache,
 )
 from data.plugins.astrbot_plugin_weave_memory.app.hybrid_recall_service import (
+    HybridGroupRecallService,
     HybridRecallService,
 )
 from data.plugins.astrbot_plugin_weave_memory.app.provider_config import (
@@ -166,7 +168,8 @@ def test_hybrid_rrf_ranks_fts_and_vector_and_trace_has_no_body(stack):
         hybrid.recall_with_trace("黑咖啡", scope, limit=5),
     )
     assert memories[0].id == "m1"
-    assert [channel.name for channel in trace.channels] == ["FTS", "VECTOR"]
+    assert [channel.name for channel in trace.channels][:2] == ["FTS", "VECTOR"]
+    assert {channel.name for channel in trace.channels} >= {"FTS", "VECTOR", "TAGS", "TIME"}
     assert trace.fusion["method"] == "RRF"
     payload = trace.to_dict()
     encoded = json.dumps(payload, ensure_ascii=False)
@@ -195,3 +198,72 @@ def test_hybrid_degrades_to_fts_when_provider_missing(stack):
     assert trace.channels[1].degraded is True
     assert trace.channels[1].error_code == "provider_unavailable"
     assert trace.fusion["method"] == "NONE"
+
+
+def test_tag_and_time_candidates_join_the_fusion(stack):
+    db, store, index, vector, consent, coordinator, scope = stack
+    db.connection.execute(
+        "INSERT INTO memory_tags(memory_id, tag, created_at) VALUES ('m1', '咖啡', ?)",
+        (NOW.isoformat(),),
+    )
+    hybrid = HybridRecallService(
+        store, index, consent, FixedClock(), store, coordinator,
+        vector=vector, provider=None,
+    )
+    _, trace = asyncio.run(
+        hybrid.recall_with_trace("今天 咖啡", scope, limit=5),
+    )
+    channels = {channel.name: channel for channel in trace.channels}
+    assert channels["TAGS"].enabled is True
+    assert "m1" in {item.memory_id for item in channels["TAGS"].candidates}
+    assert channels["TIME"].enabled is True
+    assert channels["TIME"].candidates
+    assert trace.fusion["method"] == "RRF"
+
+
+def test_group_hybrid_recall_uses_group_scope_and_consent(stack):
+    db, store, index, vector, consent, coordinator, _ = stack
+    group_scope = Scope(
+        "scope-group",
+        Identity("astrbot", "default", ScopeType.GROUP, "g1",
+                 SubjectType.GROUP, "g1"),
+        NOW,
+    )
+    store.create_scope(group_scope)
+    db.connection.execute(
+        "UPDATE memory_scopes SET is_enabled=1 WHERE id=?", (group_scope.id,),
+    )
+    consent.grant(
+        group_scope, GroupConsentType.GROUP_MEMORY, operator_id="admin",
+    )
+    memory = MemoryEntity(
+        id="g1m", scope_id=group_scope.id, subject_id="g1",
+        memory_type=MemoryType.FACT, content="群约定周五复盘",
+        normalized_content=normalize_content("群约定周五复盘"),
+        status=MemoryStatus.ACTIVE, source_type=SourceType.EXPLICIT,
+        current_revision=1, created_at=NOW, updated_at=NOW,
+    )
+    asyncio.run(coordinator.create(
+        memory,
+        MemoryRevision("rev-g1m", "g1m", 1, memory.content, memory.status,
+                       NOW, "created"),
+        MemorySource("src-g1m", "g1m", SourceType.EXPLICIT,
+                     OperatorType.USER, "admin", NOW),
+    ))
+    lineage, creation_seq = store.get_lineage(
+        "g1m", scope_id=group_scope.id, subject_id="g1",
+    )
+    vector.upsert(
+        "g1m", (1.0, 0.0), dim=2, provider="fake", model="m2",
+        content_hash="h-g1m", db_lineage_id=lineage,
+        creation_seq=creation_seq, revision=1, created_at=NOW,
+    )
+    hybrid = HybridGroupRecallService(
+        store, index, consent, FixedClock(), store, coordinator,
+        vector=vector, provider=_policy(),
+    )
+    memories, trace = asyncio.run(
+        hybrid.recall_group_with_trace("群复盘", group_scope, limit=5),
+    )
+    assert [memory.id for memory in memories] == ["g1m"]
+    assert trace.scope["type"] == "GROUP"

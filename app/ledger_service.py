@@ -11,7 +11,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from ..core.errors import DomainError, NotFound, StorageError, ValidationError
+from ..core.errors import (
+    DomainError,
+    LedgerUnknownDestructive,
+    NotFound,
+    StorageError,
+    ValidationError,
+)
 from ..core.model import (
     ArchiveReason,
     ConsentState,
@@ -279,6 +285,10 @@ class LedgerService:
                 idempotent=True,
             )
             return
+        if intent.event_type is LedgerEventType.UNKNOWN:
+            raise LedgerUnknownDestructive(
+                f"unknown ledger event {intent.raw_event_type!r}",
+            )
         raise ValidationError("unknown ledger event type")
 
     @staticmethod
