@@ -2,6 +2,8 @@
 
 状态：通过（核心只读管理 API 与 v7 迁移）；候选 TTL 的活体创建/过期未在宿主执行，由本地测试覆盖。
 
+> 公开仓版本已脱敏：真实群号使用占位符。
+
 ## 环境
 
 - AstrBot 4.29.4，dashboard `http://localhost:6185`，用户名 `astrbot`（临时密码由主人提供，未写入本记录）。
@@ -31,8 +33,8 @@
 | 端点 | 结果 |
 |---|---|
 | `GET /v1/overview` | 200；记忆 2（ACTIVE 2；FACT 1/PREFERENCE 1；EXPLICIT 1/AGENT 1）；候选 0；索引 healthy，documents 1；最近操作 5 条；响应无正文 |
-| `GET /v1/groups` | 200；1 个群 scope（`aiocqhttp/default/1046500733`，enabled，`PLATFORM_ROLE`） |
-| `GET /v1/memories?platform=aiocqhttp&tenant_id=default&group_id=1046500733` | 200；`total=0`，`items=[]`（该群当前无 ACTIVE 记忆） |
+| `GET /v1/groups` | 200；1 个群 scope（`aiocqhttp/default/<group-id>`，enabled，`PLATFORM_ROLE`） |
+| `GET /v1/memories?platform=aiocqhttp&tenant_id=default&group_id=<group-id>` | 200；`total=0`，`items=[]`（该群当前无 ACTIVE 记忆） |
 | `POST /v1/retrieval/debug`（同上群，query 为通用问题） | 200；字段 `candidates/estimated_tokens/injected_ids/omitted/omitted_count/query_hash`；候选 0、注入 0、Token 0；响应不含 `content` |
 | `GET /v1/settings` | 200；含 `candidate_ttl_days=7`、`rejected_keep_body=false` 等公开键；不含 `api_admin_usernames` 名单 |
 | `GET /v1/maintenance/status` | 200；`schema_version=7`、`secure_purge_pending=false`、索引 healthy |

@@ -2,6 +2,8 @@
 
 状态：通过（个人命令导入导出的完整链路、白名单下的群管理 API 成功路径、v8 迁移、API 失败/鉴权路径）；群命令本身仍需真实群管理员执行。
 
+> 公开仓版本已脱敏：真实群号使用占位符。
+
 ## 环境
 
 - AstrBot 4.29.4，dashboard `http://localhost:6185`，用户名 `astrbot`（临时密码由主人提供，未写入本记录）。
@@ -49,8 +51,8 @@
 |---|---|
 | `GET /v1/maintenance/status` | 200；`schema_version=8`；`secure_purge_pending=false`；索引 healthy |
 | `GET /v1/settings` | 200；`api_admin_whitelist_enabled=false` |
-| `GET /v1/groups` | 200；群 `aiocqhttp/default/1046500733` enabled，ACTIVE 0 |
-| `GET /v1/export?platform=aiocqhttp&tenant_id=default&group_id=1046500733` | 403 `AuthorizationDenied`（白名单为空，fail-closed，符合 ADR-0017） |
+| `GET /v1/groups` | 200；群 `aiocqhttp/default/<group-id>` enabled，ACTIVE 0 |
+| `GET /v1/export?platform=aiocqhttp&tenant_id=default&group_id=<group-id>` | 403 `AuthorizationDenied`（白名单为空，fail-closed，符合 ADR-0017） |
 | `GET /v1/memories?scope=PERSONAL&...` | 403 `AuthorizationDenied` |
 | 未登录 `GET /v1/export` | 401（`Missing API key`） |
 
