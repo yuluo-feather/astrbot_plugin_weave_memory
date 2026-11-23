@@ -155,7 +155,7 @@ def test_process_kill_during_v4_migration_rolls_back_ddl_and_allows_retry(tmp_pa
     db = SQLiteDatabase(db_path)
     db.migrate()
     db.rollback_to_v5()
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     db.rollback_to_v05()
     assert db.schema_version() == 3
     db.close()

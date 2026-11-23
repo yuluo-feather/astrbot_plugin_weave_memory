@@ -189,7 +189,7 @@ def test_group_backup_destroy_and_rollback_path(tmp_path):
 
     db.rollback_to_v5()
     with pytest.raises(StorageError):
-        db.rollback_to_v10()
+        db.rollback_v1_to_v05()
     assert db.schema_version() == 5
 
     store.disable_group_scope(scope.id, operation_id="op-group-disable",
@@ -212,7 +212,7 @@ def test_group_backup_destroy_and_rollback_path(tmp_path):
     ).fetchone()[0]
     assert memory.id in dirty
 
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     assert db.schema_version() == 4
     db.migrate()
     assert db.schema_version() == 9
@@ -473,7 +473,7 @@ def test_v4_migration_failure_rolls_back_ddl_and_version_marker(tmp_path, monkey
     db = SQLiteDatabase(tmp_path / "failed-v4-migration.db")
     db.migrate()
     db.rollback_to_v5()
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     db.rollback_to_v05()
     assert db.schema_version() == 3
 
@@ -501,7 +501,7 @@ def test_v3_database_upgrades_to_v5_group_scopes(tmp_path):
     db = SQLiteDatabase(tmp_path / "upgrade-v3.db")
     db.migrate()
     db.rollback_to_v5()
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     db.rollback_to_v05()
     assert db.schema_version() == 3
     db.migrate()
@@ -519,7 +519,7 @@ def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
     db = SQLiteDatabase(db_path)
     db.migrate()
     db.rollback_to_v5()
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     assert db.schema_version() == 4
     seed_v4_memory(
         db, scope_id="scope-backup", subject_id="backup-user",
@@ -563,7 +563,7 @@ def test_migration_backup_failure_aborts_upgrade(tmp_path, monkeypatch):
     db = SQLiteDatabase(db_path)
     db.migrate()
     db.rollback_to_v5()
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     seed_v4_memory(
         db, scope_id="scope-failure", subject_id="failure-user",
         memory_id="mem-failure", content="备份失败也要保留",
@@ -605,7 +605,7 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
     store.create_scope(scope)
     existing = add_memory(store, scope, memory_id="rollback-existing", content="回滚后保留")
     db.rollback_to_v5()
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     db.rollback_to_v05()
     assert db.schema_version() == 3
     assert db.connection.execute(
@@ -618,7 +618,7 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
     assert db.schema_version() == 9
     assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
     db.rollback_to_v5()
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     seed_v4_memory_row(
         db, scope_id=scope.id, subject_id="u1", memory_id="rollback-a",
         content="第一条",

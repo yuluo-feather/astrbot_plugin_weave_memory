@@ -339,6 +339,9 @@ class SQLiteDatabase:
     def rollback_to_v05(self) -> None:
         """Roll back the V1.0-only reserved relation table to the V0.5 schema.
 
+        Historical name: ``rollback_v1_to_v05`` reflects "V1.0 -> V0.5"; it must
+        not be confused with schema v10 rollback (``rollback_to_v9``).
+
         Refuse rollback if relations exist; V1.0 deliberately exposes no relation
         write API, so an empty table is the expected safe downgrade condition.
         Later schema versions are rolled back first, each with its own guard.
@@ -356,7 +359,7 @@ class SQLiteDatabase:
         if self.schema_version() == 6:
             self.rollback_to_v5()
         if self.schema_version() == 5:
-            self.rollback_to_v10()
+            self.rollback_v1_to_v05()
         try:
             with self.transaction() as conn:
                 version = int(conn.execute(
@@ -531,11 +534,11 @@ class SQLiteDatabase:
                 "（v6）清空 extraction_jobs 或接受 rollback_to_v5 拒绝",
                 "关闭 → [清空 →] 销毁每个群（会写入备份）",
                 "确认无群 scope / 群记忆 / 群 consent / 候选 / 提取任务",
-                "执行 rollback_to_v10() 回到 v4",
+                "执行 rollback_v1_to_v05() 回到 v4",
             ],
         }
 
-    def rollback_to_v10(self, *, dry_run: bool = False) -> dict[str, object] | None:
+    def rollback_v1_to_v05(self, *, dry_run: bool = False) -> dict[str, object] | None:
         """Roll v5 back to v4 only when no group data remains.
 
         Newer schemas are rolled back first with their own guards.

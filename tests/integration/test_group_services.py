@@ -191,7 +191,7 @@ def test_group_enable_save_recall_disable_clear_destroy(group_stack):
     assert receipt.backup_sha256
     assert scopes.status(identity).created is False
     group_stack["db"].rollback_to_v5()
-    group_stack["db"].rollback_to_v10()
+    group_stack["db"].rollback_v1_to_v05()
     assert group_stack["db"].schema_version() == 4
 
 
@@ -208,7 +208,7 @@ def test_group_destroy_backs_up_memory_and_requires_no_group_data_for_rollback(g
 
     group_stack["db"].rollback_to_v5()
     with pytest.raises(StorageError):
-        group_stack["db"].rollback_to_v10()
+        group_stack["db"].rollback_v1_to_v05()
 
     asyncio.run(lifecycle.disable(scope, decision, operator_id="admin-1"))
     receipt = asyncio.run(lifecycle.destroy(scope, decision, operator_id="admin-1"))
@@ -225,7 +225,7 @@ def test_group_destroy_backs_up_memory_and_requires_no_group_data_for_rollback(g
     assert manifest["backup_sha256"] == receipt.backup_sha256
     assert manifest["affected_count"] == 1
 
-    group_stack["db"].rollback_to_v10()
+    group_stack["db"].rollback_v1_to_v05()
     assert group_stack["db"].schema_version() == 4
 
 
@@ -285,7 +285,7 @@ def test_group_clear_then_destroy_rolls_back_and_remigrates(group_stack):
     db = group_stack["db"]
     assert db.schema_version() == 9
     db.rollback_to_v5()
-    db.rollback_to_v10()
+    db.rollback_v1_to_v05()
     assert db.schema_version() == 4
     db.migrate()
     assert db.schema_version() == 9
@@ -529,7 +529,7 @@ def test_rollback_preview_reports_group_data_without_modifying(group_stack):
     assert preview["group_scope_count"] >= 1
     assert preview["group_memory_count"] >= 1
     assert preview["can_rollback"] is False
-    assert db.rollback_to_v10(dry_run=True) == preview
+    assert db.rollback_v1_to_v05(dry_run=True) == preview
     assert db.schema_version() == 5
 
 
