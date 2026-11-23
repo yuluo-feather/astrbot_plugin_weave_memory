@@ -251,6 +251,8 @@ git clone https://github.com/yuluo-feather/astrbot_plugin_weave_memory.git
 | V1.8「归档」 | 核心实现：schema v9 谱系/序号、独立 ledger-first 删除/清空/consent/群销毁、备份产物与三模式恢复、restore journal、维护 API 与私聊命令；真实宿主 v8→v9 迁移、备份/恢复、维护 API、空库 disaster-rebuild、群销毁与附件删除恢复排除烟测已通过（宿主烟测已通过） |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 
+逐版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响；V1.8 的 v8→v9 迁移、`/织忆 备份|恢复`（merge/revert/dry-run）、旧备份不复活删除与维护管理 API 已通过（宿主烟测已通过）。
 
 V1.4/V1.5 的评测数据与 Harness 在开发侧维护，不随插件分发。Group personal、向量检索、WebUI 等仍按路线图逐版推进。
