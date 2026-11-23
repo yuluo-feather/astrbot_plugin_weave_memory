@@ -28,6 +28,21 @@ _GROUP_TYPES: dict[str, MemoryType] = {
     "experience": MemoryType.EVENT,
 }
 
+_GROUP_LABEL_ALIASES: dict[str, str] = {
+    "话题": "topic",
+    "主题": "topic",
+    "事实": "topic",
+    "约定": "agreement",
+    "共识": "agreement",
+    "偏好": "agreement",
+    "喜好": "agreement",
+    "氛围": "atmosphere",
+    "气氛": "atmosphere",
+    "经历": "experience",
+    "事件": "experience",
+    "体验": "experience",
+}
+
 
 class GroupMemoryService:
     def __init__(self, store: MemoryStore, scopes: ScopeStore,
@@ -62,7 +77,11 @@ class GroupMemoryService:
         self._consent.require(scope, GroupConsentType.GROUP_MEMORY)
         if not self._scopes.is_scope_enabled(scope.id):
             raise AuthorizationDenied("group memory is disabled")
-        label = group_label.strip().lower()
+        raw_label = group_label.strip().lower()
+        for prefix in ("我的", "本群", "群"):
+            if raw_label.startswith(prefix):
+                raw_label = raw_label[len(prefix):]
+        label = _GROUP_LABEL_ALIASES.get(raw_label, raw_label)
         memory_type = _GROUP_TYPES.get(label)
         if memory_type is None:
             raise ValidationError("group_label must be topic/agreement/atmosphere/experience")
