@@ -1,6 +1,7 @@
 """AstrBot command translation; no AstrBot SDK imports or domain rules."""
 
 import json
+from hashlib import sha256
 from typing import Any
 
 from ...app.consent_service import ConsentService, PersonalConsentType
@@ -11,6 +12,7 @@ from ...app.recall_service import RecallService, estimate_tokens
 from ...app.scope_service import PersonalScopeService
 from ...core.errors import AuthorizationDenied, NotFound, ValidationError
 from ...core.model import MemoryType, OperatorType
+from ...core.normalization import normalize_content
 from ...core.ports import Clock, IdGenerator
 from .identity import AstrBotIdentityAdapter
 from .notices import AUTO_ENROLL_NOTICE
@@ -83,6 +85,27 @@ class AstrBotMemoryCommands:
             pass
 
     @staticmethod
+    def _agent_evidence(
+        event: Any, tool_name: str, content: str,
+    ) -> tuple[str, dict[str, object]]:
+        message_obj = getattr(event, "message_obj", None)
+        message_id = str(getattr(message_obj, "message_id", "") or "").strip()
+        session_id = str(getattr(event, "unified_msg_origin", "") or "").strip()
+        if not message_id and not session_id:
+            raise ValidationError("agent tool event has no message_id or session id")
+        anchor = f"message:{message_id}" if message_id else f"session:{session_id}"
+        content_hash = sha256(normalize_content(content).encode("utf-8")).hexdigest()
+        evidence_ref = f"tool:{tool_name}#{anchor}#sha256:{content_hash[:16]}"
+        metadata: dict[str, object] = {
+            "origin": "agent_tool",
+            "tool_name": tool_name,
+            "session_id": session_id,
+            "message_id": message_id,
+            "content_sha256": content_hash,
+        }
+        return evidence_ref, metadata
+
+    @staticmethod
     def _tail(event: Any, subcommand: str) -> str:
         raw = event.message_str.strip().lstrip("/").strip()
         if raw.startswith("织忆"):
@@ -108,7 +131,7 @@ class AstrBotMemoryCommands:
             "/织忆 删除 <记忆ID> 确认 —— 二次确认后不可恢复地删除一条记忆\n"
             "/织忆 清空 确认 —— 不可恢复地清空个人记忆\n"
             "/织忆 关闭 确认 —— 永久关闭个人记忆空间（当前版本不支持重新开启，数据保留）\n"
-            "模型工具写入仅应在用户明确要求时发生；AstrBot 4.29.4 未提供写入所需的 tool_call_id，当前请使用保存/更新命令。"
+            "模型工具写入仅应在用户明确要求时发生；写入来源记录插件侧 evidence_ref（message/session + 内容哈希），不冒充宿主 tool_call_id。"
         )
 
     def grant(self, event: Any) -> str:
@@ -139,11 +162,19 @@ class AstrBotMemoryCommands:
         return f"已保存记忆：{memory.id}\n{state}" + self._take_notice(event)
 
     async def remember(self, event: Any, content: str,
-                       memory_type: str = "FACT", *, tool_call_id: str) -> str:
+                       memory_type: str = "FACT", *,
+                       requested_persistence: bool = True,
+                       reason: str = "") -> str:
         """Agent tool entry: save only after an explicit user request."""
         content = (content or "").strip()
         if not content:
             return "未保存：内容为空。"
+        if isinstance(requested_persistence, str):
+            requested_persistence = requested_persistence.strip().lower() in {
+                "1", "true", "yes", "on",
+            }
+        if not requested_persistence:
+            return "未保存：本次未请求持久化。"
         try:
             parsed_type = MemoryType((memory_type or "FACT").upper())
         except ValueError:
@@ -163,9 +194,17 @@ class AstrBotMemoryCommands:
             set_extra = getattr(event, "set_extra", None)
             if callable(set_extra):
                 set_extra(_AUTO_ENROLL_FLAG, True)
+        evidence_ref, source_metadata = self._agent_evidence(
+            event, "weave_memory_remember", content,
+        )
+        source_metadata["requested_persistence"] = True
+        cleaned_reason = str(reason or "").strip()
+        if cleaned_reason:
+            source_metadata["reason"] = cleaned_reason[:300]
         memory, receipt = await self._memories.save_agent(
-            scope, content, operator_id=operator_id, tool_call_id=tool_call_id,
-            memory_type=parsed_type,
+            scope, content, operator_id=operator_id,
+            evidence_ref=evidence_ref, memory_type=parsed_type,
+            source_metadata=source_metadata,
         )
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已保存，索引待恢复"
         notice = ""
@@ -231,27 +270,18 @@ class AstrBotMemoryCommands:
         )
 
     async def agent_save(
-        self, event: Any, content: str, memory_type: str, *, tool_call_id: str,
+        self, event: Any, content: str, memory_type: str, *,
+        requested_persistence: bool = True, reason: str = "",
     ) -> str:
-        content = content.strip()
-        if not content:
-            return "未保存：content 不能为空。"
-        try:
-            parsed_type = MemoryType(memory_type.upper())
-        except ValueError:
-            return "未保存：memory_type 只能是 PREFERENCE、FACT 或 EVENT。"
-        scope = self._scope(event)
-        operator_id = self._identity.resolve_operator_id(event)
-        memory, receipt = await self._memories.save_agent(
-            scope, content, operator_id=operator_id,
-            tool_call_id=tool_call_id, memory_type=parsed_type,
+        """Compatibility alias for the Agent write entry."""
+        return await self.remember(
+            event, content, memory_type,
+            requested_persistence=requested_persistence, reason=reason,
         )
-        state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已保存，索引待恢复"
-        return f"已保存记忆：{memory.id}（revision {memory.current_revision}）\n{state}"
 
     async def agent_update(
         self, event: Any, memory_id: str, expected_revision: int, content: str,
-        *, tool_call_id: str,
+        *, reason: str = "",
     ) -> str:
         if type(expected_revision) is not int or expected_revision < 1:
             return "未更新：expected_revision 必须是正整数。"
@@ -259,9 +289,16 @@ class AstrBotMemoryCommands:
             return "未更新：content 不能为空。"
         scope = self._scope(event)
         operator_id = self._identity.resolve_operator_id(event)
+        evidence_ref, source_metadata = self._agent_evidence(
+            event, "weave_memory_update", content,
+        )
+        cleaned_reason = str(reason or "").strip()
+        if cleaned_reason:
+            source_metadata["reason"] = cleaned_reason[:300]
         memory, receipt = await self._memories.update_agent(
             scope, memory_id, content, expected_revision=expected_revision,
-            operator_id=operator_id, tool_call_id=tool_call_id,
+            operator_id=operator_id, evidence_ref=evidence_ref,
+            source_metadata=source_metadata,
         )
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已更新，索引待恢复"
         return f"已更新记忆：{memory.id}（revision {memory.current_revision}）\n{state}"

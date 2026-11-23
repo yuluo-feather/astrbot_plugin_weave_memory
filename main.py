@@ -50,6 +50,29 @@ _COMMAND_ERRORS = (
 
 _TERMINATE_TIMEOUT_SECONDS = 5.0
 
+_LLM_TOOL = getattr(filter, "llm_tool", None)
+
+
+def _llm_tool(name=None, **kwargs):
+    """Register an LLM tool when the host supports it; keep commands usable otherwise."""
+    if _LLM_TOOL is None:
+        def passthrough(fn):
+            return fn
+        return passthrough
+    return _LLM_TOOL(name=name, **kwargs)
+
+
+def _hook(name: str):
+    """Host hook decorator with a no-op fallback for hosts without agent tools."""
+    decorator = getattr(filter, name, None)
+    if decorator is None:
+        def no_op(*args, **kwargs):
+            def passthrough(fn):
+                return fn
+            return passthrough
+        return no_op
+    return decorator
+
 
 class WeaveMemoryPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -359,38 +382,34 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("关闭", exc))
 
-    @filter.on_using_llm_tool()
+    @_hook("on_using_llm_tool")()
     async def weave_bind_tool_call(self, event: AstrMessageEvent, tool, tool_args):
         """Verify that the invoked handler is registered by this plugin."""
         self._tool_call_binding.bind_tool_start(event, tool, tool_args)
 
-    @filter.on_llm_tool_respond()
+    @_hook("on_llm_tool_respond")()
     async def weave_clear_tool_call(self, event: AstrMessageEvent, tool, tool_args, tool_result):
         self._tool_call_binding.clear_active(event)
 
     def _consume_tool_binding(self, event: AstrMessageEvent, tool_name: str) -> bool:
         return self._tool_call_binding.consume(event, expected_name=tool_name)
 
-    @staticmethod
-    def _agent_write_call_id_unavailable() -> str:
-        return (
-            "AstrBot 4.29.4 未向插件工具入口提供宿主 tool_call_id；"
-            "为避免写入来源无法追溯，本次 Agent 写入已拒绝。请改用个人命令。"
-        )
-
-    # V1.2 compatibility tool. On AstrBot 4.29.4, host tool call IDs are not
-    # available before plugin handler execution, so this write path fails closed.
-    @filter.llm_tool(name="weave_memory_remember")
-    async def memory_remember_tool(self, event: AstrMessageEvent,
-                                   content: str = "", memory_type: str = "FACT"):
+    @_llm_tool(name="weave_memory_remember")
+    async def memory_remember_tool(
+        self, event: AstrMessageEvent, content: str = "", memory_type: str = "FACT",
+        requested_persistence: bool = True, reason: str = "",
+    ):
         """织忆个人记忆写入入口。
 
-        AstrBot 4.29.4 未向工具执行前的插件入口提供 tool_call_id，因此当前不得调用本工具；
-        用户明确要求保存时请使用 /织忆 保存。不得用模型生成的 ID 替代宿主调用 ID。
+        只在用户明确要求记住某件长期事实时调用；只有本工具返回“已保存记忆”后才能对用户
+        声称已保存，未调用或失败时必须如实说明未保存。一次只保存一条简洁事实，不保存
+        完整聊天原文；不得保存密码、密钥等敏感信息。
 
         Args:
             content(string): 要保存的事实。
             memory_type(string): PREFERENCE、FACT 或 EVENT，默认 FACT。
+            requested_persistence(boolean): 本次是否请求长期持久化，默认 true。
+            reason(string): 可选的写入理由，仅用于审计。
         """
         if not self._config_bool("agent_write_enabled", True):
             yield "未保存：织忆的模型记忆写入已关闭。"
@@ -398,10 +417,18 @@ class WeaveMemoryPlugin(Star):
         if not self._consume_tool_binding(event, "weave_memory_remember"):
             yield "未保存：无法确认织忆插件的工具调用身份。"
             return
-        yield self._agent_write_call_id_unavailable() + " 可使用 /织忆 保存。"
-        return
+        try:
+            yield await self._command_service().remember(
+                event, content, memory_type,
+                requested_persistence=requested_persistence, reason=reason,
+            )
+        except _COMMAND_ERRORS as exc:
+            yield self._error_text("保存", exc)
+        except Exception as exc:
+            logger.warning(f"织忆 weave_memory_remember 失败：{type(exc).__name__}")
+            yield "未保存：记忆服务暂不可用。"
 
-    @filter.llm_tool(name="weave_memory_search")
+    @_llm_tool(name="weave_memory_search")
     async def memory_search_tool(self, event: AstrMessageEvent, query: str = "", limit: int = 8):
         """在当前用户的 Personal 记忆中检索相关内容；不允许指定作用域。
 
@@ -420,7 +447,7 @@ class WeaveMemoryPlugin(Star):
             logger.warning(f"织忆 weave_memory_search 失败：{type(exc).__name__}")
             yield "检索失败：记忆服务暂不可用。"
 
-    @filter.llm_tool(name="weave_memory_get")
+    @_llm_tool(name="weave_memory_get")
     async def memory_get_tool(self, event: AstrMessageEvent, memory_id: str = ""):
         """按 ID 读取当前用户 Personal 记忆；跨用户或无授权时拒绝。
 
@@ -438,20 +465,21 @@ class WeaveMemoryPlugin(Star):
             logger.warning(f"织忆 weave_memory_get 失败：{type(exc).__name__}")
             yield "读取失败：记忆服务暂不可用。"
 
-    @filter.llm_tool(name="weave_memory_update")
+    @_llm_tool(name="weave_memory_update")
     async def memory_update_tool(
         self, event: AstrMessageEvent, memory_id: str = "", expected_revision: int = 0,
-        content: str = "",
+        content: str = "", reason: str = "",
     ):
         """Agent Personal 记忆更新入口。
 
-        AstrBot 4.29.4 未向工具执行前的插件入口提供 tool_call_id，因此当前不得调用本工具；
-        用户明确要求更新时请使用 /织忆 更新。不得用模型生成的 ID 替代宿主调用 ID。
+        只在用户明确要求修改某条记忆时调用；必须携带用户确认过的当前 revision，避免覆盖
+        并发修改；只改正文，不改类型。只有本工具返回“已更新记忆”后才能对用户声称已修改。
 
         Args:
             memory_id(string): 要修改的记忆 ID。
             expected_revision(int): 用户确认的当前 revision，用于防止覆盖。
             content(string): 修改后的完整记忆内容。
+            reason(string): 可选的修改理由，仅用于审计。
         """
         if not self._config_bool("agent_write_enabled", True):
             yield "未更新：织忆的模型记忆写入已关闭。"
@@ -459,10 +487,17 @@ class WeaveMemoryPlugin(Star):
         if not self._consume_tool_binding(event, "weave_memory_update"):
             yield "未更新：无法确认织忆插件的工具调用身份。"
             return
-        yield self._agent_write_call_id_unavailable() + " 可使用 /织忆 更新。"
-        return
+        try:
+            yield await self._command_service().agent_update(
+                event, memory_id, expected_revision, content, reason=reason,
+            )
+        except _COMMAND_ERRORS as exc:
+            yield self._error_text("更新", exc)
+        except Exception as exc:
+            logger.warning(f"织忆 weave_memory_update 失败：{type(exc).__name__}")
+            yield "未更新：记忆服务暂不可用。"
 
-    @filter.llm_tool(name="weave_memory_list")
+    @_llm_tool(name="weave_memory_list")
     async def memory_list_tool(
         self, event: AstrMessageEvent, offset: int = 0, limit: int = 20,
         memory_type: str = "",
@@ -487,7 +522,7 @@ class WeaveMemoryPlugin(Star):
             logger.warning(f"织忆 weave_memory_list 失败：{type(exc).__name__}")
             yield "读取失败：记忆服务暂不可用。"
 
-    @filter.llm_tool(name="weave_memory_history")
+    @_llm_tool(name="weave_memory_history")
     async def memory_history_tool(self, event: AstrMessageEvent, memory_id: str = ""):
         """查看当前用户指定记忆的版本与来源历史；不跨作用域读取。
 

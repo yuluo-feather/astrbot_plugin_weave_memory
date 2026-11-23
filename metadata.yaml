@@ -19,7 +19,7 @@ help: |
   [织忆 删除 记忆ID 确认] 二次确认后不可恢复地删除一条记忆
   [织忆 清空 确认] 不可恢复地清空个人记忆
   [织忆 关闭 确认] 永久关闭个人记忆空间（数据保留，当前版本不支持重新开启）
-  [Agent 工具] weave_memory_search/get/list/history 仅访问当前用户 Personal Scope；weave_memory_update 与既有 weave_memory_remember 在 AstrBot 4.29.4 上因宿主未暴露 tool_call_id 而 fail-closed
+  [Agent 工具] weave_memory_search/get/list/history 仅访问当前用户 Personal Scope；weave_memory_remember/update 已启用写入，来源记录插件侧 evidence_ref（message/session + 内容哈希），不冒充宿主 tool_call_id
   [群命令] 群聊内发送 /织忆 群帮助 查看；群开启/群关闭/群清空/群销毁/群保存仅群管理员，成员可读 群列表/群查询/群状态
   触发：个人命令仅私聊生效，群命令仅群聊生效；统一前缀 /织忆
   状态：开发预览 v1.0.0-dev.1，未正式发版；V1.3 宿主烟测按用户要求跳过、未测

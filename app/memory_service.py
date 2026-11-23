@@ -1,5 +1,6 @@
 """Personal-memory use cases: explicit save/update and the constrained agent tool write."""
 
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime
 
@@ -83,20 +84,20 @@ class MemoryApplicationService:
         )
         return saved, receipt
 
-    # AGENT writes stay behind agent_write_enabled until a deterministic trigger
-    # phrase check, candidate mode, and a daily cap are implemented.
     async def save_agent(self, scope: Scope, content: str, *,
                          operator_id: str,
-                         tool_call_id: str,
-                         memory_type: MemoryType = MemoryType.FACT) -> tuple[MemoryEntity, WriteReceipt]:
+                         evidence_ref: str,
+                         memory_type: MemoryType = MemoryType.FACT,
+                         source_metadata: Mapping[str, object] | None = None,
+                         ) -> tuple[MemoryEntity, WriteReceipt]:
         """Save a memory requested by the model through an explicit user signal.
 
         The model tool is constrained by its description; the source remains
         AGENT so it is distinguishable from /织忆 保存 and from inferred
         background extraction (which only produces candidates in V1.5).
         """
-        if not tool_call_id.strip():
-            raise ValidationError("tool_call_id must be non-empty")
+        if not evidence_ref.strip():
+            raise ValidationError("evidence_ref must be non-empty")
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
         normalized = normalize_content(content)
         now = self._clock.now()
@@ -118,7 +119,8 @@ class MemoryApplicationService:
         source = MemorySource(
             id=self._ids.new_id("source"), memory_id=memory_id,
             source_type=SourceType.AGENT, operator_type=OperatorType.AGENT,
-            operator_id=operator_id, captured_at=now, evidence_ref=tool_call_id,
+            operator_id=operator_id, captured_at=now, evidence_ref=evidence_ref,
+            metadata=source_metadata or {},
         )
         saved, receipt, _created = await self._coordinator.create_or_get_duplicate(
             memory, revision, source,
@@ -128,11 +130,12 @@ class MemoryApplicationService:
 
     async def update_agent(
         self, scope: Scope, memory_id: str, content: str, *,
-        expected_revision: int, operator_id: str, tool_call_id: str,
+        expected_revision: int, operator_id: str, evidence_ref: str,
+        source_metadata: Mapping[str, object] | None = None,
     ) -> tuple[MemoryEntity, WriteReceipt]:
         """Update only the body of a selected Personal memory as AGENT."""
-        if not tool_call_id.strip():
-            raise ValidationError("tool_call_id must be non-empty")
+        if not evidence_ref.strip():
+            raise ValidationError("evidence_ref must be non-empty")
         if expected_revision < 1:
             raise ValidationError("expected_revision must be >= 1")
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
@@ -169,7 +172,8 @@ class MemoryApplicationService:
         source = MemorySource(
             id=self._ids.new_id("source"), memory_id=memory_id,
             source_type=SourceType.AGENT, operator_type=OperatorType.AGENT,
-            operator_id=operator_id, captured_at=now, evidence_ref=tool_call_id,
+            operator_id=operator_id, captured_at=now, evidence_ref=evidence_ref,
+            metadata=source_metadata or {},
         )
         receipt = await self._coordinator.update(
             updated, expected_revision=expected_revision,

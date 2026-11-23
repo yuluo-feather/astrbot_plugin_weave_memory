@@ -20,7 +20,7 @@ class FakeTextPart:
 
 class FakeEvent:
     def __init__(self, *, user="u1", platform_id="instance-1", group_id="",
-                 message="", group_owner=None, group_admins=None):
+                 message="", group_owner=None, group_admins=None, message_id="m1"):
         group = None
         if group_id:
             group = types.SimpleNamespace(
@@ -28,8 +28,11 @@ class FakeEvent:
                 group_owner=group_owner,
                 group_admins=group_admins,
             )
-        self.message_obj = types.SimpleNamespace(group_id=group_id, group=group)
+        self.message_obj = types.SimpleNamespace(
+            group_id=group_id, group=group, message_id=message_id,
+        )
         self.message_str = message
+        self.unified_msg_origin = f"test:{platform_id}:{group_id or user}"
         self._user = user
         self._platform_id = platform_id
         self.sent = []
@@ -67,7 +70,7 @@ class FakeEvent:
         self.sent.append(result)
 
 
-def install_astrbot_stubs(monkeypatch, data_dir):
+def install_astrbot_stubs(monkeypatch, data_dir, *, with_llm_tool=True):
     astrbot = types.ModuleType("astrbot")
     api = types.ModuleType("astrbot.api")
     core_module = types.ModuleType("astrbot.core")
@@ -102,20 +105,24 @@ def install_astrbot_stubs(monkeypatch, data_dir):
             return fn
         return decorate
 
-    filter_obj = types.SimpleNamespace(
-        command=passthrough,
-        command_group=command_group,
-        event_message_type=passthrough,
-        on_llm_request=passthrough,
-        on_llm_response=passthrough,
-        on_using_llm_tool=passthrough,
-        on_llm_tool_respond=passthrough,
-        llm_tool=llm_tool,
-        EventMessageType=types.SimpleNamespace(
+    filter_attrs = {
+        "command": passthrough,
+        "command_group": command_group,
+        "event_message_type": passthrough,
+        "on_llm_request": passthrough,
+        "on_llm_response": passthrough,
+        "EventMessageType": types.SimpleNamespace(
             PRIVATE_MESSAGE="private", GROUP_MESSAGE="group",
         ),
-        registered=registered,
-    )
+        "registered": registered,
+    }
+    if with_llm_tool:
+        filter_attrs.update({
+            "on_using_llm_tool": passthrough,
+            "on_llm_tool_respond": passthrough,
+            "llm_tool": llm_tool,
+        })
+    filter_obj = types.SimpleNamespace(**filter_attrs)
     event_module.filter = filter_obj
     event_module.AstrMessageEvent = FakeEvent
 
@@ -158,8 +165,8 @@ def install_astrbot_stubs(monkeypatch, data_dir):
     return star_module
 
 
-def load_plugin(monkeypatch, tmp_path, config=None):
-    star_module = install_astrbot_stubs(monkeypatch, tmp_path)
+def load_plugin(monkeypatch, tmp_path, config=None, *, with_llm_tool=True):
+    star_module = install_astrbot_stubs(monkeypatch, tmp_path, with_llm_tool=with_llm_tool)
     root = Path(__file__).parents[2]
     source_main = root / "main.py"
     package_dir = tmp_path / "plugin_package"
@@ -499,6 +506,19 @@ def test_v13_agent_tool_names_follow_plan_prefix_and_scope(monkeypatch, tmp_path
     asyncio.run(plugin.terminate())
 
 
+def test_plugin_commands_work_when_host_lacks_llm_tools(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path, with_llm_tool=False)
+    result = asyncio.run(collect(plugin.memory_save(FakeEvent(
+        message="/织忆 保存 无工具宿主仍可用",
+    ))))[0]
+    assert "已保存记忆" in result
+    filter_obj = sys.modules["astrbot.api.event"].filter
+    assert filter_obj.registered["tools"] == {}
+    asyncio.run(plugin.terminate())
+
+
 def test_plugin_command_auto_enroll_notifies_user(monkeypatch, tmp_path):
     import asyncio
 
@@ -511,11 +531,97 @@ def test_plugin_command_auto_enroll_notifies_user(monkeypatch, tmp_path):
     asyncio.run(plugin.terminate())
 
 
-def test_plugin_agent_tool_write_fails_closed_without_host_call_id(monkeypatch, tmp_path):
+def test_plugin_agent_remember_tool_writes_with_plugin_evidence(monkeypatch, tmp_path):
+    import asyncio
+    import json
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    event = FakeEvent(message="记住我喜欢黑咖啡", message_id="m-remember-1")
+    bind_plugin_tool(
+        plugin, event, name="weave_memory_remember",
+        handler_name="memory_remember_tool",
+        args={
+            "content": "我喜欢黑咖啡", "memory_type": "PREFERENCE",
+            "requested_persistence": True, "reason": "用户明确要求",
+        },
+    )
+    result = asyncio.run(collect(plugin.memory_remember_tool(
+        event, "我喜欢黑咖啡", "PREFERENCE", True, "用户明确要求",
+    )))[0]
+    assert "已保存记忆" in result
+    row = plugin._database.connection.execute(
+        "SELECT source_type, evidence_ref, metadata_json FROM memory_sources",
+    ).fetchone()
+    assert row["source_type"] == "AGENT"
+    assert "tool:weave_memory_remember" in row["evidence_ref"]
+    assert "message:m-remember-1" in row["evidence_ref"]
+    metadata = json.loads(row["metadata_json"])
+    assert metadata["origin"] == "agent_tool"
+    assert metadata["tool_name"] == "weave_memory_remember"
+    assert metadata["message_id"] == "m-remember-1"
+    assert metadata["requested_persistence"] is True
+    assert metadata["reason"] == "用户明确要求"
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_agent_remember_is_idempotent_for_same_message(monkeypatch, tmp_path):
     import asyncio
 
     plugin, _ = load_plugin(monkeypatch, tmp_path)
-    event = FakeEvent(message="记住我喜欢黑咖啡")
+    event = FakeEvent(message="记住我喜欢黑咖啡", message_id="m-remember-2")
+    bind_plugin_tool(
+        plugin, event, name="weave_memory_remember",
+        handler_name="memory_remember_tool",
+        args={"content": "我喜欢黑咖啡", "memory_type": "PREFERENCE"},
+    )
+    first = asyncio.run(collect(plugin.memory_remember_tool(
+        event, "我喜欢黑咖啡", "PREFERENCE",
+    )))[0]
+    bind_plugin_tool(
+        plugin, event, name="weave_memory_remember",
+        handler_name="memory_remember_tool",
+        args={"content": "我喜欢黑咖啡", "memory_type": "PREFERENCE"},
+    )
+    second = asyncio.run(collect(plugin.memory_remember_tool(
+        event, "我喜欢黑咖啡", "PREFERENCE",
+    )))[0]
+    assert "已保存记忆" in first
+    assert "已保存记忆" in second
+    assert plugin._database.connection.execute(
+        "SELECT count(*) FROM memories",
+    ).fetchone()[0] == 1
+    assert plugin._database.connection.execute(
+        "SELECT count(*) FROM memory_sources",
+    ).fetchone()[0] == 1
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_agent_remember_requested_persistence_false_skips(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    event = FakeEvent(message="这句话只用于当前轮", message_id="m-remember-3")
+    bind_plugin_tool(
+        plugin, event, name="weave_memory_remember",
+        handler_name="memory_remember_tool",
+        args={"content": "只用于当前轮", "requested_persistence": False},
+    )
+    result = asyncio.run(collect(plugin.memory_remember_tool(
+        event, "只用于当前轮", "FACT", False,
+    )))[0]
+    assert "未保存" in result
+    assert plugin._database.connection.execute(
+        "SELECT count(*) FROM memories",
+    ).fetchone()[0] == 0
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_agent_remember_falls_back_to_session_evidence(monkeypatch, tmp_path):
+    import asyncio
+    import json
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    event = FakeEvent(message="记住我喜欢黑咖啡", message_id="")
     bind_plugin_tool(
         plugin, event, name="weave_memory_remember",
         handler_name="memory_remember_tool",
@@ -524,9 +630,30 @@ def test_plugin_agent_tool_write_fails_closed_without_host_call_id(monkeypatch, 
     result = asyncio.run(collect(plugin.memory_remember_tool(
         event, "我喜欢黑咖啡", "PREFERENCE",
     )))[0]
-    assert "tool_call_id" in result
-    assert "已保存记忆" not in result
-    assert event.sent == []
+    assert "已保存记忆" in result
+    row = plugin._database.connection.execute(
+        "SELECT evidence_ref, metadata_json FROM memory_sources",
+    ).fetchone()
+    assert "session:test:instance-1:u1" in row["evidence_ref"]
+    assert json.loads(row["metadata_json"])["message_id"] == ""
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_agent_remember_fails_closed_without_message_or_session(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    event = FakeEvent(message="记住我喜欢黑咖啡", message_id="")
+    event.unified_msg_origin = ""
+    bind_plugin_tool(
+        plugin, event, name="weave_memory_remember",
+        handler_name="memory_remember_tool",
+        args={"content": "我喜欢黑咖啡", "memory_type": "PREFERENCE"},
+    )
+    result = asyncio.run(collect(plugin.memory_remember_tool(
+        event, "我喜欢黑咖啡", "PREFERENCE",
+    )))[0]
+    assert "保存失败" in result
     assert plugin._database.connection.execute(
         "SELECT count(*) FROM memories",
     ).fetchone()[0] == 0
@@ -628,42 +755,41 @@ def test_plugin_auto_enroll_disabled_requires_explicit_grant(monkeypatch, tmp_pa
     asyncio.run(plugin.terminate())
 
 
-def test_plugin_agent_update_tool_fails_closed_on_astrbot_4294(monkeypatch, tmp_path):
+def test_plugin_agent_update_tool_writes_with_plugin_evidence(monkeypatch, tmp_path):
     import asyncio
+    import json
 
     plugin, _ = load_plugin(monkeypatch, tmp_path)
-    for tool_name, handler_name, args in (
-        ("weave_memory_update", "memory_update_tool", {
-            "memory_id": "memory-not-used", "expected_revision": 1,
-            "content": "新内容",
-        }),
-    ):
-        event = FakeEvent(message="请明确保存或修改我的记忆")
-        bind_plugin_tool(plugin, event, name=tool_name, handler_name=handler_name, args=args)
-        result = asyncio.run(collect(getattr(plugin, handler_name)(event, **args)))[0]
-        assert "tool_call_id" in result
-    assert plugin._database.connection.execute(
-        "SELECT count(*) FROM memories",
-    ).fetchone()[0] == 0
-    asyncio.run(plugin.terminate())
-
-def test_plugin_agent_write_enabled_by_default_but_host_id_is_unavailable(monkeypatch, tmp_path):
-    import asyncio
-
-    plugin, _ = load_plugin(monkeypatch, tmp_path)
-    event = FakeEvent(message="记住我对花生过敏")
+    asyncio.run(collect(plugin.memory_save(FakeEvent(
+        message="/织忆 保存 喜欢黑咖啡",
+    ))))
+    memory_id = plugin._database.connection.execute(
+        "SELECT id FROM memories",
+    ).fetchone()[0]
+    event = FakeEvent(message="请修改我的记忆", message_id="m-update-1")
     bind_plugin_tool(
-        plugin, event, name="weave_memory_remember",
-        handler_name="memory_remember_tool",
-        args={"content": "我对花生过敏", "memory_type": "PREFERENCE"},
+        plugin, event, name="weave_memory_update", handler_name="memory_update_tool",
+        args={
+            "memory_id": memory_id, "expected_revision": 1,
+            "content": "喜欢无糖黑咖啡", "reason": "用户要求修改",
+        },
     )
-    result = asyncio.run(collect(plugin.memory_remember_tool(
-        event, "我对花生过敏", "PREFERENCE",
+    result = asyncio.run(collect(plugin.memory_update_tool(
+        event, memory_id, 1, "喜欢无糖黑咖啡", "用户要求修改",
     )))[0]
-    assert "tool_call_id" in result
-    assert plugin._database.connection.execute(
-        "SELECT count(*) FROM memories",
-    ).fetchone()[0] == 0
+    assert "已更新记忆" in result
+    assert "revision 2" in result
+    row = plugin._database.connection.execute(
+        "SELECT source_type, evidence_ref, metadata_json FROM memory_sources "
+        "ORDER BY rowid DESC LIMIT 1",
+    ).fetchone()
+    assert row["source_type"] == "AGENT"
+    assert "tool:weave_memory_update" in row["evidence_ref"]
+    assert "message:m-update-1" in row["evidence_ref"]
+    metadata = json.loads(row["metadata_json"])
+    assert metadata["origin"] == "agent_tool"
+    assert metadata["tool_name"] == "weave_memory_update"
+    assert metadata["reason"] == "用户要求修改"
     asyncio.run(plugin.terminate())
 
 def test_v13_agent_read_tools_are_personal_scoped_and_revisioned(monkeypatch, tmp_path):
@@ -714,19 +840,16 @@ def test_v13_agent_read_tools_are_personal_scoped_and_revisioned(monkeypatch, tm
     )))[0]
     assert "尚未授权" in group_result
 
-    blocked = invoke("weave_memory_update", "memory_update_tool", {
+    updated = invoke("weave_memory_update", "memory_update_tool", {
         "memory_id": memory_id, "expected_revision": 1,
-        "content": "喜欢无糖黑咖啡",
+        "content": "喜欢无糖黑咖啡", "reason": "用户要求修改",
     })
-    assert "tool_call_id" in blocked
+    assert "已更新记忆" in updated
+    assert "revision 2" in updated
     update = asyncio.run(collect(plugin.memory_update(FakeEvent(
         message=f"/织忆 更新 {memory_id} 1 喜欢无糖黑咖啡",
     ))))[0]
-    assert "revision 2" in update
-    stale = asyncio.run(collect(plugin.memory_update(FakeEvent(
-        message=f"/织忆 更新 {memory_id} 1 旧 revision 不得覆盖",
-    ))))[0]
-    assert "revision conflict" in stale
+    assert "revision conflict" in update
     asyncio.run(plugin.terminate())
 
 

@@ -115,19 +115,30 @@ def test_explicit_save_requires_consent_and_persists_active_memory(app_stack):
     assert index.search("咖啡", scope_id=scope.id, subject_id="u1") == (memory.id,)
 
 
-def test_agent_save_update_and_history_record_host_tool_call_ids(app_stack):
+def test_agent_save_update_and_history_record_plugin_evidence_refs(app_stack):
     _, store, _, scopes, consent, memories, _, _ = app_stack
     scope = scopes.resolve(identity())
     consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
 
+    save_evidence = "tool:weave_memory_remember#message:m-save#sha256:abc123"
+    update_evidence = "tool:weave_memory_update#message:m-update#sha256:def456"
+
     async def write_and_update():
         saved, _ = await memories.save_agent(
-            scope, "喜欢黑咖啡", operator_id="u1", tool_call_id="call-save-1",
+            scope, "喜欢黑咖啡", operator_id="u1", evidence_ref=save_evidence,
             memory_type=MemoryType.PREFERENCE,
+            source_metadata={
+                "origin": "agent_tool", "tool_name": "weave_memory_remember",
+                "message_id": "m-save",
+            },
         )
         updated, _ = await memories.update_agent(
             scope, saved.id, "喜欢无糖黑咖啡", expected_revision=1,
-            operator_id="u1", tool_call_id="call-update-1",
+            operator_id="u1", evidence_ref=update_evidence,
+            source_metadata={
+                "origin": "agent_tool", "tool_name": "weave_memory_update",
+                "message_id": "m-update",
+            },
         )
         return saved, updated
 
@@ -137,16 +148,21 @@ def test_agent_save_update_and_history_record_host_tool_call_ids(app_stack):
     assert updated.source_type.value == "AGENT"
     revisions, sources = memories.history(scope, saved.id)
     assert [item.revision for item in revisions] == [1, 2]
-    assert [item.evidence_ref for item in sources] == ["call-save-1", "call-update-1"]
+    assert [item.evidence_ref for item in sources] == [save_evidence, update_evidence]
     assert all(item.source_type.value == "AGENT" for item in sources)
     assert all(item.operator_type.value == "agent" for item in sources)
+    assert [item.metadata["origin"] for item in sources] == ["agent_tool", "agent_tool"]
+    assert [item.metadata["tool_name"] for item in sources] == [
+        "weave_memory_remember", "weave_memory_update",
+    ]
     assert store.get(saved.id, scope_id=scope.id, subject_id="u1") == updated
 
     async def stale_update():
         with pytest.raises(Conflict, match="revision conflict"):
             await memories.update_agent(
                 scope, saved.id, "不能覆盖 revision 2", expected_revision=1,
-                operator_id="u1", tool_call_id="call-stale-update",
+                operator_id="u1",
+                evidence_ref="tool:weave_memory_update#message:m-stale#sha256:ghi789",
             )
     asyncio.run(stale_update())
 
@@ -158,12 +174,14 @@ def test_explicit_update_marks_source_explicit_after_agent_update(app_stack):
 
     async def write_then_edit():
         saved, _ = await memories.save_agent(
-            scope, "喜欢黑咖啡", operator_id="u1", tool_call_id="call-save-1",
+            scope, "喜欢黑咖啡", operator_id="u1",
+            evidence_ref="tool:weave_memory_remember#message:m-save#sha256:abc123",
             memory_type=MemoryType.PREFERENCE,
         )
         _, _ = await memories.update_agent(
             scope, saved.id, "喜欢无糖黑咖啡", expected_revision=1,
-            operator_id="u1", tool_call_id="call-update-1",
+            operator_id="u1",
+            evidence_ref="tool:weave_memory_update#message:m-update#sha256:def456",
         )
         updated, _ = await memories.update_explicit(
             scope, saved.id, "喜欢热黑咖啡", expected_revision=2,

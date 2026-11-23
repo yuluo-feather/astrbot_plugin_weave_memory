@@ -275,11 +275,12 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 
 ### Agent 工具
 
-- V1.3 工具面按计划书使用 `weave_memory_` 前缀：`search/get/list/history` 仅访问当前用户 Personal Scope；`update` 只更新正文并要求 `expected_revision`；`remember` 沿用 V1.2 创建入口。AstrBot 4.29.4 未向工具执行前 handler 暴露真实 `tool_call_id`，因此 `update/remember` fail-closed。
+- V1.3 工具面按计划书使用 `weave_memory_` 前缀：`search/get/list/history` 仅访问当前用户 Personal Scope；`update` 只更新正文并要求 `expected_revision`；`remember` 沿用 V1.2 创建入口。AstrBot 4.29.4 未向工具执行前 handler 暴露真实 `tool_call_id`，因此写入使用插件侧 `evidence_ref`，不冒充宿主 ID。
 - 工具 handler 绑定检查依据 `FunctionTool.handler_module_path`、AstrBot 加载时创建的 `functools.partial` 与当前插件实例；这仅确认 handler 归属，不构成跨插件/Persona 调用者隔离承诺。
 - Personal 与 Group 检索均写入插件数据目录 `recall_diagnostics/recall-YYYY-MM-DD.jsonl`；每次检索一行，默认只写 query hash、不写查询原文/记忆正文，默认保留 7 天。查询原文需显式开启配置，写入前对邮箱、手机号与长数字串做常见模式脱敏。
-- 原因：宿主 `OnUsingLLMToolEvent` 不提供 `tool_call_id`；`OnLLMResponseEvent` 在 Agent 完成后才触发，无法在写入前取得当前工具调用 ID。不得使用模型参数、猜测或插件 UUID 替代。
-- 应用层 `MemoryApplicationService.save_agent/update_agent` 已要求真实 `tool_call_id`，并记录 `source_type=AGENT`、`operator_type=agent`、`evidence_ref=tool_call_id`；沿用去重、Revision、Source、WriteCoordinator 与 Consent guard。AstrBot 4.29.4 的插件工具入口暂不能调用该写路径。
+- 原因：宿主 `OnUsingLLMToolEvent` 不提供 `tool_call_id`；`OnLLMResponseEvent` 在 Agent 完成后才触发，无法在写入前取得当前工具调用 ID。插件侧证据键为 `tool:<tool_name>#message:<message_id>#sha256:<normalized_content_hash>`；缺 `message_id` 时退回 `session:<unified_msg_origin>`，两者都没有才 fail-closed。
+- 应用层 `MemoryApplicationService.save_agent/update_agent` 要求非空 `evidence_ref`，并记录 `source_type=AGENT`、`operator_type=agent`；`MemorySource.metadata` 记录 `origin=agent_tool`、`tool_name`、`session_id`、`message_id`、`content_sha256`、`requested_persistence` 与可选 `reason`；沿用去重、Revision、Source、WriteCoordinator 与 Consent guard。
+- `weave_memory_remember` 的 `requested_persistence=false` 时不写入；`reason` 仅用于审计。`weave_memory_update` 仍必须携带 `expected_revision`，只修改正文，不改 `MemoryType`。
 - 当前通过 `/织忆 保存`、`/织忆 更新` 完成用户写入；命令写入仍为 `EXPLICIT` / `USER`。群聊、撤销/关闭、跨用户读取均 fail-closed。
 - 后台自动提取不在本版实现；V1.5 仍只产 `INFERRED` 候选。
 

@@ -39,7 +39,7 @@
 
 - 🔒 **默认开启，可随时关闭**：`auto_enroll=true`（默认）时，首次私聊会自动登记个人记忆并发送一次告知；`/织忆 撤销授权` 或 `/织忆 关闭` 停止保存、检索与注入，已有数据保留。`auto_enroll=false` 回到逐用户 `/织忆 授权`；群记忆仍需管理员 `/织忆 群开启`。
 - 🏠 **本地优先，零第三方运行时依赖**：权威数据存本机 SQLite，检索用 FTS5；插件本身不依赖额外的 Python 包，AstrBot 与 SQLite 由宿主提供。
-- 🧪 **Agent 记忆工具（V1.3）**：Personal 范围的 `weave_memory_search/get/list/history` 可用；`weave_memory_update` 与 V1.2 既有工具 `weave_memory_remember` 在 AstrBot 4.29.4 上因宿主未向插件暴露真实 `tool_call_id` 而 fail-closed。当前请通过 `/织忆 保存`、`/织忆 更新` 写入；不会伪造调用 ID。后台自动提取仍只产候选，不会自动变成用户事实。
+- 🧪 **Agent 记忆工具（V1.3）**：Personal 范围的 `weave_memory_search/get/list/history` 可用；`weave_memory_remember/update` 已启用写入，来源记录插件侧 `evidence_ref`（`message_id` 优先、`session` 回退、内容哈希），不冒充宿主 `tool_call_id`。`requested_persistence=false` 时不写库；只有工具返回成功后才能对用户确认已保存。后台自动提取仍只产候选，不会自动变成用户事实。
 - 🧠 **自动注入，但不污染会话**：LLM 请求到来时检索少量相关记忆，通过临时 `TextPart` 追加到本次请求；不修改 system prompt，也不写入持久会话历史。个人默认最多 4 条、384 estimated tokens。
 - 🧾 **检索诊断**：Personal/Group 检索按请求写入 JSONL，包含候选评分、过滤原因、最终注入 ID 与 Token 估算；默认不记录查询原文/记忆正文，默认保留 7 天。
 - 👥 **群共享记忆（V1.1）**：管理员开启并写入群级内容，成员只能读取当前群；个人记忆不进群，群记忆不出现在私聊。
@@ -117,7 +117,7 @@
         └─ 临时 TextPart 追加到本次请求；不写持久会话历史
 ```
 
-Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal Scope；`weave_memory_remember` 沿用 V1.2 入口，`weave_memory_update` 为 V1.3 新增但受宿主调用 ID 限制。由于 AstrBot 4.29.4 未向工具执行前的插件入口提供宿主 `tool_call_id`，Agent 写入工具 fail-closed；当前写入请使用个人命令。
+Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal Scope；`weave_memory_remember/update` 已启用写入，来源记录插件侧 `evidence_ref`（`tool:<name>#message:<message_id>#sha256:<content_hash>`；缺 `message_id` 时退回 `session:<unified_msg_origin>`），不冒充宿主 `tool_call_id`。`weave_memory_remember` 支持 `requested_persistence` 与 `reason`；`update` 仍要求 `expected_revision`。宿主不提供 `llm_tool` 时工具注册降级为空操作，命令入口仍可用。
 
 **失败语义**：索引不可用时检索 fail-closed，但正文不丢；写事务提交后索引失败会保留 dirty 标记，由启动恢复或显式重建修复；注入链路任何异常都只影响本轮记忆，不影响聊天。
 
@@ -128,7 +128,7 @@ Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal S
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `auto_enroll` | bool | `true` | Personal 记忆默认登记。开启后，新用户或没有 consent 记录的私聊用户首次对话会自动登记并收到一次告知；设为 `false` 回到逐用户 `/织忆 授权`。已有授权/撤销记录不会被改写。 |
-| `agent_write_enabled` | bool | `true` | 控制 Agent 记忆写入工具开关。AstrBot 4.29.4 未向插件暴露写入追溯所需的真实 `tool_call_id`，因此即使开启，Agent 写入工具仍 fail-closed；当前使用 `/织忆 保存`、`/织忆 更新`。 |
+| `agent_write_enabled` | bool | `true` | 控制 Agent 记忆写入工具开关。开启后 `weave_memory_remember/update` 可写入；来源记录插件侧 `evidence_ref`（message/session + 内容哈希）与工具 metadata，不冒充宿主 `tool_call_id`。 |
 | `group_admin_ids` | object | `{}` | 群管理员回退配置。键为 `platform\|tenant_id\|group_id`，值为管理员 ID 数组；仅在平台无法解析群主/管理员角色时使用。键必须精确匹配平台、平台实例与群 ID，避免跨群/跨实例复用。 |
 | `group_max_tokens` | int | `192` | 群记忆注入的 Token 预算（provider-neutral 估算值）。 |
 | `group_max_memories` | int | `2` | 群记忆注入的最大条数。 |
@@ -207,8 +207,8 @@ python scripts/build_astrbot_plugin.py
 | V0「起针」 | 已完成：领域核心、SQLite + FTS5、写协调、生命周期、私聊闭环 |
 | V1.0「初织」 | 代码、私聊宿主烟测与专用 Scope 清空证据已完成；**正式验收待签署** |
 | V1.1「引线」 | M1/M2 群共享记忆已实现（158 passed）；**真实宿主群聊烟测待补** |
-| V1.2「锁边」 | Personal 默认登记 + opt-out 已实现；Agent 写入服务已具备，但 AstrBot 4.29.4 未暴露真实 `tool_call_id`，宿主写入链路仍 fail-closed |
-| V1.3「整经」 | 部分交付开发版本；Agent 写工具因 AstrBot 4.29.4 未暴露真实 `tool_call_id` 而 fail-closed；真实宿主验收待补 |
+| V1.2「锁边」 | Personal 默认登记 + opt-out 已实现；Agent 写入服务已具备（V1.3 启用写入） |
+| V1.3「整经」 | 部分交付开发版本；Agent 写工具已启用，来源记录插件侧 `evidence_ref`；真实宿主验收待补 |
 | V1.4「验线」 | 进行中：50 条合成 Golden Set 初稿、离线 Harness 与首轮基线已建立；人工标注复核及注入有效性评分待完成 |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 

@@ -6,10 +6,10 @@
     "hint": "开启后，新用户或没有授权记录的私聊用户首次对话会自动登记个人记忆，并收到一次告知；用户可用 /织忆 关闭 停止。关闭后回到逐用户 /织忆 授权。"
   },
   "agent_write_enabled": {
-    "description": "控制 Agent 记忆写入工具开关（默认开启）；AstrBot 4.29.4 上因宿主未暴露 tool_call_id，写入工具仍 fail-closed。",
+    "description": "控制 Agent 记忆写入工具开关（默认开启）；开启后 remember/update 可写入，来源记录插件侧 evidence_ref。",
     "type": "bool",
     "default": true,
-    "hint": "控制 Agent 写入入口；AstrBot 4.29.4 未向插件工具入口提供真实 tool_call_id，因此 weave_memory_update 与既有 weave_memory_remember 暂时拒绝写入。当前请使用 /织忆 保存、/织忆 更新。"
+    "hint": "控制 Agent 写入入口；来源记录 message/session + 内容哈希与工具 metadata，不冒充宿主 tool_call_id。requested_persistence=false 时不写库；命令入口始终可用。"
   },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",
