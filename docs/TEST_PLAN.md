@@ -385,3 +385,23 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 - Settings 不返回管理员名单；Maintenance 只读。
 - 分页 `limit`/`cursor` 边界正确；错误映射 400/403/404/409/503。
 - API 失败不阻塞聊天；关闭 API 后退回命令能力。
+
+## 19. V1.7 导入导出测试矩阵（已实现）
+
+| 项 | 覆盖 |
+|---|---|
+| 导出格式 v2 | `schema_version` / `export_id` / `source_platform` / 条目四元组字段；每次导出新 `export_id` |
+| 导出过滤 | 默认只 ACTIVE；`all` 含 ARCHIVED 等元数据且正文为空；DELETED 与 CANDIDATE 不导出 |
+| 作用域隔离 | Personal 只导出本 scope；Group 需要管理员、enabled 与 GRANTED；跨账号不可见 |
+| 导入成功 | ACTIVE 创建新 `memory_id`、`SourceType.IMPORTED`、四元组写入 `evidence_ref`、有效期与 metadata 保留 |
+| 伪造作用域 | 文件内 `scope_id` / `subject_id` 被忽略；GROUP→Personal 与 Personal→Group 均拒绝 |
+| 幂等 | 同文件重复导入不重复写入；同内容 ACTIVE 记跳过；同内容 CANDIDATE 记冲突 |
+| 断点续跑 | 预置 `cursor` 的任务只处理剩余条目；`DONE` 返回幂等摘要；`FAILED` 不续跑 |
+| 状态映射 | ARCHIVED/EXPIRED/SUPERSEDED/REJECTED/DELETED 只写 `IMPORT_METADATA`，不建正文；CANDIDATE 条目失败 |
+| dry-run | 不写记忆、不写任务，返回逐条预判 |
+| 回滚 | 只删除本次新建记忆；任务置 FAILED；之后重新导入新建任务 |
+| schema v8 | 迁移创建 `import_jobs` 与 evidence_ref 索引；v8→v7 空表回滚；非空拒绝且版本不变 |
+| 命令层 | 个人导入 dry-run/导入/回滚；无附件报错；`导出 all`；群导入管理员限制 |
+| 管理 API | `/v1/export` 与 `/v1/import` 白名单 fail-closed；匿名/非白名单 403；管理员参数透传；禁用群拒绝 |
+
+验证口径（2026-11-23）：305 passed；`ruff check .`、`mypy`、`mypy .`、`compileall`、插件构建通过。宿主真机导入/导出烟测待补。

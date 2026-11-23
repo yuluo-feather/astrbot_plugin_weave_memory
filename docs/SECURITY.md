@@ -142,3 +142,14 @@ Recall 候选查找与上下文注入之间可能发生 Consent revoke 或 Scope
 - 拒绝默认物理清理正文，只保留不含正文的 `CANDIDATE_REJECT` 审计；`rejected_keep_body` 显式开启才保留。
 - API 失败按领域错误映射 HTTP 状态，不阻塞聊天，不扩大日志正文暴露面。
 
+## 14. V1.7 导入导出安全边界（ADR-0017）
+
+- 导入文件是不可信输入：只接受 UTF-8 JSON，限制 5 MiB / 5000 条；只解析，不执行，不导入 Python/脚本内容。
+- 文件内的 `scope_id` / `subject_id` 被忽略；作用域始终由调用者解析。目标 Personal 拒绝 Group 文件，目标 Group 拒绝 Personal 文件；跨平台导入按 `source_platform` 记入幂等键。
+- 导入只创建新记忆，走 `WriteCoordinator` 与 consent guard；不更新已有记忆、不确认候选、不覆盖冲突内容。
+- 导入失败/回滚只删除本次任务创建的 `memory_id`，不触碰既有记忆；回滚不依赖备份。
+- 非 ACTIVE 条目只写不含正文的 `IMPORT_METADATA` 审计；`memory_operations` 不写正文、不写完整来源文件。
+- 群导入/导出要求群管理员（命令）或显式 dashboard 管理员白名单（API），且群 `is_enabled=1` + `group_memory=GRANTED`。
+- 管理 API 的 `GET /v1/export` 与 `POST /v1/import` 是 V1.6 只读边界外的受控写/读端点：`api_admin_usernames` 为空即拒绝（fail-closed），个人 scope 一律拒绝，群正文不经未授权用户。
+- 导出默认只含 ACTIVE 正文；`all` 的其他状态只含元数据。不导出 DELETED、CANDIDATE 或内部序号。
+

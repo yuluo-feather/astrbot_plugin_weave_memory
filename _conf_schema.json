@@ -54,11 +54,11 @@
     "hint": "默认关闭：拒绝后正文、版本与来源在同一事务中物理清理，只保留不含正文的审计记录；开启后保留 REJECTED 行与正文。"
   },
   "api_admin_usernames": {
-    "description": "只读管理 API 用户名白名单",
+    "description": "管理 API 用户名白名单",
     "type": "list",
     "items": { "type": "string" },
     "default": [],
-    "hint": "为空表示任意 dashboard 登录用户可读实例级管理端点；非空时只允许名单内用户名。API 全部只读，不提供写端点。"
+    "hint": "为空表示任意 dashboard 登录用户可读实例级管理端点；非空时只允许名单内用户名。V1.7 的 GET /v1/export 与 POST /v1/import 要求非空名单且用户名命中（fail-closed），仅支持群作用域。"
   },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",

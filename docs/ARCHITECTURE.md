@@ -121,3 +121,13 @@ V0 目标为单进程、单实例、SQLite。写操作由应用层统一协调�
 - 关闭管理 API 只移除 HTTP 入口；候选、命令、检索、注入语义不变。
 - V1.6 不实现 WebUI、导出/导入与向量检索。
 
+## 12. V1.7 导入导出边界（ADR-0017）
+
+- `app/import_service.py`：平台无关的导入编排（解析、作用域强制、幂等、状态映射、任务、回滚）；依赖 `MemoryStore`、`ImportJobStore`、`WriteCoordinator`、`LifecycleService`、`Clock`、`IdGenerator`。
+- `WriteCoordinator.create_import`：在单个协调锁内完成四元组幂等查询、内容去重与插入；并发导入同一文件不会重复写入。
+- `app/export.py`：只负责 v2 payload 序列化；Personal/Group 服务按调用者作用域和 consent 取数。
+- `adapters/sqlite/import_jobs.py`：`import_jobs` 持久化；`SQLiteMemoryStore` 新增导入查重、导出读取与审计写入。
+- `adapters/astrbot/attachments.py`：从消息 File 组件读取并解析 JSON（大小限制、UTF-8、只解析不执行）；命令层不直接接触宿主 SDK 类型。
+- `adapters/astrbot/web_api.py`：在只读管理 API 上增加 `GET /v1/export` 与 `POST /v1/import`，使用独立的管理员 fail-closed 鉴权。
+- V1.7 不实现完整备份恢复（V1.8）、向量/混合检索（V2.0）与 WebUI。
+

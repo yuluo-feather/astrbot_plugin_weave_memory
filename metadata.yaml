@@ -15,7 +15,10 @@ help: |
   [织忆 状态] 查看个人空间、授权、记忆数量与索引状态
   [织忆 统计] 查看记忆状态、类型、来源数量
   [织忆 操作记录] 查看不含正文的操作审计
-  [织忆 导出 json|md] 导出当前个人空间 ACTIVE 记忆
+  [织忆 导出 json|md [all]] 导出当前个人空间 ACTIVE 记忆；all 附带其他状态元数据
+  [织忆 导入 [dry-run]] 附 v2 JSON 导出文件导入；dry-run 只预演
+  [织忆 导入 回滚 任务ID] 删除该任务本次新建的记忆
+  [群导入/群导出 V1.7] 群管理员；/织忆 群导入 [dry-run]、/织忆 群导出 [json|md] [all]、/织忆 群导入 回滚 任务ID
   [织忆 删除 记忆ID 确认] 二次确认后不可恢复地删除一条记忆
   [织忆 清空 确认] 不可恢复地清空个人记忆
   [织忆 关闭 确认] 永久关闭个人记忆空间（数据保留，当前版本不支持重新开启）
@@ -23,9 +26,9 @@ help: |
   [群命令] 群聊内发送 /织忆 群帮助 查看；群开启/群关闭/群清空/群销毁/群保存仅群管理员，成员可读 群列表/群查询/群状态
   [提取命令 V1.5] 默认关闭；/织忆 提取 开启 <capture|auto_extract|external_model|store_candidate|全部>；/织忆 提取 状态；/织忆 候选 列表/确认/拒绝
   [候选 V1.6] 候选默认 7 天有效（candidate_ttl_days）；过期在读取列表时转归档；拒绝默认清除正文，只保留审计
-  [只读管理 API V1.6] 插件路由 /astrbot_plugin_weave_memory/v1/{overview|candidates|memories|groups|retrieval/debug|settings|maintenance/status}；全部只读，需 dashboard 登录
+  [管理 API V1.6/V1.7] 插件路由 /astrbot_plugin_weave_memory/v1/{overview|candidates|memories|groups|retrieval/debug|settings|maintenance/status|export|import}；只读端点需 dashboard 登录，export/import 需非空 api_admin_usernames 白名单且仅群作用域
   触发：个人命令仅私聊生效，群命令仅群聊生效；统一前缀 /织忆
-  状态：开发预览 v1.0.0-dev.1，未正式发版；V1.3 宿主烟测按用户要求跳过、未测
+  状态：开发预览 v1.0.0-dev.1，未正式发版；V1.7 宿主导入导出烟测待补
 version: v1.0.0-dev.1
 author: 羽落
 repo: https://github.com/yuluo-feather/astrbot_plugin_weave_memory

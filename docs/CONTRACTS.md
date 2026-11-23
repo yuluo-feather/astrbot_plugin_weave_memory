@@ -398,3 +398,47 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - 错误映射：`ValidationError=400`、`AuthorizationDenied=403`、`NotFound=404`、`Conflict=409`、`IndexUnavailable/StorageError/ServiceClosed=503`。
 - API 失败不得阻塞聊天；关闭 API 不改变候选/命令/检索语义。
 
+## 15. V1.7 导入导出契约（ADR-0017）
+
+依据：`星羽塔罗_织忆_V1.7_接线_计划书.md`；ADR-0017；ADR-0014（schema v8）。
+
+### 导出格式 v2
+
+- `schema_version = "weave-memory-export-v2"`，不再使用 V1.2 的 `format` 字段。
+- 文件级字段：`schema_version`、`export_id`、`source_platform`、`exported_at`、`scope`（仅提示）、`memories`。
+- 条目级字段：`source_memory_id`、`source_revision`、`memory_type`、`status`、`content`、`body_omitted`、`source_type`、`created_at`、`updated_at`、`valid_from`、`valid_until`、`metadata`、`exported_at`、`schema_version`。
+- 幂等四元组：`(source_platform, export_id, source_memory_id, source_revision)`。
+- 默认只导出 `ACTIVE`；`all` 额外导出 `ARCHIVED` / `EXPIRED` / `SUPERSEDED` 的元数据且 `content=null`、`body_omitted=true`；不导出 `DELETED` 与 `CANDIDATE`。
+- 不导出内部 `creation_seq` / ledger `seq` / 权威 `scope_id` / `subject_id`。
+- Markdown 仅供人读，不可导入。
+
+### 导入
+
+- 只接受 `weave-memory-export-v2`；文件级字段或作用域类型不合法时整份拒绝；条目级问题逐条记 `failed`，不中断。
+- 文件中的 `scope` / `scope_id` / `subject_id` 只用于类型比较；目标 Personal 只接受 Personal 文件，目标 Group 只接受 Group 文件；写入作用域始终由调用者解析。
+- 只走 `WriteCoordinator.create_import`：锁内先按 `(source_type=IMPORTED, evidence_ref)` 查幂等，再按内容查 ACTIVE 重复，最后插入；不更新已有记忆，不自动确认候选。
+- `ACTIVE` 条目创建新本地 `memory_id`，`source_type=IMPORTED`、`operator_type=user`，保留文件中的 `created_at` / `updated_at` / `valid_from` / `valid_until` 与展示 metadata；`metadata.import` 记录来源四元组。
+- 非 `ACTIVE` 终态只写 `IMPORT_METADATA` 审计（`memory_id=NULL`），metadata 含四元组、`source_status`、`dataset_version`、`job_id`，不含正文；`CANDIDATE` 条目拒绝。
+- 幂等命中记 `SKIPPED_DUPLICATE_IMPORT`，内容重复记 `SKIPPED_DUPLICATE_ACTIVE`，唯一键/候选冲突记 `CONFLICT`。
+- dry-run 不写记忆、不写任务，只返回逐条预判（`WOULD_IMPORT` / `WOULD_METADATA` / `WOULD_SKIP` / `WOULD_CONFLICT`）。
+
+### 导入任务与回滚
+
+- `import_jobs` 字段：`id`、`scope_id`、`subject_id`、`file_sha256`（规范化 JSON 指纹）、`dataset_version`、`status`（`PENDING` / `RUNNING` / `DONE` / `FAILED` / `SKIPPED`）、`cursor`、`created_memory_ids`、`last_error`、`created_at`、`updated_at`。
+- 同一作用域同一指纹：`PENDING`/`RUNNING` 从 `cursor` 续跑；`DONE` 返回幂等摘要；`FAILED` 不续跑，重新导入新建任务。
+- 回滚按 `created_memory_ids` 逐条走 `LifecycleService.delete_memory`（`DELETED` + 物理擦除），任务置 `FAILED`、`last_error=rolled back by operator`；不依赖完整备份，不涉及已有记忆。
+- 导入前/中撤销 consent 或群关闭时，任务置 `FAILED` 并向上报错。
+
+### 入口与鉴权
+
+- 个人：`/织忆 导入 [dry-run]`（附 JSON 文件）、`/织忆 导入 回滚 <任务ID>`；`/织忆 导出 [json|md] [all]`。
+- 群：`/织忆 群导入 [dry-run]`、`/织忆 群导入 回滚 <任务ID>`、`/织忆 群导出 [json|md] [all]`；要求群管理员、群 `is_enabled=1`、`group_memory=GRANTED`。
+- 管理 API：`GET /v1/export`、`POST /v1/import`，只支持群作用域；要求 `api_admin_usernames` 非空且 dashboard 用户名在白名单（fail-closed），群 enabled + GRANTED；个人 scope 一律拒绝。
+- 附件是不可信输入：只接受 UTF-8 JSON，文件 ≤ 5 MiB、条目 ≤ 5000；不执行内容。
+
+### Schema v8
+
+- 迁移 `008_import_jobs.sql` 新建 `import_jobs`，并为 `memory_sources.evidence_ref` 建索引。
+- v8→v7 回滚守卫：`import_jobs` 为空；回滚不删除任何记忆。
+- 链式回滚在改动前统一预检全部守卫，守卫拒绝时数据库保持原版本。
+

@@ -258,3 +258,36 @@ V1.0 该表没有 `scope_id` 列，也没有应用层写入/查询 API；跨 Sco
 - v7→v6 回滚守卫：不存在任何 `CANDIDATE` 行；否则拒绝，避免丢失候选 TTL。
 - 回滚只删除 `candidate_expires_at` 列与相关索引，不影响正文、revisions、sources、consent。
 
+## 17. V1.7 导入导出数据模型（ADR-0017）
+
+### import_jobs（schema v8）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | TEXT PK | 任务 ID |
+| `scope_id` | TEXT FK scope | 任务归属作用域；续跑/回滚必须一致 |
+| `subject_id` | TEXT | 任务归属主体 |
+| `file_sha256` | TEXT | 规范化 JSON 的 SHA-256 指纹 |
+| `dataset_version` | TEXT | 导出格式版本（`weave-memory-export-v2`） |
+| `status` | TEXT | `PENDING` / `RUNNING` / `DONE` / `FAILED` / `SKIPPED` |
+| `cursor` | INTEGER | 已处理条目数；续跑起点 |
+| `created_memory_ids_json` | TEXT | 本次任务新建的本地 `memory_id` 数组 |
+| `last_error` | TEXT | 中断/回滚原因 |
+| `created_at` / `updated_at` | TEXT | UTC ISO-8601 |
+
+- 索引：`(scope_id, subject_id, file_sha256, created_at)` 与 `(status, created_at)`。
+- `memory_sources.evidence_ref` 新增索引，支撑 IMPORTED 四元组精确查重。
+
+### 导入字段映射
+
+- 新记忆：`id` 由目标库生成；`content` 来自 ACTIVE 条目；`created_at` / `updated_at` / `valid_from` / `valid_until` 保留文件值；`metadata` 保留展示字段并追加 `import.{source_platform, export_id, source_memory_id, source_revision}`。
+- 来源：`source_type=IMPORTED`、`operator_type=user`、`operator_id=调用者`、`evidence_ref` 为排序键 JSON 四元组、source metadata `{origin: import, export_id}`。
+- 修订：初始 revision 1，`change_reason=imported`。
+- 非 ACTIVE 终态：不写 `memories`，只写 `memory_operations`（`IMPORT_METADATA`，`memory_id=NULL`）。
+
+### 迁移与回滚
+
+- v8 迁移前自动备份并校验；失败中止。
+- v8→v7 回滚守卫：`import_jobs` 为空；`DROP TABLE import_jobs` 与 evidence_ref 索引，不删除记忆。
+- 链式回滚在任何改动前统一预检，守卫失败时保持原 schema 版本。
+
