@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
@@ -13,6 +14,8 @@ from ..model import (
     MemoryEntity,
     MemoryRevision,
     MemorySource,
+    MemoryStatus,
+    MemoryType,
     OperatorType,
     Scope,
 )
@@ -21,6 +24,16 @@ from ..policy.dedup import DedupKey
 
 class Clock(Protocol):
     def now(self) -> datetime: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SearchCandidate:
+    memory_id: str
+    score: float
+    status: MemoryStatus
+    valid_from: datetime | None
+    valid_until: datetime | None
+    scope_enabled: bool
 
 
 class IdGenerator(Protocol):
@@ -39,6 +52,25 @@ class MemoryStore(Protocol):
                revision: MemoryRevision, source: MemorySource | None = None) -> None: ...
 
     def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]: ...
+
+    def list_active_page(
+        self, *, scope_id: str, subject_id: str, limit: int, offset: int,
+        memory_type: MemoryType | None = None,
+    ) -> tuple[tuple[MemoryEntity, ...], int]: ...
+
+    def list_revisions(
+        self, memory_id: str, *, scope_id: str, subject_id: str,
+    ) -> tuple[MemoryRevision, ...]: ...
+
+    def list_sources(
+        self, memory_id: str, *, scope_id: str, subject_id: str,
+    ) -> tuple[MemorySource, ...]: ...
+
+    def statistics(self, *, scope_id: str, subject_id: str) -> dict[str, object]: ...
+
+    def list_operations(
+        self, *, scope_id: str, subject_id: str, limit: int, offset: int,
+    ) -> tuple[tuple[dict[str, object], ...], int]: ...
 
     def record_access(self, memory_ids: tuple[str, ...], *, scope_id: str,
                       subject_id: str, at: datetime) -> None: ...
@@ -60,7 +92,9 @@ class MemoryStore(Protocol):
 
 class SearchIndex(Protocol):
     def is_healthy(self) -> bool: ...
-    def document_count(self) -> int: ...
+    def document_count(
+        self, *, scope_id: str | None = None, subject_id: str | None = None,
+    ) -> int: ...
     def integrity_check(self) -> None: ...
     def sync_memory(self, memory_id: str) -> None: ...
     def rebuild(self) -> int: ...
@@ -68,6 +102,10 @@ class SearchIndex(Protocol):
     def search(self, query: str, *, scope_id: str, subject_id: str,
                limit: int = 20, at: datetime | None = None,
                scope_type: str = "PERSONAL") -> tuple[str, ...]: ...
+    def search_diagnostics(
+        self, query: str, *, scope_id: str, subject_id: str, limit: int = 100,
+        scope_type: str = "PERSONAL",
+    ) -> tuple[SearchCandidate, ...]: ...
 
 
 class PlatformAdapter(Protocol):

@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -36,13 +37,18 @@ from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     AuthorizationDenied,
     Conflict,
+    NotFound,
     ServiceClosed,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     Identity,
+    MemoryRevision,
+    MemorySource,
+    MemoryStatus,
     MemoryType,
     OperatorType,
     ScopeType,
+    SourceType,
     SubjectType,
 )
 
@@ -107,6 +113,160 @@ def test_explicit_save_requires_consent_and_persists_active_memory(app_stack):
     memory = asyncio.run(saved())
     assert store.get(memory.id, scope_id=scope.id, subject_id="u1") == memory
     assert index.search("咖啡", scope_id=scope.id, subject_id="u1") == (memory.id,)
+
+
+def test_agent_save_update_and_history_record_host_tool_call_ids(app_stack):
+    _, store, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+
+    async def write_and_update():
+        saved, _ = await memories.save_agent(
+            scope, "喜欢黑咖啡", operator_id="u1", tool_call_id="call-save-1",
+            memory_type=MemoryType.PREFERENCE,
+        )
+        updated, _ = await memories.update_agent(
+            scope, saved.id, "喜欢无糖黑咖啡", expected_revision=1,
+            operator_id="u1", tool_call_id="call-update-1",
+        )
+        return saved, updated
+
+    saved, updated = asyncio.run(write_and_update())
+    assert updated.current_revision == 2
+    assert updated.memory_type is MemoryType.PREFERENCE
+    assert updated.source_type.value == "AGENT"
+    revisions, sources = memories.history(scope, saved.id)
+    assert [item.revision for item in revisions] == [1, 2]
+    assert [item.evidence_ref for item in sources] == ["call-save-1", "call-update-1"]
+    assert all(item.source_type.value == "AGENT" for item in sources)
+    assert all(item.operator_type.value == "agent" for item in sources)
+    assert store.get(saved.id, scope_id=scope.id, subject_id="u1") == updated
+
+    async def stale_update():
+        with pytest.raises(Conflict, match="revision conflict"):
+            await memories.update_agent(
+                scope, saved.id, "不能覆盖 revision 2", expected_revision=1,
+                operator_id="u1", tool_call_id="call-stale-update",
+            )
+    asyncio.run(stale_update())
+
+
+def test_agent_get_hides_non_active_memory(app_stack):
+    _, store, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+
+    async def save_and_archive():
+        memory, _ = await memories.save_explicit(
+            scope, "已归档的个人记忆", operator_id="u1",
+        )
+        await memories._lifecycle.transition_memory(
+            memory, MemoryStatus.ARCHIVED, revision_id="revision-archived",
+            at=NOW, reason="test archive", operator_type=OperatorType.USER,
+        )
+        return memory
+
+    memory = asyncio.run(save_and_archive())
+    archived = store.get(memory.id, scope_id=scope.id, subject_id="u1")
+    assert archived.status is MemoryStatus.ARCHIVED
+    with pytest.raises(NotFound, match="memory not found"):
+        memories.get_memory(scope, memory.id)
+
+
+def test_memory_page_is_scope_and_consent_filtered(app_stack):
+    _, _, _, scopes, consent, memories, _, _ = app_stack
+    scope = scopes.resolve(identity())
+    other_scope = scopes.resolve(identity("u2"))
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    consent.grant(other_scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u2")
+
+    async def save_items():
+        await memories.save_explicit(scope, "喜欢黑咖啡", operator_id="u1", memory_type=MemoryType.PREFERENCE)
+        await memories.save_explicit(scope, "住在东京", operator_id="u1", memory_type=MemoryType.FACT)
+        await memories.save_explicit(other_scope, "另一个用户的记忆", operator_id="u2")
+
+    asyncio.run(save_items())
+    page, total = memories.list_active_page(scope, limit=1, offset=0)
+    assert total == 2
+    assert len(page) == 1
+    assert page[0].subject_id == "u1"
+    preference_page, preference_total = memories.list_active_page(
+        scope, limit=10, offset=0, memory_type=MemoryType.PREFERENCE,
+    )
+    assert preference_total == 1
+    assert len(preference_page) == 1
+
+
+def test_recall_debug_logs_only_hash_ids_scores_and_filter_reasons(
+    app_stack, memory_factory,
+):
+    _, store, index, scopes, consent, _, _, coordinator = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
+    expired = replace(
+        memory_factory(
+            id="expired-memory", scope_id=scope.id,
+            subject_id=scope.identity.subject_id,
+            content="用户的秘密饮品偏好",
+        ), valid_until=NOW,
+    )
+    active = replace(
+        memory_factory(
+            id="active-memory", scope_id=scope.id,
+            subject_id=scope.identity.subject_id,
+            content="用户的秘密饮品偏好",
+        ),
+        memory_type=MemoryType.FACT,
+    )
+    another_active = replace(
+        memory_factory(
+            id="another-active-memory", scope_id=scope.id,
+            subject_id=scope.identity.subject_id,
+            content="用户的秘密饮品偏好",
+        ),
+        memory_type=MemoryType.EVENT,
+    )
+
+    async def create(memory):
+        revision = MemoryRevision(
+            id=f"{memory.id}-revision", memory_id=memory.id, revision=1,
+            content=memory.content, status=MemoryStatus.ACTIVE, changed_at=NOW,
+            change_reason="test fixture", snapshot={},
+        )
+        source = MemorySource(
+            id=f"{memory.id}-source", memory_id=memory.id,
+            source_type=SourceType.EXPLICIT, operator_type=OperatorType.USER,
+            operator_id="u1", captured_at=NOW,
+        )
+        await coordinator.create(memory, revision, source)
+
+    asyncio.run(create(expired))
+    asyncio.run(create(active))
+    asyncio.run(create(another_active))
+    records = []
+    clock = FixedClock()
+    recall = RecallService(
+        store, index, consent, clock, coordinator, store, records.append,
+    )
+    assert {item.id for item in recall.recall("秘密饮品", scope)} == {
+        active.id, another_active.id,
+    }
+    context = asyncio.run(MemoryContextComposer(recall, max_memories=1).compose("秘密饮品", scope))
+    assert context is not None
+    assert len(context.selected_memory_ids) == 1
+    assert context.omitted_count == 1
+    assert len(records) == 2
+    record = records[-1]
+    assert record["trace_id"]
+    assert record["query_hash"]
+    assert record["scope"]["id"] == scope.id
+    assert expired.id in [item["id"] for item in record["candidates"]]
+    assert next(item for item in record["candidates"] if item["id"] == expired.id)["filter_reason"] == "expired"
+    assert record["final_injected_ids"] == list(context.selected_memory_ids)
+    assert record["estimated_tokens"] == context.estimated_tokens
+    assert any(item["reason"] == "max_memories" for item in record["omitted"])
+    assert "query" not in record
+    assert expired.content not in str(record)
 
 
 def test_revoke_stops_future_save_but_does_not_erase_existing_memory(app_stack):
@@ -425,6 +585,7 @@ def test_explicit_update_creates_revision_and_rejects_stale_revision(app_stack):
     original, updated, receipt = asyncio.run(save_and_update())
     assert updated.id == original.id
     assert updated.current_revision == 2
+    assert updated.memory_type is MemoryType.PREFERENCE
     assert updated.content == "我更喜欢无糖绿茶"
     assert receipt.revision == 2
     assert store.get(updated.id, scope_id=scope.id, subject_id="u1") == updated

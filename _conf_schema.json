@@ -6,10 +6,10 @@
     "hint": "开启后，新用户或没有授权记录的私聊用户首次对话会自动登记个人记忆，并收到一次告知；用户可用 /织忆 关闭 停止。关闭后回到逐用户 /织忆 授权。"
   },
   "agent_write_enabled": {
-    "description": "允许模型工具写入个人记忆（默认开启，可关闭）",
+    "description": "控制 Agent 记忆写入工具开关（默认开启）；AstrBot 4.29.4 上因宿主未暴露 tool_call_id，写入工具仍 fail-closed。",
     "type": "bool",
     "default": true,
-    "hint": "默认开启：用户明确提到长期偏好、背景或目标时，模型可保存一条记忆；可在配置关闭。确定性触发、候选确认与每日限额待后续补齐。宿主若为人格设置了工具白名单，必须把 weave_memory_remember 加入白名单（AstrBot 只注入白名单工具）。"
+    "hint": "控制 Agent 写入入口；AstrBot 4.29.4 未向插件工具入口提供真实 tool_call_id，因此 weave_memory_update 与既有 weave_memory_remember 暂时拒绝写入。当前请使用 /织忆 保存、/织忆 更新。"
   },
   "group_admin_ids": {
     "description": "群管理员回退配置：键为 platform|tenant_id|group_id，值为管理员 ID 数组。平台群主/管理员角色可用时优先。",
@@ -39,5 +39,23 @@
     "type": "int",
     "default": 200,
     "hint": "超过后提示管理员清理；V1.1 不做自动淘汰。"
+  },
+  "recall_diagnostics_enabled": {
+    "description": "启用检索诊断 JSONL 记录",
+    "type": "bool",
+    "default": true,
+    "hint": "记录每次 Personal/Group 记忆检索的 trace_id、作用域摘要、候选 ID/评分/过滤原因、最终注入 ID 与 Token 估算；默认不记录查询原文或记忆正文。"
+  },
+  "recall_diagnostics_retention_days": {
+    "description": "检索诊断日志保留天数",
+    "type": "int",
+    "default": 7,
+    "hint": "按日生成 JSONL 文件，启动和写入时清理超期文件；默认保留 7 天。"
+  },
+  "recall_diagnostics_include_query": {
+    "description": "在检索诊断日志中记录查询原文",
+    "type": "bool",
+    "default": false,
+    "hint": "默认关闭。启用后会写入经常见邮箱、手机号和长数字串脱敏的查询文本；脱敏不能保证识别所有个人信息，请仅在受控环境临时启用。保留期由 recall_diagnostics_retention_days 控制。"
   }
 }

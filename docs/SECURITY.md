@@ -107,5 +107,7 @@ Recall 候选查找与上下文注入之间可能发生 Consent revoke 或 Scope
 - `auto_enroll` 默认 `true`：新用户或没有任何 consent 记录的用户，首次符合条件的私聊事件自动建立 `personal_memory=GRANTED`；插件发送一次告知，不经过 LLM。`auto_enroll=false` 回到逐用户 `/织忆 授权`。
 - auto_enroll 只在 scope 已启用且 consent 历史为空时生效；已有 `GRANTED`/`REVOKED` 事件优先，`/织忆 撤销授权` 与 `/织忆 关闭` 不会被下一次对话复活。`/织忆 清空` 只删数据，不重新开启已关闭 scope。
 - 群共享记忆不参与 auto_enroll；仍由管理员 `/织忆 群开启` 显式开启，个人与群隔离不变。
-- 新增模型工具写入：只在用户明确提到长期偏好、背景或目标时调用；来源固定 `source_type=AGENT`、`operator_type=agent`，只写记忆正文，不保存完整聊天原文。工具受 Consent、scope enabled 与 `agent_write_enabled` 约束。
+- V1.3 Agent 读工具仅访问当前 Personal Scope；事件身份无法解析、群聊、Consent 未授予/已撤销或 scope 关闭时 fail-closed。handler 绑定检查使用 AstrBot 的 `handler_module_path` 与 `functools.partial` 插件实例，不承诺跨插件/Persona 调用者隔离。
+- AstrBot 4.29.4 的工具执行前 Hook 不暴露 `tool_call_id`，完成后的 LLMResponse Hook 时序太晚；因此 `weave_memory_update` 与 `weave_memory_remember` fail-closed。应用层 Agent 写服务要求真实 `tool_call_id` 并记录到 `MemorySource.evidence_ref`；当前命令写入继续标记 `EXPLICIT` / `USER`。
+- Personal/Group 检索诊断写入插件数据目录 `recall_diagnostics/recall-YYYY-MM-DD.jsonl`，每请求一行，含 trace_id、identity/scope 摘要、候选 ID/BM25 排名/过滤原因、最终注入 ID、Token 估算与 query hash；默认不写查询原文或记忆正文，默认保留 7 天。查询原文需显式 opt-in，并对邮箱、手机号与长数字串做常见模式脱敏；该脱敏不保证识别所有个人信息。
 - 后台自动提取仍只产 `INFERRED` 候选，不自动升级 `ACTIVE`；本次变更不等于开启无确认的推断记忆。

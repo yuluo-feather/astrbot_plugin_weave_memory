@@ -1,0 +1,1804 @@
+{
+  "report_version": "1.0.0",
+  "project_version": "V1.4",
+  "dataset_name": "weave-memory-v1.4-golden",
+  "dataset_version": "1.0.0",
+  "dataset_sha256": "358f6ba38245fcaac74cba3901e1221058368e8ccadd96ae3e245ec050f82147",
+  "split": "all",
+  "parameter_experiment": false,
+  "parameters": {
+    "personal": {
+      "max_memories": 4,
+      "max_tokens": 384,
+      "candidate_limit": 12
+    },
+    "group": {
+      "max_memories": 2,
+      "max_tokens": 192,
+      "candidate_limit": 8
+    }
+  },
+  "environment": {
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "sqlite": "3.49.1",
+    "runtime_source_commit": "bde39d499dae7b5506798529b5ba8e87a6adb695",
+    "fixed_clock": "2026-11-23T12:00:00+00:00",
+    "random_seed": 1401
+  },
+  "scope_metrics": {
+    "PERSONAL": {
+      "sample_count": 25,
+      "candidate_recall_at_k": {
+        "n": 17,
+        "mean": 1.0
+      },
+      "candidate_precision_at_k": {
+        "n": 17,
+        "mean": 0.08333333333333333
+      },
+      "candidate_mrr": {
+        "n": 17,
+        "mean": 1.0
+      },
+      "injected_recall_at_k": {
+        "n": 17,
+        "mean": 1.0
+      },
+      "injected_precision_at_k": {
+        "n": 17,
+        "mean": 0.25
+      },
+      "injected_mrr": {
+        "n": 17,
+        "mean": 1.0
+      },
+      "no_memory_correct_rate": {
+        "n": 8,
+        "mean": 1.0
+      },
+      "average_injected_tokens": 75.92,
+      "retrieval_latency_ms": {
+        "warmup_runs_per_query": 2,
+        "measured_runs_per_query": 30,
+        "p50": 0.35565003054216504,
+        "p95": 0.7351950102020051,
+        "measurement_count": 750
+      },
+      "wrong_scope_count": 0,
+      "returned_memory_count": 49,
+      "error_attribution_rate": 0.0,
+      "expired_deleted_recall_rate": 0.0,
+      "cross_scope_distractor_hit_count": 0,
+      "injection_effectiveness": {
+        "status": "pending_human_rubric",
+        "rated_count": 0,
+        "double_scored_minimum": 10
+      }
+    },
+    "GROUP": {
+      "sample_count": 25,
+      "candidate_recall_at_k": {
+        "n": 18,
+        "mean": 1.0
+      },
+      "candidate_precision_at_k": {
+        "n": 18,
+        "mean": 0.125
+      },
+      "candidate_mrr": {
+        "n": 18,
+        "mean": 1.0
+      },
+      "injected_recall_at_k": {
+        "n": 18,
+        "mean": 1.0
+      },
+      "injected_precision_at_k": {
+        "n": 18,
+        "mean": 0.5
+      },
+      "injected_mrr": {
+        "n": 18,
+        "mean": 1.0
+      },
+      "no_memory_correct_rate": {
+        "n": 7,
+        "mean": 1.0
+      },
+      "average_injected_tokens": 69.88,
+      "retrieval_latency_ms": {
+        "warmup_runs_per_query": 2,
+        "measured_runs_per_query": 30,
+        "p50": 0.4056000034324825,
+        "p95": 0.7426950673107058,
+        "measurement_count": 750
+      },
+      "wrong_scope_count": 0,
+      "returned_memory_count": 55,
+      "error_attribution_rate": 0.0,
+      "expired_deleted_recall_rate": 0.0,
+      "cross_scope_distractor_hit_count": 0,
+      "injection_effectiveness": {
+        "status": "pending_human_rubric",
+        "rated_count": 0,
+        "double_scored_minimum": 10
+      }
+    }
+  },
+  "category_metrics": {
+    "exact_fact": {
+      "sample_count": 10,
+      "candidate_recall_at_k": {
+        "n": 10,
+        "mean": 1.0
+      },
+      "candidate_precision_at_k": {
+        "n": 10,
+        "mean": 0.10416666666666667
+      },
+      "candidate_mrr": {
+        "n": 10,
+        "mean": 1.0
+      },
+      "no_memory_correct_rate": {
+        "n": 0,
+        "mean": null
+      }
+    },
+    "preference": {
+      "sample_count": 10,
+      "candidate_recall_at_k": {
+        "n": 10,
+        "mean": 1.0
+      },
+      "candidate_precision_at_k": {
+        "n": 10,
+        "mean": 0.10416666666666667
+      },
+      "candidate_mrr": {
+        "n": 10,
+        "mean": 1.0
+      },
+      "no_memory_correct_rate": {
+        "n": 0,
+        "mean": null
+      }
+    },
+    "recent_topic": {
+      "sample_count": 10,
+      "candidate_recall_at_k": {
+        "n": 10,
+        "mean": 1.0
+      },
+      "candidate_precision_at_k": {
+        "n": 10,
+        "mean": 0.10416666666666667
+      },
+      "candidate_mrr": {
+        "n": 10,
+        "mean": 1.0
+      },
+      "no_memory_correct_rate": {
+        "n": 0,
+        "mean": null
+      }
+    },
+    "cross_scope": {
+      "sample_count": 5,
+      "candidate_recall_at_k": {
+        "n": 5,
+        "mean": 1.0
+      },
+      "candidate_precision_at_k": {
+        "n": 5,
+        "mean": 0.10833333333333332
+      },
+      "candidate_mrr": {
+        "n": 5,
+        "mean": 1.0
+      },
+      "no_memory_correct_rate": {
+        "n": 0,
+        "mean": null
+      }
+    },
+    "expired_deleted": {
+      "sample_count": 5,
+      "candidate_recall_at_k": {
+        "n": 0,
+        "mean": null
+      },
+      "candidate_precision_at_k": {
+        "n": 0,
+        "mean": null
+      },
+      "candidate_mrr": {
+        "n": 0,
+        "mean": null
+      },
+      "no_memory_correct_rate": {
+        "n": 5,
+        "mean": 1.0
+      }
+    },
+    "no_memory": {
+      "sample_count": 10,
+      "candidate_recall_at_k": {
+        "n": 0,
+        "mean": null
+      },
+      "candidate_precision_at_k": {
+        "n": 0,
+        "mean": null
+      },
+      "candidate_mrr": {
+        "n": 0,
+        "mean": null
+      },
+      "no_memory_correct_rate": {
+        "n": 10,
+        "mean": 1.0
+      }
+    }
+  },
+  "samples": [
+    {
+      "sample_id": "G-EF-05",
+      "split": "holdout",
+      "query": "紧急联络频道 ops-alerts",
+      "scope_type": "GROUP",
+      "category": "exact_fact",
+      "expected_ids": [
+        "g-fact-5"
+      ],
+      "candidate_ids": [
+        "g-fact-5"
+      ],
+      "injected_ids": [
+        "g-fact-5"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 86,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-NM-03",
+      "split": "train",
+      "query": "VOIDPERSON3",
+      "scope_type": "PERSONAL",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-ED-01",
+      "split": "train",
+      "query": "DELETEDCODE1",
+      "scope_type": "GROUP",
+      "category": "expired_deleted",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-ED-01",
+      "split": "train",
+      "query": "EXPIRYCODE1",
+      "scope_type": "PERSONAL",
+      "category": "expired_deleted",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-NM-04",
+      "split": "train",
+      "query": "VOIDPERSON4",
+      "scope_type": "PERSONAL",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-EF-04",
+      "split": "train",
+      "query": "文档格式 Markdown",
+      "scope_type": "PERSONAL",
+      "category": "exact_fact",
+      "expected_ids": [
+        "p-fact-4"
+      ],
+      "candidate_ids": [
+        "p-fact-4"
+      ],
+      "injected_ids": [
+        "p-fact-4"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 81,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-EF-01",
+      "split": "train",
+      "query": "评测项目代号 ORBIT",
+      "scope_type": "PERSONAL",
+      "category": "exact_fact",
+      "expected_ids": [
+        "p-fact-1"
+      ],
+      "candidate_ids": [
+        "p-fact-1",
+        "p-pref-5"
+      ],
+      "injected_ids": [
+        "p-fact-1",
+        "p-pref-5"
+      ],
+      "false_positive_ids": [
+        "p-pref-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 102,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-PR-05",
+      "split": "holdout",
+      "query": "任务拆分 小步提交",
+      "scope_type": "GROUP",
+      "category": "preference",
+      "expected_ids": [
+        "g-pref-5"
+      ],
+      "candidate_ids": [
+        "g-pref-5"
+      ],
+      "injected_ids": [
+        "g-pref-5"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-EF-02",
+      "split": "train",
+      "query": "常用编辑器 Neovim",
+      "scope_type": "PERSONAL",
+      "category": "exact_fact",
+      "expected_ids": [
+        "p-fact-2"
+      ],
+      "candidate_ids": [
+        "p-fact-2"
+      ],
+      "injected_ids": [
+        "p-fact-2"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 79,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-PR-01",
+      "split": "train",
+      "query": "评审先看 风险 实现细节",
+      "scope_type": "GROUP",
+      "category": "preference",
+      "expected_ids": [
+        "g-pref-1"
+      ],
+      "candidate_ids": [
+        "g-pref-1",
+        "g-pref-3"
+      ],
+      "injected_ids": [
+        "g-pref-1",
+        "g-pref-3"
+      ],
+      "false_positive_ids": [
+        "g-pref-3"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 111,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-EF-03",
+      "split": "train",
+      "query": "值班负责人 LANTERN",
+      "scope_type": "GROUP",
+      "category": "exact_fact",
+      "expected_ids": [
+        "g-fact-3"
+      ],
+      "candidate_ids": [
+        "g-fact-3",
+        "g-rec-5"
+      ],
+      "injected_ids": [
+        "g-fact-3",
+        "g-rec-5"
+      ],
+      "false_positive_ids": [
+        "g-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 102,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-EF-01",
+      "split": "train",
+      "query": "本群例会 周三 15:00",
+      "scope_type": "GROUP",
+      "category": "exact_fact",
+      "expected_ids": [
+        "g-fact-1"
+      ],
+      "candidate_ids": [
+        "g-fact-1",
+        "g-fact-3",
+        "g-fact-5",
+        "g-pref-2",
+        "g-rec-5",
+        "g-cross-target-1",
+        "g-cross-target-2",
+        "g-cross-target-3"
+      ],
+      "injected_ids": [
+        "g-fact-1",
+        "g-fact-3"
+      ],
+      "false_positive_ids": [
+        "g-cross-target-1",
+        "g-cross-target-2",
+        "g-cross-target-3",
+        "g-fact-3",
+        "g-fact-5",
+        "g-pref-2",
+        "g-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 103,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-PR-03",
+      "split": "train",
+      "query": "示例优先 Python",
+      "scope_type": "PERSONAL",
+      "category": "preference",
+      "expected_ids": [
+        "p-pref-3"
+      ],
+      "candidate_ids": [
+        "p-pref-3"
+      ],
+      "injected_ids": [
+        "p-pref-3"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 83,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-EF-04",
+      "split": "train",
+      "query": "文档归档目录 /srv/team/archive",
+      "scope_type": "GROUP",
+      "category": "exact_fact",
+      "expected_ids": [
+        "g-fact-4"
+      ],
+      "candidate_ids": [
+        "g-fact-4"
+      ],
+      "injected_ids": [
+        "g-fact-4"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 89,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-CS-03",
+      "split": "train",
+      "query": "CROSSPERSON3",
+      "scope_type": "GROUP",
+      "category": "cross_scope",
+      "expected_ids": [
+        "g-cross-target-3"
+      ],
+      "candidate_ids": [
+        "g-cross-target-3"
+      ],
+      "injected_ids": [
+        "g-cross-target-3"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-RT-01",
+      "split": "train",
+      "query": "最近推进 服务端日志轮转",
+      "scope_type": "GROUP",
+      "category": "recent_topic",
+      "expected_ids": [
+        "g-rec-1"
+      ],
+      "candidate_ids": [
+        "g-rec-1",
+        "g-rec-5",
+        "g-rec-3",
+        "g-rec-2",
+        "g-rec-4"
+      ],
+      "injected_ids": [
+        "g-rec-1",
+        "g-rec-5"
+      ],
+      "false_positive_ids": [
+        "g-rec-2",
+        "g-rec-3",
+        "g-rec-4",
+        "g-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 107,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-PR-04",
+      "split": "train",
+      "query": "通知 避免 夜间发送",
+      "scope_type": "GROUP",
+      "category": "preference",
+      "expected_ids": [
+        "g-pref-4"
+      ],
+      "candidate_ids": [
+        "g-pref-4"
+      ],
+      "injected_ids": [
+        "g-pref-4"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-NM-04",
+      "split": "train",
+      "query": "VOIDGROUP4",
+      "scope_type": "GROUP",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-NM-03",
+      "split": "train",
+      "query": "VOIDGROUP3",
+      "scope_type": "GROUP",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-ED-03",
+      "split": "holdout",
+      "query": "EXPIRYCODE3",
+      "scope_type": "PERSONAL",
+      "category": "expired_deleted",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-PR-02",
+      "split": "train",
+      "query": "喜欢 深色 终端主题",
+      "scope_type": "PERSONAL",
+      "category": "preference",
+      "expected_ids": [
+        "p-pref-2"
+      ],
+      "candidate_ids": [
+        "p-pref-2"
+      ],
+      "injected_ids": [
+        "p-pref-2"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 83,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-NM-02",
+      "split": "train",
+      "query": "VOIDPERSON2",
+      "scope_type": "PERSONAL",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-EF-05",
+      "split": "holdout",
+      "query": "测试机器人 小栖",
+      "scope_type": "PERSONAL",
+      "category": "exact_fact",
+      "expected_ids": [
+        "p-fact-5"
+      ],
+      "candidate_ids": [
+        "p-fact-5",
+        "p-pref-5",
+        "p-cross-target-1",
+        "p-cross-target-2",
+        "p-rec-1"
+      ],
+      "injected_ids": [
+        "p-fact-5",
+        "p-pref-5",
+        "p-cross-target-1",
+        "p-cross-target-2"
+      ],
+      "false_positive_ids": [
+        "p-cross-target-1",
+        "p-cross-target-2",
+        "p-pref-5",
+        "p-rec-1"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 147,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-CS-01",
+      "split": "train",
+      "query": "CROSSPERSON1",
+      "scope_type": "GROUP",
+      "category": "cross_scope",
+      "expected_ids": [
+        "g-cross-target-1"
+      ],
+      "candidate_ids": [
+        "g-cross-target-1"
+      ],
+      "injected_ids": [
+        "g-cross-target-1"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-CS-01",
+      "split": "train",
+      "query": "CROSSGROUP1",
+      "scope_type": "PERSONAL",
+      "category": "cross_scope",
+      "expected_ids": [
+        "p-cross-target-1"
+      ],
+      "candidate_ids": [
+        "p-cross-target-1"
+      ],
+      "injected_ids": [
+        "p-cross-target-1"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-PR-04",
+      "split": "train",
+      "query": "先给结论 再解释",
+      "scope_type": "PERSONAL",
+      "category": "preference",
+      "expected_ids": [
+        "p-pref-4"
+      ],
+      "candidate_ids": [
+        "p-pref-4"
+      ],
+      "injected_ids": [
+        "p-pref-4"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 83,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-RT-03",
+      "split": "train",
+      "query": "最近准备 AstrBot 4.29.4 兼容性",
+      "scope_type": "PERSONAL",
+      "category": "recent_topic",
+      "expected_ids": [
+        "p-rec-3"
+      ],
+      "candidate_ids": [
+        "p-rec-3",
+        "p-rec-4",
+        "p-rec-2",
+        "p-rec-5",
+        "p-rec-1"
+      ],
+      "injected_ids": [
+        "p-rec-3",
+        "p-rec-4",
+        "p-rec-2",
+        "p-rec-5"
+      ],
+      "false_positive_ids": [
+        "p-rec-1",
+        "p-rec-2",
+        "p-rec-4",
+        "p-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 146,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-RT-01",
+      "split": "train",
+      "query": "最近整理 插件 并发故障注入",
+      "scope_type": "PERSONAL",
+      "category": "recent_topic",
+      "expected_ids": [
+        "p-rec-1"
+      ],
+      "candidate_ids": [
+        "p-rec-1",
+        "p-rec-5",
+        "p-rec-4",
+        "p-rec-2",
+        "p-rec-3"
+      ],
+      "injected_ids": [
+        "p-rec-1",
+        "p-rec-5",
+        "p-rec-4",
+        "p-rec-2"
+      ],
+      "false_positive_ids": [
+        "p-rec-2",
+        "p-rec-3",
+        "p-rec-4",
+        "p-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 145,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-PR-02",
+      "split": "train",
+      "query": "会议纪要 Markdown",
+      "scope_type": "GROUP",
+      "category": "preference",
+      "expected_ids": [
+        "g-pref-2"
+      ],
+      "candidate_ids": [
+        "g-pref-2"
+      ],
+      "injected_ids": [
+        "g-pref-2"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-ED-02",
+      "split": "train",
+      "query": "DELETEDCODE2",
+      "scope_type": "GROUP",
+      "category": "expired_deleted",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-RT-05",
+      "split": "holdout",
+      "query": "最近整理 工具调用 审计链路",
+      "scope_type": "PERSONAL",
+      "category": "recent_topic",
+      "expected_ids": [
+        "p-rec-5"
+      ],
+      "candidate_ids": [
+        "p-rec-5",
+        "p-rec-1",
+        "p-rec-4",
+        "p-rec-2",
+        "p-rec-3"
+      ],
+      "injected_ids": [
+        "p-rec-5",
+        "p-rec-1",
+        "p-rec-4",
+        "p-rec-2"
+      ],
+      "false_positive_ids": [
+        "p-rec-1",
+        "p-rec-2",
+        "p-rec-3",
+        "p-rec-4"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 145,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-RT-02",
+      "split": "train",
+      "query": "最近讨论 CI 缓存失效",
+      "scope_type": "GROUP",
+      "category": "recent_topic",
+      "expected_ids": [
+        "g-rec-2"
+      ],
+      "candidate_ids": [
+        "g-rec-2",
+        "g-rec-5",
+        "g-rec-3",
+        "g-rec-4",
+        "g-rec-1"
+      ],
+      "injected_ids": [
+        "g-rec-2",
+        "g-rec-5"
+      ],
+      "false_positive_ids": [
+        "g-rec-1",
+        "g-rec-3",
+        "g-rec-4",
+        "g-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 104,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-PR-05",
+      "split": "holdout",
+      "query": "测试报告 未执行项目",
+      "scope_type": "PERSONAL",
+      "category": "preference",
+      "expected_ids": [
+        "p-pref-5"
+      ],
+      "candidate_ids": [
+        "p-pref-5",
+        "p-fact-1",
+        "p-fact-5",
+        "p-cross-target-1",
+        "p-cross-target-2",
+        "p-rec-1"
+      ],
+      "injected_ids": [
+        "p-pref-5",
+        "p-fact-1",
+        "p-fact-5",
+        "p-cross-target-1"
+      ],
+      "false_positive_ids": [
+        "p-cross-target-1",
+        "p-cross-target-2",
+        "p-fact-1",
+        "p-fact-5",
+        "p-rec-1"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 141,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-RT-02",
+      "split": "train",
+      "query": "最近评估 SQLite FTS 检索",
+      "scope_type": "PERSONAL",
+      "category": "recent_topic",
+      "expected_ids": [
+        "p-rec-2"
+      ],
+      "candidate_ids": [
+        "p-rec-2",
+        "p-rec-4",
+        "p-rec-5",
+        "p-rec-3",
+        "p-rec-1"
+      ],
+      "injected_ids": [
+        "p-rec-2",
+        "p-rec-4",
+        "p-rec-5",
+        "p-rec-3"
+      ],
+      "false_positive_ids": [
+        "p-rec-1",
+        "p-rec-3",
+        "p-rec-4",
+        "p-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 146,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-EF-02",
+      "split": "train",
+      "query": "发布窗口 第二个周五",
+      "scope_type": "GROUP",
+      "category": "exact_fact",
+      "expected_ids": [
+        "g-fact-2"
+      ],
+      "candidate_ids": [
+        "g-fact-2",
+        "g-rec-3"
+      ],
+      "injected_ids": [
+        "g-fact-2",
+        "g-rec-3"
+      ],
+      "false_positive_ids": [
+        "g-rec-3"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 106,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-CS-02",
+      "split": "train",
+      "query": "CROSSPERSON2",
+      "scope_type": "GROUP",
+      "category": "cross_scope",
+      "expected_ids": [
+        "g-cross-target-2"
+      ],
+      "candidate_ids": [
+        "g-cross-target-2"
+      ],
+      "injected_ids": [
+        "g-cross-target-2"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-NM-01",
+      "split": "train",
+      "query": "VOIDPERSON1",
+      "scope_type": "PERSONAL",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-RT-04",
+      "split": "train",
+      "query": "最近设计 离线 Golden Set",
+      "scope_type": "PERSONAL",
+      "category": "recent_topic",
+      "expected_ids": [
+        "p-rec-4"
+      ],
+      "candidate_ids": [
+        "p-rec-4",
+        "p-rec-2",
+        "p-rec-5",
+        "p-rec-3",
+        "p-rec-1"
+      ],
+      "injected_ids": [
+        "p-rec-4",
+        "p-rec-2",
+        "p-rec-5",
+        "p-rec-3"
+      ],
+      "false_positive_ids": [
+        "p-rec-1",
+        "p-rec-2",
+        "p-rec-3",
+        "p-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 146,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-RT-05",
+      "split": "holdout",
+      "query": "最近更新 值班交接清单",
+      "scope_type": "GROUP",
+      "category": "recent_topic",
+      "expected_ids": [
+        "g-rec-5"
+      ],
+      "candidate_ids": [
+        "g-rec-5",
+        "g-fact-3",
+        "g-rec-3",
+        "g-rec-2",
+        "g-rec-4",
+        "g-rec-1"
+      ],
+      "injected_ids": [
+        "g-rec-5",
+        "g-fact-3"
+      ],
+      "false_positive_ids": [
+        "g-fact-3",
+        "g-rec-1",
+        "g-rec-2",
+        "g-rec-3",
+        "g-rec-4"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 102,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-NM-05",
+      "split": "holdout",
+      "query": "VOIDPERSON5",
+      "scope_type": "PERSONAL",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-PR-03",
+      "split": "train",
+      "query": "代码评审 回归测试",
+      "scope_type": "GROUP",
+      "category": "preference",
+      "expected_ids": [
+        "g-pref-3"
+      ],
+      "candidate_ids": [
+        "g-pref-3",
+        "g-cross-target-1",
+        "g-cross-target-2",
+        "g-cross-target-3",
+        "g-pref-1"
+      ],
+      "injected_ids": [
+        "g-pref-3",
+        "g-cross-target-1"
+      ],
+      "false_positive_ids": [
+        "g-cross-target-1",
+        "g-cross-target-2",
+        "g-cross-target-3",
+        "g-pref-1"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 107,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-NM-01",
+      "split": "train",
+      "query": "VOIDGROUP1",
+      "scope_type": "GROUP",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-ED-02",
+      "split": "train",
+      "query": "EXPIRYCODE2",
+      "scope_type": "PERSONAL",
+      "category": "expired_deleted",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-RT-03",
+      "split": "train",
+      "query": "最近安排 灰度发布演练",
+      "scope_type": "GROUP",
+      "category": "recent_topic",
+      "expected_ids": [
+        "g-rec-3"
+      ],
+      "candidate_ids": [
+        "g-rec-3",
+        "g-fact-1",
+        "g-fact-2",
+        "g-rec-5",
+        "g-rec-2",
+        "g-rec-4",
+        "g-rec-1"
+      ],
+      "injected_ids": [
+        "g-rec-3",
+        "g-fact-1"
+      ],
+      "false_positive_ids": [
+        "g-fact-1",
+        "g-fact-2",
+        "g-rec-1",
+        "g-rec-2",
+        "g-rec-4",
+        "g-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 104,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-CS-02",
+      "split": "holdout",
+      "query": "CROSSGROUP2",
+      "scope_type": "PERSONAL",
+      "category": "cross_scope",
+      "expected_ids": [
+        "p-cross-target-2"
+      ],
+      "candidate_ids": [
+        "p-cross-target-2"
+      ],
+      "injected_ids": [
+        "p-cross-target-2"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 87,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-PR-01",
+      "split": "train",
+      "query": "偏好 简洁 变更日志",
+      "scope_type": "PERSONAL",
+      "category": "preference",
+      "expected_ids": [
+        "p-pref-1"
+      ],
+      "candidate_ids": [
+        "p-pref-1",
+        "p-fact-4",
+        "p-pref-4"
+      ],
+      "injected_ids": [
+        "p-pref-1",
+        "p-fact-4",
+        "p-pref-4"
+      ],
+      "false_positive_ids": [
+        "p-fact-4",
+        "p-pref-4"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 116,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-NM-05",
+      "split": "holdout",
+      "query": "VOIDGROUP5",
+      "scope_type": "GROUP",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "P-EF-03",
+      "split": "train",
+      "query": "演示环境 Debian",
+      "scope_type": "PERSONAL",
+      "category": "exact_fact",
+      "expected_ids": [
+        "p-fact-3"
+      ],
+      "candidate_ids": [
+        "p-fact-3"
+      ],
+      "injected_ids": [
+        "p-fact-3"
+      ],
+      "false_positive_ids": [],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.08333333333333333,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.25,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 81,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-RT-04",
+      "split": "train",
+      "query": "最近复盘 数据库迁移耗时",
+      "scope_type": "GROUP",
+      "category": "recent_topic",
+      "expected_ids": [
+        "g-rec-4"
+      ],
+      "candidate_ids": [
+        "g-rec-4",
+        "g-rec-3",
+        "g-rec-5",
+        "g-rec-2",
+        "g-rec-1"
+      ],
+      "injected_ids": [
+        "g-rec-4",
+        "g-rec-3"
+      ],
+      "false_positive_ids": [
+        "g-rec-1",
+        "g-rec-2",
+        "g-rec-3",
+        "g-rec-5"
+      ],
+      "candidate_recall": 1.0,
+      "candidate_precision": 0.125,
+      "candidate_mrr": 1.0,
+      "injected_recall": 1.0,
+      "injected_precision": 0.5,
+      "injected_mrr": 1.0,
+      "no_memory_correct": null,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 104,
+      "injection_effectiveness": null
+    },
+    {
+      "sample_id": "G-NM-02",
+      "split": "train",
+      "query": "VOIDGROUP2",
+      "scope_type": "GROUP",
+      "category": "no_memory",
+      "expected_ids": [],
+      "candidate_ids": [],
+      "injected_ids": [],
+      "false_positive_ids": [],
+      "candidate_recall": null,
+      "candidate_precision": null,
+      "candidate_mrr": null,
+      "injected_recall": null,
+      "injected_precision": null,
+      "injected_mrr": null,
+      "no_memory_correct": 1.0,
+      "wrong_scope_count": 0,
+      "foreign_distractor_hits": [],
+      "excluded_memory_hits": [],
+      "estimated_injected_tokens": 0,
+      "injection_effectiveness": null
+    }
+  ],
+  "limitations": [
+    "Golden Set labels are assistant-generated drafts and require human review before V1.4 exit acceptance.",
+    "Injection effectiveness requires human rubric scoring; no score is fabricated by this harness.",
+    "Baseline uses the current V1.3 SQLite FTS runtime services and does not alter runtime defaults.",
+    "Cross-scope samples include an in-scope target and a foreign same-term distractor; target retrieval contributes to normal metrics and foreign hits are reported separately."
+  ]
+}

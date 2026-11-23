@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ...app.export import to_json, to_markdown
 from ...app.group_lifecycle_service import GroupLifecycleService
 from ...app.group_memory_service import GroupMemoryService
 from ...app.group_recall_service import GroupRecallService
@@ -82,7 +83,8 @@ class AstrBotGroupCommands:
             "/织忆 群保存 <topic|agreement|atmosphere|experience> <内容> —— 管理员写入\n"
             "/织忆 群列表 —— 查看当前群记忆（需已开启）\n"
             "/织忆 群查询 <问题> —— 检索当前群记忆（需已开启）\n"
-            "/织忆 群状态 —— 查看当前群状态"
+            "/织忆 群状态 —— 查看当前群状态\n"
+            "/织忆 群导出 [json|md] —— 群管理员导出当前群共享记忆"
         )
 
     async def enable(self, event: Any) -> str:
@@ -170,6 +172,20 @@ class AstrBotGroupCommands:
         await self._recall.record_access(tuple(item.id for item in memories), scope)
         lines = [f"[{item.memory_type.value}] {item.content}（{item.id}）" for item in memories]
         return "检索到的群记忆：\n" + "\n".join(lines)
+
+    def export(self, event: Any) -> str:
+        format_name = self._tail(event, "群导出") or "json"
+        normalized_format = format_name.strip().lower()
+        if normalized_format not in {"json", "md", "markdown"}:
+            return "导出失败：格式只支持 json 或 md。"
+        identity, _, decision = self._identity_and_decision(event)
+        if not decision.allowed:
+            raise AuthorizationDenied("group export requires an administrator")
+        scope = self._find_scope(identity)
+        payload = self._memories.export_group(scope, decision)
+        if normalized_format == "json":
+            return to_json(payload)
+        return to_markdown(payload)
 
     def status(self, event: Any) -> str:
         identity, _, _ = self._identity_and_decision(event)

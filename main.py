@@ -14,6 +14,8 @@ from .adapters.astrbot.group_admin import AstrBotGroupAdminResolver
 from .adapters.astrbot.group_commands import AstrBotGroupCommands
 from .adapters.astrbot.group_injection import AstrBotGroupMemoryInjector
 from .adapters.astrbot.injection import AstrBotMemoryInjector
+from .adapters.astrbot.recall_diagnostics import JsonlRecallDiagnostics
+from .adapters.astrbot.tool_call_binding import AstrBotToolCallBinding
 from .adapters.sqlite.consents import SQLiteConsentStore
 from .adapters.sqlite.database import SQLiteDatabase
 from .adapters.sqlite.fts import SQLiteFTSIndex
@@ -60,6 +62,11 @@ class WeaveMemoryPlugin(Star):
         self._group_commands: AstrBotGroupCommands | None = None
         self._injector: AstrBotMemoryInjector | None = None
         self._group_injector: AstrBotGroupMemoryInjector | None = None
+        self._tool_call_binding = AstrBotToolCallBinding(
+            plugin_module=type(self).__module__,
+            plugin_name="astrbot_plugin_weave_memory",
+            plugin_instance=self,
+        )
 
         try:
             data_dir = Path(StarTools.get_data_dir())
@@ -84,7 +91,22 @@ class WeaveMemoryPlugin(Star):
             consent = ConsentService(consent_repository, coordinator, clock, ids)
             lifecycle = LifecycleService(coordinator, store, consent)
             memories = MemoryApplicationService(store, coordinator, consent, lifecycle, clock, ids)
-            recall = RecallService(store, index, consent, clock, coordinator, store)
+            diagnostics_enabled = self._config_bool("recall_diagnostics_enabled", True)
+            diagnostics = None
+            if diagnostics_enabled:
+                diagnostics = JsonlRecallDiagnostics(
+                    data_dir / "recall_diagnostics",
+                    retention_days=self._config_int("recall_diagnostics_retention_days", 7),
+                    include_query=self._config_bool("recall_diagnostics_include_query", False),
+                )
+                diagnostics.cleanup()
+            recall = RecallService(
+                store, index, consent, clock, coordinator, store,
+                diagnostics.write if diagnostics is not None else None,
+                include_query_in_diagnostics=self._config_bool(
+                    "recall_diagnostics_include_query", False,
+                ),
+            )
             composer = MemoryContextComposer(recall)
             group_admins = AstrBotGroupAdminResolver(
                 self._explicit_group_admins(self._config),
@@ -100,6 +122,10 @@ class WeaveMemoryPlugin(Star):
             )
             group_recall = GroupRecallService(
                 store, index, consent, clock, coordinator, store,
+                diagnostics.write if diagnostics is not None else None,
+                include_query_in_diagnostics=self._config_bool(
+                    "recall_diagnostics_include_query", False,
+                ),
             )
             group_composer = GroupContextComposer(
                 group_recall,
@@ -213,6 +239,8 @@ class WeaveMemoryPlugin(Star):
             return f"{action}失败：没有找到对应的个人记忆或作用域。"
         if isinstance(exc, IndexUnavailable):
             return f"{action}失败：检索索引暂不可用，正文数据不会因此丢失。"
+        if isinstance(exc, (Conflict, ValidationError)):
+            return f"{action}失败：{exc}。"
         return f"{action}失败：{type(exc).__name__}。"
 
     @filter.command_group("织忆", alias={"/织忆"})
@@ -275,6 +303,38 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("检索", exc))
 
+    @memory.command("状态")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_status(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._command_service().status(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("状态", exc))
+
+    @memory.command("统计")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_stats(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._command_service().stats(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("统计", exc))
+
+    @memory.command("操作记录")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_operations(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._command_service().operations(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("操作记录", exc))
+
+    @memory.command("导出")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_export(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._command_service().export_command(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("导出", exc))
+
     @memory.command("删除")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def memory_delete(self, event: AstrMessageEvent):
@@ -299,16 +359,34 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("关闭", exc))
 
-    # 默认开启（可在配置关闭）。确定性触发、候选确认与每日限额留到后续版本增强。
-    # 宿主 persona 设置工具白名单时须加入本工具，否则 AstrBot 不会把它发给模型。
+    @filter.on_using_llm_tool()
+    async def weave_bind_tool_call(self, event: AstrMessageEvent, tool, tool_args):
+        """Verify that the invoked handler is registered by this plugin."""
+        self._tool_call_binding.bind_tool_start(event, tool, tool_args)
+
+    @filter.on_llm_tool_respond()
+    async def weave_clear_tool_call(self, event: AstrMessageEvent, tool, tool_args, tool_result):
+        self._tool_call_binding.clear_active(event)
+
+    def _consume_tool_binding(self, event: AstrMessageEvent, tool_name: str) -> bool:
+        return self._tool_call_binding.consume(event, expected_name=tool_name)
+
+    @staticmethod
+    def _agent_write_call_id_unavailable() -> str:
+        return (
+            "AstrBot 4.29.4 未向插件工具入口提供宿主 tool_call_id；"
+            "为避免写入来源无法追溯，本次 Agent 写入已拒绝。请改用个人命令。"
+        )
+
+    # V1.2 compatibility tool. On AstrBot 4.29.4, host tool call IDs are not
+    # available before plugin handler execution, so this write path fails closed.
     @filter.llm_tool(name="weave_memory_remember")
     async def memory_remember_tool(self, event: AstrMessageEvent,
                                    content: str = "", memory_type: str = "FACT"):
-        """织忆个人记忆：保存用户明确要求记住的长期偏好、背景、目标或事实。
+        """织忆个人记忆写入入口。
 
-        仅在用户明确要求记住，或明确提到长期偏好、背景、目标时调用，例如「记住我喜欢黑咖啡」
-        「以后都用中文」「我对花生过敏」。一次闲聊、临时情绪、当前任务细节、密码/密钥/
-        身份证/银行卡等敏感信息不得调用。只保存一条简洁事实，不保存完整聊天原文；群聊不调用。
+        AstrBot 4.29.4 未向工具执行前的插件入口提供 tool_call_id，因此当前不得调用本工具；
+        用户明确要求保存时请使用 /织忆 保存。不得用模型生成的 ID 替代宿主调用 ID。
 
         Args:
             content(string): 要保存的事实。
@@ -317,17 +395,115 @@ class WeaveMemoryPlugin(Star):
         if not self._config_bool("agent_write_enabled", True):
             yield "未保存：织忆的模型记忆写入已关闭。"
             return
+        if not self._consume_tool_binding(event, "weave_memory_remember"):
+            yield "未保存：无法确认织忆插件的工具调用身份。"
+            return
+        yield self._agent_write_call_id_unavailable() + " 可使用 /织忆 保存。"
+        return
+
+    @filter.llm_tool(name="weave_memory_search")
+    async def memory_search_tool(self, event: AstrMessageEvent, query: str = "", limit: int = 8):
+        """在当前用户的 Personal 记忆中检索相关内容；不允许指定作用域。
+
+        Args:
+            query(string): 用户当前明确需要查询的内容。
+            limit(int): 返回数量，1 到 20，默认 8。
+        """
+        if not self._consume_tool_binding(event, "weave_memory_search"):
+            yield "检索失败：无法确认织忆插件的工具调用身份。"
+            return
         try:
-            result = await self._command_service().remember(event, content, memory_type)
-        except AuthorizationDenied:
-            yield "未保存：个人记忆只在私聊生效。"
+            yield await self._command_service().agent_search(event, query, limit=limit)
         except _COMMAND_ERRORS as exc:
-            yield f"未保存：{type(exc).__name__}。"
+            yield self._error_text("检索", exc)
         except Exception as exc:
-            logger.warning(f"织忆模型工具写入失败：{type(exc).__name__}")
-            yield "未保存：记忆服务暂不可用。"
-        else:
-            yield result
+            logger.warning(f"织忆 weave_memory_search 失败：{type(exc).__name__}")
+            yield "检索失败：记忆服务暂不可用。"
+
+    @filter.llm_tool(name="weave_memory_get")
+    async def memory_get_tool(self, event: AstrMessageEvent, memory_id: str = ""):
+        """按 ID 读取当前用户 Personal 记忆；跨用户或无授权时拒绝。
+
+        Args:
+            memory_id(string): 记忆 ID。
+        """
+        if not self._consume_tool_binding(event, "weave_memory_get"):
+            yield "读取失败：无法确认织忆插件的工具调用身份。"
+            return
+        try:
+            yield await self._command_service().agent_get(event, memory_id)
+        except _COMMAND_ERRORS as exc:
+            yield self._error_text("读取", exc)
+        except Exception as exc:
+            logger.warning(f"织忆 weave_memory_get 失败：{type(exc).__name__}")
+            yield "读取失败：记忆服务暂不可用。"
+
+    @filter.llm_tool(name="weave_memory_update")
+    async def memory_update_tool(
+        self, event: AstrMessageEvent, memory_id: str = "", expected_revision: int = 0,
+        content: str = "",
+    ):
+        """Agent Personal 记忆更新入口。
+
+        AstrBot 4.29.4 未向工具执行前的插件入口提供 tool_call_id，因此当前不得调用本工具；
+        用户明确要求更新时请使用 /织忆 更新。不得用模型生成的 ID 替代宿主调用 ID。
+
+        Args:
+            memory_id(string): 要修改的记忆 ID。
+            expected_revision(int): 用户确认的当前 revision，用于防止覆盖。
+            content(string): 修改后的完整记忆内容。
+        """
+        if not self._config_bool("agent_write_enabled", True):
+            yield "未更新：织忆的模型记忆写入已关闭。"
+            return
+        if not self._consume_tool_binding(event, "weave_memory_update"):
+            yield "未更新：无法确认织忆插件的工具调用身份。"
+            return
+        yield self._agent_write_call_id_unavailable() + " 可使用 /织忆 更新。"
+        return
+
+    @filter.llm_tool(name="weave_memory_list")
+    async def memory_list_tool(
+        self, event: AstrMessageEvent, offset: int = 0, limit: int = 20,
+        memory_type: str = "",
+    ):
+        """分页列出当前用户的 Personal 记忆，可按类型过滤。
+
+        Args:
+            offset(int): 从 0 开始的偏移量。
+            limit(int): 每页数量，1 到 100，默认 20。
+            memory_type(string): 可选 PREFERENCE、FACT 或 EVENT；空字符串表示全部。
+        """
+        if not self._consume_tool_binding(event, "weave_memory_list"):
+            yield "读取失败：无法确认织忆插件的工具调用身份。"
+            return
+        try:
+            yield self._command_service().agent_list(
+                event, offset=offset, limit=limit, memory_type=memory_type,
+            )
+        except _COMMAND_ERRORS as exc:
+            yield self._error_text("读取", exc)
+        except Exception as exc:
+            logger.warning(f"织忆 weave_memory_list 失败：{type(exc).__name__}")
+            yield "读取失败：记忆服务暂不可用。"
+
+    @filter.llm_tool(name="weave_memory_history")
+    async def memory_history_tool(self, event: AstrMessageEvent, memory_id: str = ""):
+        """查看当前用户指定记忆的版本与来源历史；不跨作用域读取。
+
+        Args:
+            memory_id(string): 记忆 ID。
+        """
+        if not self._consume_tool_binding(event, "weave_memory_history"):
+            yield "读取失败：无法确认织忆插件的工具调用身份。"
+            return
+        try:
+            yield self._command_service().agent_history(event, memory_id)
+        except _COMMAND_ERRORS as exc:
+            yield self._error_text("读取历史", exc)
+        except Exception as exc:
+            logger.warning(f"织忆 weave_memory_history 失败：{type(exc).__name__}")
+            yield "读取失败：记忆服务暂不可用。"
 
     @memory.command("群帮助")
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
@@ -400,6 +576,14 @@ class WeaveMemoryPlugin(Star):
             yield event.plain_result(self._group_command_service().status(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(AstrBotGroupCommands._error_text("群状态", exc))
+
+    @memory.command("群导出")
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def memory_group_export(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._group_command_service().export(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(AstrBotGroupCommands._error_text("群导出", exc))
 
     @filter.on_llm_request()
     async def inject_personal_memory(self, event: AstrMessageEvent, req: ProviderRequest):

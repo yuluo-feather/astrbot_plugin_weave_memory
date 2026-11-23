@@ -9,6 +9,8 @@ import unicodedata
 from datetime import UTC, datetime
 
 from ...core.errors import IndexUnavailable, ValidationError
+from ...core.model import MemoryStatus
+from ...core.ports import SearchCandidate
 from .database import SQLiteDatabase
 
 
@@ -120,9 +122,26 @@ class SQLiteFTSIndex:
             # present because this entire index transaction rolled back.
             raise IndexUnavailable("FTS synchronization failed; rebuild is required") from exc
 
-    def document_count(self) -> int:
+    def document_count(
+        self, *, scope_id: str | None = None, subject_id: str | None = None,
+    ) -> int:
         try:
-            return int(self.db.connection.execute("SELECT count(*) FROM memory_fts").fetchone()[0])
+            if scope_id is None and subject_id is None:
+                row = self.db.connection.execute(
+                    "SELECT count(*) FROM memory_fts",
+                ).fetchone()
+            elif scope_id is not None and subject_id is not None:
+                row = self.db.connection.execute(
+                    """SELECT count(*) FROM memory_fts f
+                    JOIN memories m ON m.id=f.memory_id
+                    JOIN memory_scopes s ON s.id=m.scope_id
+                    WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                      AND s.is_enabled=1""",
+                    (scope_id, subject_id),
+                ).fetchone()
+            else:
+                raise ValidationError("scope_id and subject_id must be provided together")
+            return int(row[0])
         except sqlite3.Error as exc:
             raise IndexUnavailable("FTS document count unavailable") from exc
 
@@ -218,3 +237,51 @@ class SQLiteFTSIndex:
             return tuple(row["id"] for row in rows)
         except sqlite3.Error as exc:
             raise IndexUnavailable("FTS query failed") from exc
+
+    def search_diagnostics(
+        self, query: str, *, scope_id: str, subject_id: str, limit: int = 100,
+        scope_type: str = "PERSONAL",
+    ) -> tuple[SearchCandidate, ...]:
+        """Return scored candidates within the caller's scope for safe diagnostics."""
+        if not query or not query.strip():
+            return ()
+        if limit < 1 or limit > 100:
+            raise ValidationError("diagnostic candidate limit must be between 1 and 100")
+        if len(query) > 256:
+            raise ValidationError("search query must not exceed 256 characters")
+        if not self.is_healthy():
+            raise IndexUnavailable("FTS index is dirty; rebuild before searching")
+        fts_query = _fts_query(query)
+        if not fts_query:
+            return ()
+        try:
+            rows = self.db.connection.execute(
+                """SELECT m.id, bm25(memory_fts) AS score, m.status,
+                    m.valid_from, m.valid_until, s.is_enabled
+                FROM memory_fts f
+                JOIN memories m ON m.id=f.memory_id
+                JOIN memory_scopes s ON s.id=m.scope_id
+                WHERE memory_fts MATCH ? AND m.scope_id=? AND m.subject_id=?
+                  AND s.scope_type=?
+                ORDER BY bm25(memory_fts) ASC,
+                  COALESCE(m.last_accessed_at, m.created_at) DESC,
+                  CASE m.source_type WHEN 'EXPLICIT' THEN 0 ELSE 1 END ASC,
+                  m.memory_type ASC, m.created_at DESC, m.id ASC
+                LIMIT ?""",
+                (fts_query, scope_id, subject_id, scope_type, limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise IndexUnavailable("FTS diagnostic query failed") from exc
+
+        def load_time(value: str | None) -> datetime | None:
+            if value is None:
+                return None
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+        return tuple(SearchCandidate(
+            memory_id=row["id"], score=float(row["score"]),
+            status=MemoryStatus(row["status"]),
+            valid_from=load_time(row["valid_from"]),
+            valid_until=load_time(row["valid_until"]),
+            scope_enabled=bool(row["is_enabled"]),
+        ) for row in rows)

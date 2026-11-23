@@ -24,6 +24,7 @@ from ...core.model import (
     MemoryRevision,
     MemorySource,
     MemoryStatus,
+    MemoryType,
     OperatorType,
     Scope,
     ScopeType,
@@ -320,6 +321,151 @@ class SQLiteMemoryStore:
         except sqlite3.Error as exc:
             raise StorageError("could not list active memories") from exc
         return tuple(self._row_to_memory(row) for row in rows)
+
+    def list_active_page(
+        self, *, scope_id: str, subject_id: str, limit: int, offset: int,
+        memory_type: MemoryType | None = None,
+    ) -> tuple[tuple[MemoryEntity, ...], int]:
+        """Read one bounded page and its total from the same visible scope."""
+        type_clause = " AND m.memory_type=?" if memory_type is not None else ""
+        params: tuple[Any, ...] = (scope_id, subject_id)
+        if memory_type is not None:
+            params += (memory_type.value,)
+        try:
+            with self.db.transaction(immediate=False) as conn:
+                total_row = conn.execute(
+                    """SELECT count(*) AS total FROM memories m
+                    JOIN memory_scopes s ON s.id=m.scope_id
+                    WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                      AND s.is_enabled=1""" + type_clause,
+                    params,
+                ).fetchone()
+                rows = conn.execute(
+                    """SELECT m.* FROM memories m
+                    JOIN memory_scopes s ON s.id=m.scope_id
+                    WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                      AND s.is_enabled=1""" + type_clause +
+                    " ORDER BY m.created_at, m.id LIMIT ? OFFSET ?",
+                    params + (limit, offset),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list active memory page") from exc
+        return tuple(self._row_to_memory(row) for row in rows), int(total_row["total"])
+
+    def list_revisions(
+        self, memory_id: str, *, scope_id: str, subject_id: str,
+    ) -> tuple[MemoryRevision, ...]:
+        try:
+            rows = self.db.connection.execute(
+                """SELECT r.* FROM memory_revisions r
+                JOIN memories m ON m.id=r.memory_id
+                JOIN memory_scopes s ON s.id=m.scope_id
+                WHERE r.memory_id=? AND m.scope_id=? AND m.subject_id=?
+                  AND s.is_enabled=1
+                ORDER BY r.revision""",
+                (memory_id, scope_id, subject_id),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read memory revisions") from exc
+        if not rows:
+            # Do not distinguish a foreign memory from a missing one.
+            self.get(memory_id, scope_id=scope_id, subject_id=subject_id)
+            return ()
+        return tuple(MemoryRevision(
+            id=row["id"], memory_id=row["memory_id"], revision=row["revision"],
+            content=row["content"], status=MemoryStatus(row["status"]),
+            changed_at=_time_load_required(row["changed_at"], "revision.changed_at"),
+            change_reason=row["change_reason"], snapshot=_json_load(row["snapshot_json"]),
+        ) for row in rows)
+
+    def list_sources(
+        self, memory_id: str, *, scope_id: str, subject_id: str,
+    ) -> tuple[MemorySource, ...]:
+        try:
+            rows = self.db.connection.execute(
+                """SELECT src.* FROM memory_sources src
+                JOIN memories m ON m.id=src.memory_id
+                JOIN memory_scopes s ON s.id=m.scope_id
+                WHERE src.memory_id=? AND m.scope_id=? AND m.subject_id=?
+                  AND s.is_enabled=1
+                ORDER BY src.rowid""",
+                (memory_id, scope_id, subject_id),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read memory sources") from exc
+        if not rows:
+            self.get(memory_id, scope_id=scope_id, subject_id=subject_id)
+            return ()
+        from ...core.model import SourceType
+        return tuple(MemorySource(
+            id=row["id"], memory_id=row["memory_id"],
+            source_type=SourceType(row["source_type"]),
+            operator_type=OperatorType(row["operator_type"]),
+            operator_id=row["operator_id"],
+            captured_at=_time_load_required(row["captured_at"], "source.captured_at"),
+            evidence_ref=row["evidence_ref"], metadata=_json_load(row["metadata_json"]),
+        ) for row in rows)
+
+    def statistics(self, *, scope_id: str, subject_id: str) -> dict[str, Any]:
+        """Return counts only; never include memory bodies in management stats."""
+        try:
+            rows = self.db.connection.execute(
+                """SELECT m.status, m.memory_type, m.source_type, count(*) AS total
+                FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                WHERE m.scope_id=? AND m.subject_id=? AND s.is_enabled=1
+                GROUP BY m.status, m.memory_type, m.source_type""",
+                (scope_id, subject_id),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read memory statistics") from exc
+        by_status: dict[str, int] = {}
+        by_type: dict[str, int] = {}
+        by_source: dict[str, int] = {}
+        total = 0
+        for row in rows:
+            count = int(row["total"])
+            total += count
+            by_status[row["status"]] = by_status.get(row["status"], 0) + count
+            by_type[row["memory_type"]] = by_type.get(row["memory_type"], 0) + count
+            by_source[row["source_type"]] = by_source.get(row["source_type"], 0) + count
+        return {
+            "total": total,
+            "by_status": by_status,
+            "by_type": by_type,
+            "by_source": by_source,
+        }
+
+    def list_operations(
+        self, *, scope_id: str, subject_id: str, limit: int, offset: int,
+    ) -> tuple[tuple[dict[str, object], ...], int]:
+        """Read audit metadata only; operation payloads are intentionally omitted."""
+        try:
+            with self.db.transaction(immediate=False) as conn:
+                total_row = conn.execute(
+                    """SELECT count(*) AS total FROM memory_operations o
+                    JOIN memory_scopes s ON s.id=o.scope_id
+                    WHERE o.scope_id=? AND s.subject_id=? AND s.is_enabled=1""",
+                    (scope_id, subject_id),
+                ).fetchone()
+                rows = conn.execute(
+                    """SELECT o.id, o.memory_id, o.operation_type, o.operator_type,
+                    o.operator_id, o.occurred_at FROM memory_operations o
+                    JOIN memory_scopes s ON s.id=o.scope_id
+                    WHERE o.scope_id=? AND s.subject_id=? AND s.is_enabled=1
+                    ORDER BY o.rowid DESC LIMIT ? OFFSET ?""",
+                    (scope_id, subject_id, limit, offset),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read memory operations") from exc
+        operations = tuple({
+            "id": row["id"],
+            "memory_id": row["memory_id"],
+            "operation_type": row["operation_type"],
+            "operator_type": row["operator_type"],
+            "operator_id": row["operator_id"],
+            "occurred_at": row["occurred_at"],
+        } for row in rows)
+        return operations, int(total_row["total"])
 
     def record_access(self, memory_ids: tuple[str, ...], *, scope_id: str,
                       subject_id: str, at: datetime) -> None:

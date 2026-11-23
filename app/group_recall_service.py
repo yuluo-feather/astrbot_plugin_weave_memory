@@ -2,24 +2,38 @@
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC
+from typing import Any, Callable
+
 from ..core.errors import AuthorizationDenied, NotFound, ValidationError
 from ..core.model import MemoryEntity, MemoryStatus, Scope, ScopeType
 from ..core.ports import Clock, MemoryStore, ScopeStore, SearchIndex
 from .consent_service import ConsentService, GroupConsentType
-from .recall_service import MemoryContext, estimate_tokens
+from .recall_service import (
+    MemoryContext,
+    RecallTrace,
+    estimate_tokens,
+    query_hash,
+    write_recall_diagnostics,
+)
 from .write_coordinator import WriteCoordinator
 
 
 class GroupRecallService:
     def __init__(self, store: MemoryStore, index: SearchIndex,
                  consent: ConsentService, clock: Clock,
-                 coordinator: WriteCoordinator, scopes: ScopeStore) -> None:
+                 coordinator: WriteCoordinator, scopes: ScopeStore,
+                 diagnostics_writer: Callable[[dict[str, Any]], None] | None = None,
+                 *, include_query_in_diagnostics: bool = False) -> None:
         self._store = store
         self._index = index
         self._consent = consent
         self._clock = clock
         self._coordinator = coordinator
         self._scopes = scopes
+        self._diagnostics_writer = diagnostics_writer
+        self._include_query_in_diagnostics = include_query_in_diagnostics
 
     @staticmethod
     def _require_group(scope: Scope) -> None:
@@ -32,15 +46,38 @@ class GroupRecallService:
         if not self._scopes.is_scope_enabled(scope.id):
             raise AuthorizationDenied("group memory is disabled")
 
-    def recall_group(self, query: str, scope: Scope,
-                     *, limit: int = 8) -> tuple[MemoryEntity, ...]:
+    def recall_group_with_trace(
+        self, query: str, scope: Scope, *, limit: int = 8,
+    ) -> tuple[tuple[MemoryEntity, ...], RecallTrace]:
         self._require_readable(scope)
+        now = self._clock.now()
+        diagnostics = self._index.search_diagnostics(
+            query, scope_id=scope.id, subject_id=scope.identity.subject_id,
+            limit=100, scope_type="GROUP",
+        )
+        diagnostic_items: list[dict[str, object]] = []
+        for rank, candidate in enumerate(diagnostics, start=1):
+            if not candidate.scope_enabled:
+                reason = "scope_disabled"
+            elif candidate.status is not MemoryStatus.ACTIVE:
+                reason = "status_not_active"
+            elif candidate.valid_from is not None and candidate.valid_from > now:
+                reason = "not_yet_valid"
+            elif candidate.valid_until is not None and candidate.valid_until <= now:
+                reason = "expired"
+            else:
+                reason = "eligible"
+            diagnostic_items.append({
+                "id": candidate.memory_id, "rank": rank,
+                "bm25_score": candidate.score, "filter_reason": reason,
+            })
         memory_ids = self._index.search(
             query, scope_id=scope.id, subject_id=scope.identity.subject_id,
-            limit=limit, at=self._clock.now(), scope_type="GROUP",
+            limit=limit, at=now, scope_type="GROUP",
         )
         memories: list[MemoryEntity] = []
         seen: set[str] = set()
+        fetch_filtered: list[dict[str, object]] = []
         for memory_id in memory_ids:
             if memory_id in seen:
                 continue
@@ -51,10 +88,40 @@ class GroupRecallService:
                     subject_id=scope.identity.subject_id,
                 )
             except NotFound:
+                fetch_filtered.append({"id": memory_id, "filter_reason": "missing_after_search"})
                 continue
             if memory.status is MemoryStatus.ACTIVE:
                 memories.append(memory)
-        return tuple(memories)
+            else:
+                fetch_filtered.append({"id": memory_id, "filter_reason": "status_not_active_after_search"})
+        trace = RecallTrace(
+            trace_id=uuid.uuid4().hex,
+            occurred_at=now.astimezone(UTC).isoformat(),
+            query=query,
+            query_hash=query_hash(query),
+            scope=scope,
+            candidates=tuple((*diagnostic_items, *fetch_filtered)),
+            result_ids=tuple(memory.id for memory in memories),
+        )
+        return tuple(memories), trace
+
+    def record_diagnostics(
+        self, trace: RecallTrace, *, injected_ids: tuple[str, ...] = (),
+        estimated_tokens: int = 0,
+        omitted: tuple[dict[str, object], ...] = (),
+    ) -> None:
+        write_recall_diagnostics(
+            self._diagnostics_writer, self._include_query_in_diagnostics, trace,
+            injected_ids=injected_ids, estimated_tokens=estimated_tokens,
+            omitted=omitted,
+        )
+
+    def recall_group(
+        self, query: str, scope: Scope, *, limit: int = 8,
+    ) -> tuple[MemoryEntity, ...]:
+        memories, trace = self.recall_group_with_trace(query, scope, limit=limit)
+        self.record_diagnostics(trace)
+        return memories
 
     async def record_access(self, memory_ids: tuple[str, ...], scope: Scope) -> None:
         def require_access() -> None:
@@ -88,29 +155,38 @@ class GroupContextComposer:
         return content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
-        candidates = self._recall.recall_group(query, scope, limit=self._candidate_limit)
+        candidates, trace = self._recall.recall_group_with_trace(
+            query, scope, limit=self._candidate_limit,
+        )
         if not candidates:
+            self._recall.record_diagnostics(trace)
             return None
         lines: list[str] = []
         selected: list[str] = []
-        omitted = 0
+        omitted: list[dict[str, object]] = []
         for memory in candidates:
             if len(selected) >= self._max_memories:
-                omitted += 1
+                omitted.append({"id": memory.id, "reason": "max_memories"})
                 continue
             line = f"- [{memory.memory_type.value}] {self._escape_untrusted(memory.content)}"
             candidate_content = self._PREFIX + "\n".join((*lines, line)) + self._SUFFIX
             if estimate_tokens(candidate_content) > self._max_tokens:
-                omitted += 1
+                omitted.append({"id": memory.id, "reason": "token_budget"})
                 continue
             lines.append(line)
             selected.append(memory.id)
         if not lines:
+            self._recall.record_diagnostics(trace, omitted=tuple(omitted))
             return None
         content = self._PREFIX + "\n".join(lines) + self._SUFFIX
         await self._recall.record_access(tuple(selected), scope)
+        estimated_tokens = estimate_tokens(content)
+        self._recall.record_diagnostics(
+            trace, injected_ids=tuple(selected), estimated_tokens=estimated_tokens,
+            omitted=tuple(omitted),
+        )
         return MemoryContext(
             content=content, selected_memory_ids=tuple(selected),
-            estimated_tokens=estimate_tokens(content), omitted_count=omitted,
+            estimated_tokens=estimated_tokens, omitted_count=len(omitted),
             omitted_reason="budget_or_max_memories" if omitted else None,
         )

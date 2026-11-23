@@ -1,0 +1,2046 @@
+{
+  "dataset_name": "weave-memory-v1.4-golden",
+  "dataset_version": "1.0.0",
+  "created_at": "2026-11-23T17:50:00+08:00",
+  "data_policy": "synthetic_only_no_production_memory_content",
+  "fixed_clock": "2026-11-23T12:00:00+00:00",
+  "fixed_random_seed": 1401,
+  "minimum_sample_count": 50,
+  "holdout_ratio": 0.2,
+  "categories": [
+    "exact_fact",
+    "preference",
+    "recent_topic",
+    "cross_scope",
+    "expired_deleted",
+    "no_memory"
+  ],
+  "scopes": {
+    "personal": {
+      "platform": "astrbot",
+      "tenant_id": "synthetic-tenant",
+      "scope_type": "PERSONAL",
+      "scope_external_id": "synthetic-user",
+      "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+      "subject_id": "synthetic-user"
+    },
+    "group": {
+      "platform": "astrbot",
+      "tenant_id": "synthetic-tenant",
+      "scope_type": "GROUP",
+      "scope_external_id": "synthetic-group",
+      "scope_id": "624b58545e6852aebf9877e0c4378bba",
+      "subject_id": "synthetic-group"
+    }
+  },
+  "memories": [
+    {
+      "id": "p-fact-1",
+      "scope_key": "personal",
+      "content": "用户的评测项目代号是 ORBIT",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-fact-2",
+      "scope_key": "personal",
+      "content": "用户常用编辑器是 Neovim",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-fact-3",
+      "scope_key": "personal",
+      "content": "用户的演示环境运行在 Debian",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-fact-4",
+      "scope_key": "personal",
+      "content": "用户偏好的文档格式是 Markdown",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-fact-5",
+      "scope_key": "personal",
+      "content": "用户的测试机器人名称是 小栖",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-fact-1",
+      "scope_key": "group",
+      "content": "本群每周例会安排在周三 15:00",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-fact-2",
+      "scope_key": "group",
+      "content": "本群发布窗口固定为每月第二个周五",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-fact-3",
+      "scope_key": "group",
+      "content": "本群值班负责人代号是 LANTERN",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-fact-4",
+      "scope_key": "group",
+      "content": "本群文档归档目录为 /srv/team/archive",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-fact-5",
+      "scope_key": "group",
+      "content": "本群紧急联络频道是 ops-alerts",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-pref-1",
+      "scope_key": "personal",
+      "content": "用户偏好简洁的变更日志",
+      "memory_type": "PREFERENCE",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-pref-2",
+      "scope_key": "personal",
+      "content": "用户喜欢使用深色终端主题",
+      "memory_type": "PREFERENCE",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-pref-3",
+      "scope_key": "personal",
+      "content": "用户希望示例优先使用 Python",
+      "memory_type": "PREFERENCE",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-pref-4",
+      "scope_key": "personal",
+      "content": "用户偏好先给结论再给解释",
+      "memory_type": "PREFERENCE",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-pref-5",
+      "scope_key": "personal",
+      "content": "用户希望测试报告列出未执行项目",
+      "memory_type": "PREFERENCE",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-pref-1",
+      "scope_key": "group",
+      "content": "本群评审偏好先看风险再看实现细节",
+      "memory_type": "PREFERENCE",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-pref-2",
+      "scope_key": "group",
+      "content": "本群会议纪要统一使用 Markdown",
+      "memory_type": "PREFERENCE",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-pref-3",
+      "scope_key": "group",
+      "content": "本群代码评审要求附带回归测试",
+      "memory_type": "PREFERENCE",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-pref-4",
+      "scope_key": "group",
+      "content": "本群通知应避免在夜间发送",
+      "memory_type": "PREFERENCE",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-pref-5",
+      "scope_key": "group",
+      "content": "本群任务拆分偏好小步提交",
+      "memory_type": "PREFERENCE",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-rec-1",
+      "scope_key": "personal",
+      "content": "用户最近在整理插件的并发故障注入测试",
+      "memory_type": "EVENT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-rec-2",
+      "scope_key": "personal",
+      "content": "用户最近在评估 SQLite FTS 的检索表现",
+      "memory_type": "EVENT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-rec-3",
+      "scope_key": "personal",
+      "content": "用户最近在准备 AstrBot 4.29.4 兼容性验证",
+      "memory_type": "EVENT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-rec-4",
+      "scope_key": "personal",
+      "content": "用户最近在设计离线 Golden Set",
+      "memory_type": "EVENT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-rec-5",
+      "scope_key": "personal",
+      "content": "用户最近在整理工具调用审计链路",
+      "memory_type": "EVENT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-rec-1",
+      "scope_key": "group",
+      "content": "本群最近在推进服务端日志轮转改造",
+      "memory_type": "EVENT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-rec-2",
+      "scope_key": "group",
+      "content": "本群最近讨论 CI 缓存失效问题",
+      "memory_type": "EVENT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-rec-3",
+      "scope_key": "group",
+      "content": "本群最近安排灰度发布演练",
+      "memory_type": "EVENT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-rec-4",
+      "scope_key": "group",
+      "content": "本群最近复盘数据库迁移耗时",
+      "memory_type": "EVENT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-rec-5",
+      "scope_key": "group",
+      "content": "本群最近更新值班交接清单",
+      "memory_type": "EVENT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-22T10:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-cross-1",
+      "scope_key": "group",
+      "content": "本群专属跨作用域隔离标记 CROSSGROUP1 不得进入个人记忆",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-cross-2",
+      "scope_key": "group",
+      "content": "本群专属跨作用域隔离标记 CROSSGROUP2 不得进入个人记忆",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-cross-1",
+      "scope_key": "personal",
+      "content": "用户个人专属隔离标记 CROSSPERSON1 不得进入群共享记忆",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-cross-2",
+      "scope_key": "personal",
+      "content": "用户个人专属隔离标记 CROSSPERSON2 不得进入群共享记忆",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-cross-3",
+      "scope_key": "personal",
+      "content": "用户个人专属隔离标记 CROSSPERSON3 不得进入群共享记忆",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-exp-1",
+      "scope_key": "personal",
+      "content": "用户已过期测试凭据 EXPIRYCODE1",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": "2026-11-22T00:00:00+00:00"
+    },
+    {
+      "id": "p-exp-2",
+      "scope_key": "personal",
+      "content": "用户已过期测试凭据 EXPIRYCODE2",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": "2026-11-22T00:00:00+00:00"
+    },
+    {
+      "id": "p-exp-3",
+      "scope_key": "personal",
+      "content": "用户已过期测试凭据 EXPIRYCODE3",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": "2026-11-22T00:00:00+00:00"
+    },
+    {
+      "id": "g-del-1",
+      "scope_key": "group",
+      "content": "本群已删除测试标记 DELETEDCODE1",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "DELETED",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-del-2",
+      "scope_key": "group",
+      "content": "本群已删除测试标记 DELETEDCODE2",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "DELETED",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-cross-target-1",
+      "scope_key": "personal",
+      "content": "用户个人作用域中的隔离测试代码 CROSSGROUP1",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "p-cross-target-2",
+      "scope_key": "personal",
+      "content": "用户个人作用域中的隔离测试代码 CROSSGROUP2",
+      "memory_type": "FACT",
+      "source_type": "EXPLICIT",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-cross-target-1",
+      "scope_key": "group",
+      "content": "本群作用域隔离测试代码 CROSSPERSON1",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-cross-target-2",
+      "scope_key": "group",
+      "content": "本群作用域隔离测试代码 CROSSPERSON2",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "g-cross-target-3",
+      "scope_key": "group",
+      "content": "本群作用域隔离测试代码 CROSSPERSON3",
+      "memory_type": "FACT",
+      "source_type": "MANUAL",
+      "status": "ACTIVE",
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "valid_from": null,
+      "valid_until": null
+    }
+  ],
+  "samples": [
+    {
+      "sample_id": "P-EF-01",
+      "query": "评测项目代号 ORBIT",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-fact-1"
+      ],
+      "expected_memory_content": [
+        "用户的评测项目代号是 ORBIT"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-EF-02",
+      "query": "常用编辑器 Neovim",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-fact-2"
+      ],
+      "expected_memory_content": [
+        "用户常用编辑器是 Neovim"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-EF-03",
+      "query": "演示环境 Debian",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-fact-3"
+      ],
+      "expected_memory_content": [
+        "用户的演示环境运行在 Debian"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-EF-04",
+      "query": "文档格式 Markdown",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-fact-4"
+      ],
+      "expected_memory_content": [
+        "用户偏好的文档格式是 Markdown"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-EF-05",
+      "query": "测试机器人 小栖",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-fact-5"
+      ],
+      "expected_memory_content": [
+        "用户的测试机器人名称是 小栖"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "G-EF-01",
+      "query": "本群例会 周三 15:00",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-fact-1"
+      ],
+      "expected_memory_content": [
+        "本群每周例会安排在周三 15:00"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-EF-02",
+      "query": "发布窗口 第二个周五",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-fact-2"
+      ],
+      "expected_memory_content": [
+        "本群发布窗口固定为每月第二个周五"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-EF-03",
+      "query": "值班负责人 LANTERN",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-fact-3"
+      ],
+      "expected_memory_content": [
+        "本群值班负责人代号是 LANTERN"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-EF-04",
+      "query": "文档归档目录 /srv/team/archive",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-fact-4"
+      ],
+      "expected_memory_content": [
+        "本群文档归档目录为 /srv/team/archive"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-EF-05",
+      "query": "紧急联络频道 ops-alerts",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-fact-5"
+      ],
+      "expected_memory_content": [
+        "本群紧急联络频道是 ops-alerts"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "exact_fact",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "P-PR-01",
+      "query": "偏好 简洁 变更日志",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-pref-1"
+      ],
+      "expected_memory_content": [
+        "用户偏好简洁的变更日志"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "EXPLICIT",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-PR-02",
+      "query": "喜欢 深色 终端主题",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-pref-2"
+      ],
+      "expected_memory_content": [
+        "用户喜欢使用深色终端主题"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "EXPLICIT",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-PR-03",
+      "query": "示例优先 Python",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-pref-3"
+      ],
+      "expected_memory_content": [
+        "用户希望示例优先使用 Python"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "EXPLICIT",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-PR-04",
+      "query": "先给结论 再解释",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-pref-4"
+      ],
+      "expected_memory_content": [
+        "用户偏好先给结论再给解释"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "EXPLICIT",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-PR-05",
+      "query": "测试报告 未执行项目",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-pref-5"
+      ],
+      "expected_memory_content": [
+        "用户希望测试报告列出未执行项目"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "EXPLICIT",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "G-PR-01",
+      "query": "评审先看 风险 实现细节",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-pref-1"
+      ],
+      "expected_memory_content": [
+        "本群评审偏好先看风险再看实现细节"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "MANUAL",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-PR-02",
+      "query": "会议纪要 Markdown",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-pref-2"
+      ],
+      "expected_memory_content": [
+        "本群会议纪要统一使用 Markdown"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "MANUAL",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-PR-03",
+      "query": "代码评审 回归测试",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-pref-3"
+      ],
+      "expected_memory_content": [
+        "本群代码评审要求附带回归测试"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "MANUAL",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-PR-04",
+      "query": "通知 避免 夜间发送",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-pref-4"
+      ],
+      "expected_memory_content": [
+        "本群通知应避免在夜间发送"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "MANUAL",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-PR-05",
+      "query": "任务拆分 小步提交",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-pref-5"
+      ],
+      "expected_memory_content": [
+        "本群任务拆分偏好小步提交"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "preference",
+      "source_type": "MANUAL",
+      "memory_type": "PREFERENCE",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "P-RT-01",
+      "query": "最近整理 插件 并发故障注入",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-rec-1"
+      ],
+      "expected_memory_content": [
+        "用户最近在整理插件的并发故障注入测试"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "EXPLICIT",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-RT-02",
+      "query": "最近评估 SQLite FTS 检索",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-rec-2"
+      ],
+      "expected_memory_content": [
+        "用户最近在评估 SQLite FTS 的检索表现"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "EXPLICIT",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-RT-03",
+      "query": "最近准备 AstrBot 4.29.4 兼容性",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-rec-3"
+      ],
+      "expected_memory_content": [
+        "用户最近在准备 AstrBot 4.29.4 兼容性验证"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "EXPLICIT",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-RT-04",
+      "query": "最近设计 离线 Golden Set",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-rec-4"
+      ],
+      "expected_memory_content": [
+        "用户最近在设计离线 Golden Set"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "EXPLICIT",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-RT-05",
+      "query": "最近整理 工具调用 审计链路",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-rec-5"
+      ],
+      "expected_memory_content": [
+        "用户最近在整理工具调用审计链路"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "EXPLICIT",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "G-RT-01",
+      "query": "最近推进 服务端日志轮转",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-rec-1"
+      ],
+      "expected_memory_content": [
+        "本群最近在推进服务端日志轮转改造"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "MANUAL",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-RT-02",
+      "query": "最近讨论 CI 缓存失效",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-rec-2"
+      ],
+      "expected_memory_content": [
+        "本群最近讨论 CI 缓存失效问题"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "MANUAL",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-RT-03",
+      "query": "最近安排 灰度发布演练",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-rec-3"
+      ],
+      "expected_memory_content": [
+        "本群最近安排灰度发布演练"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "MANUAL",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-RT-04",
+      "query": "最近复盘 数据库迁移耗时",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-rec-4"
+      ],
+      "expected_memory_content": [
+        "本群最近复盘数据库迁移耗时"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "MANUAL",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-RT-05",
+      "query": "最近更新 值班交接清单",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-rec-5"
+      ],
+      "expected_memory_content": [
+        "本群最近更新值班交接清单"
+      ],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "recent_topic",
+      "source_type": "MANUAL",
+      "memory_type": "EVENT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "P-CS-01",
+      "query": "CROSSGROUP1",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-cross-target-1"
+      ],
+      "expected_memory_content": [
+        "用户个人作用域中的隔离测试代码 CROSSGROUP1"
+      ],
+      "distractor_memory_ids": [
+        "g-cross-1"
+      ],
+      "excluded_memory_ids": [],
+      "category": "cross_scope",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-CS-02",
+      "query": "CROSSGROUP2",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [
+        "p-cross-target-2"
+      ],
+      "expected_memory_content": [
+        "用户个人作用域中的隔离测试代码 CROSSGROUP2"
+      ],
+      "distractor_memory_ids": [
+        "g-cross-2"
+      ],
+      "excluded_memory_ids": [],
+      "category": "cross_scope",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "G-CS-01",
+      "query": "CROSSPERSON1",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-cross-target-1"
+      ],
+      "expected_memory_content": [
+        "本群作用域隔离测试代码 CROSSPERSON1"
+      ],
+      "distractor_memory_ids": [
+        "p-cross-1"
+      ],
+      "excluded_memory_ids": [],
+      "category": "cross_scope",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-CS-02",
+      "query": "CROSSPERSON2",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-cross-target-2"
+      ],
+      "expected_memory_content": [
+        "本群作用域隔离测试代码 CROSSPERSON2"
+      ],
+      "distractor_memory_ids": [
+        "p-cross-2"
+      ],
+      "excluded_memory_ids": [],
+      "category": "cross_scope",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-CS-03",
+      "query": "CROSSPERSON3",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [
+        "g-cross-target-3"
+      ],
+      "expected_memory_content": [
+        "本群作用域隔离测试代码 CROSSPERSON3"
+      ],
+      "distractor_memory_ids": [
+        "p-cross-3"
+      ],
+      "excluded_memory_ids": [],
+      "category": "cross_scope",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-ED-01",
+      "query": "EXPIRYCODE1",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "p-exp-1"
+      ],
+      "category": "expired_deleted",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-ED-02",
+      "query": "EXPIRYCODE2",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "p-exp-2"
+      ],
+      "category": "expired_deleted",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-ED-03",
+      "query": "EXPIRYCODE3",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "p-exp-3"
+      ],
+      "category": "expired_deleted",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "G-ED-01",
+      "query": "DELETEDCODE1",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "g-del-1"
+      ],
+      "category": "expired_deleted",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-ED-02",
+      "query": "DELETEDCODE2",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [
+        "g-del-2"
+      ],
+      "category": "expired_deleted",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-NM-01",
+      "query": "VOIDPERSON1",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-NM-02",
+      "query": "VOIDPERSON2",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-NM-03",
+      "query": "VOIDPERSON3",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-NM-04",
+      "query": "VOIDPERSON4",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "P-NM-05",
+      "query": "VOIDPERSON5",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "PERSONAL",
+        "scope_external_id": "synthetic-user",
+        "scope_id": "21f0b0b7292c5a47b38d292b3d6ef6ae",
+        "subject_id": "synthetic-user"
+      },
+      "subject_id": "synthetic-user",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "EXPLICIT",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    },
+    {
+      "sample_id": "G-NM-01",
+      "query": "VOIDGROUP1",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-NM-02",
+      "query": "VOIDGROUP2",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-NM-03",
+      "query": "VOIDGROUP3",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-NM-04",
+      "query": "VOIDGROUP4",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "train"
+    },
+    {
+      "sample_id": "G-NM-05",
+      "query": "VOIDGROUP5",
+      "scope": {
+        "platform": "astrbot",
+        "tenant_id": "synthetic-tenant",
+        "scope_type": "GROUP",
+        "scope_external_id": "synthetic-group",
+        "scope_id": "624b58545e6852aebf9877e0c4378bba",
+        "subject_id": "synthetic-group"
+      },
+      "subject_id": "synthetic-group",
+      "expected_memory_ids": [],
+      "expected_memory_content": [],
+      "distractor_memory_ids": [],
+      "excluded_memory_ids": [],
+      "category": "no_memory",
+      "source_type": "MANUAL",
+      "memory_type": "FACT",
+      "valid_from": null,
+      "valid_until": null,
+      "created_at": "2026-11-23T12:00:00+00:00",
+      "caller": "memory_context",
+      "dataset_version": "1.0.0",
+      "labeler": "assistant-generated-draft",
+      "split": "holdout"
+    }
+  ],
+  "annotation_status": "assistant_generated_synthetic_labels_pending_human_review"
+}

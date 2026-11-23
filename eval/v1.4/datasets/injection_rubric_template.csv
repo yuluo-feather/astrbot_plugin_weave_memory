@@ -1,0 +1,11 @@
+sample_id,scope_type,category,rater_a_score_0_2,rater_b_score_0_2,adjudicator_score_0_2,rater_a_note,rater_b_note,adjudication_note,status
+P-EF-01,PERSONAL,exact_fact,,,,,,,pending
+G-EF-01,GROUP,exact_fact,,,,,,,pending
+P-EF-05,PERSONAL,exact_fact,,,,,,,pending
+G-EF-05,GROUP,exact_fact,,,,,,,pending
+P-PR-01,PERSONAL,preference,,,,,,,pending
+G-PR-01,GROUP,preference,,,,,,,pending
+P-RT-01,PERSONAL,recent_topic,,,,,,,pending
+G-RT-01,GROUP,recent_topic,,,,,,,pending
+P-RT-05,PERSONAL,recent_topic,,,,,,,pending
+G-RT-05,GROUP,recent_topic,,,,,,,pending

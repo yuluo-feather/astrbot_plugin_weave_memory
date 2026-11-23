@@ -141,6 +141,20 @@ def test_group_enable_save_recall_disable_clear_destroy(group_stack):
     context = asyncio.run(composer.compose("周五复盘", scope))
     assert context is not None and "周五复盘" in context.content
     assert "weave_memory_group_context" in context.content
+
+    diagnostics = []
+    diagnostic_recall = GroupRecallService(
+        group_stack["store"], group_stack["index"], group_stack["consent"],
+        SystemClock(), WriteCoordinator(group_stack["store"], group_stack["index"]),
+        group_stack["store"], diagnostics.append,
+    )
+    diagnostic_context = asyncio.run(
+        GroupContextComposer(diagnostic_recall).compose("周五复盘", scope),
+    )
+    assert diagnostic_context is not None
+    assert diagnostics[-1]["scope"]["type"] == "GROUP"
+    assert diagnostics[-1]["final_injected_ids"] == [memory.id]
+    assert diagnostics[-1]["trace_id"]
     assert group_stack["index"].search(
         "周五复盘", scope_id=scope.id, subject_id=scope.identity.subject_id,
         scope_type="GROUP",

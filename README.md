@@ -39,14 +39,16 @@
 
 - 🔒 **默认开启，可随时关闭**：`auto_enroll=true`（默认）时，首次私聊会自动登记个人记忆并发送一次告知；`/织忆 撤销授权` 或 `/织忆 关闭` 停止保存、检索与注入，已有数据保留。`auto_enroll=false` 回到逐用户 `/织忆 授权`；群记忆仍需管理员 `/织忆 群开启`。
 - 🏠 **本地优先，零第三方运行时依赖**：权威数据存本机 SQLite，检索用 FTS5；插件本身不依赖额外的 Python 包，AstrBot 与 SQLite 由宿主提供。
-- 🧪 **模型工具写入（默认开启，可关闭）**：用户明确提到长期偏好、背景或目标时，模型可通过工具保存一条记忆，来源标记为 `AGENT`；只保存记忆正文，不保存完整聊天原文。默认开启，可在配置关闭；确定性触发、候选确认与每日限额待后续补齐。宿主若为人格设置了工具白名单，必须把 `weave_memory_remember` 加入该白名单，否则模型看不到此工具。后台自动提取仍只产候选，不会自动变成用户事实。
+- 🧪 **Agent 记忆工具（V1.3）**：Personal 范围的 `weave_memory_search/get/list/history` 可用；`weave_memory_update` 与 V1.2 既有工具 `weave_memory_remember` 在 AstrBot 4.29.4 上因宿主未向插件暴露真实 `tool_call_id` 而 fail-closed。当前请通过 `/织忆 保存`、`/织忆 更新` 写入；不会伪造调用 ID。后台自动提取仍只产候选，不会自动变成用户事实。
 - 🧠 **自动注入，但不污染会话**：LLM 请求到来时检索少量相关记忆，通过临时 `TextPart` 追加到本次请求；不修改 system prompt，也不写入持久会话历史。个人默认最多 4 条、384 estimated tokens。
+- 🧾 **检索诊断**：Personal/Group 检索按请求写入 JSONL，包含候选评分、过滤原因、最终注入 ID 与 Token 估算；默认不记录查询原文/记忆正文，默认保留 7 天。
 - 👥 **群共享记忆（V1.1）**：管理员开启并写入群级内容，成员只能读取当前群；个人记忆不进群，群记忆不出现在私聊。
 - ↩️ **授权可撤销**：`/织忆 撤销授权` 停止保存、检索与注入，但不会自动删除已有数据。
 - 🧾 **更新有版本号**：`/织忆 更新` 需要同时提供记忆 ID 与当前 revision，版本不匹配就拒绝覆盖，不静默合并。
 - 🧹 **删除是真的删**：删除/清空先写不含正文的墓碑审计，再物理删除正文与关联数据；应用连接启用 `secure_delete`，并在索引健康后执行 checkpoint + VACUUM。
 - 🛡 **故障隔离**：索引、存储或注入链路出问题时不阻塞宿主聊天；注入失败按「这一轮没有记忆」处理，正文不会因此丢失。
-- 🚧 **边界明确**：V1.2 不做后台自动提取、不做 LLM 抽取；模型工具写入只处理明确的长期记忆意图，不等于自动提取。导出/WebUI/向量检索仍留给后续版本。
+- 🚧 **边界明确**：后台自动提取仍只产候选，不会自动变成用户事实。V1.3 已提供 Personal 导出、群管理员群导出、状态、统计与操作记录；WebUI/向量检索仍留给后续版本。
+- 🧾 **检索调试不落原文**：日志记录查询哈希、scope、候选 ID、BM25 分数、过滤原因、最终注入 ID 与 Token 估算，不记录查询原文或记忆正文。
 
 ## 🗂 命令手册
 
@@ -64,7 +66,11 @@
 | ✏️ 更新 | `/织忆 更新 <记忆ID> <当前revision> <新内容>` | 显式修订指定记忆；revision 不匹配时拒绝覆盖 |
 | 📋 列表 | `/织忆 列表` | 查看已保存的个人记忆（最多显示 30 条） |
 | 🔍 查询 | `/织忆 查询 <问题>` | 主动检索个人记忆，并记录访问时间 |
-| 🗑 删除 | `/织忆 删除 <记忆ID>` | 不可恢复地删除一条记忆 |
+| 📊 状态 | `/织忆 状态` | 查看 Personal Scope、授权、记忆数量与索引状态 |
+| 📈 统计 | `/织忆 统计` | 查看记忆状态、类型、来源的数量分布 |
+| 🧾 操作记录 | `/织忆 操作记录` | 查看不含正文的个人操作审计 |
+| 📦 导出 | `/织忆 导出 [json|md]` | 导出当前个人空间的 ACTIVE 记忆，默认 JSON |
+| 🗑 删除 | `/织忆 删除 <记忆ID>` 后再次发送 `确认` | 二次确认后不可恢复地删除一条记忆 |
 | 🧹 清空 | `/织忆 清空 确认` | 不可恢复地清空个人记忆 |
 | 🔐 关闭 | `/织忆 关闭 确认` | 永久关闭个人记忆空间；停止普通读写/检索/注入，数据保留，当前版本不支持重新开启 |
 | ❓ 帮助 | `/织忆 帮助` | 查看个人记忆命令说明 |
@@ -80,6 +86,7 @@
 | 📋 群列表 | `/织忆 群列表` | 群成员；需已开启且已授权 |
 | 🔍 群查询 | `/织忆 群查询 <问题>` | 群成员；需已开启且已授权 |
 | 📊 群状态 | `/织忆 群状态` | 群成员；只返回创建/开启/条数/管理员来源，不返回正文或管理员列表 |
+| 📦 群导出 | `/织忆 群导出 [json|md]` | 群管理员；只导出当前群 ACTIVE 记忆，默认 JSON |
 | 🧹 群清空 | `/织忆 群清空 确认` | 群管理员；不可恢复，只清当前群 |
 | 💥 群销毁 | `/织忆 群销毁 确认` | 群管理员；必须先群关闭；自动备份后彻底移除当前群数据，不可恢复 |
 
@@ -94,7 +101,7 @@
    └─ 自动登记 personal_memory=GRANTED + 一次性告知
         │
         ▼
-/织忆 保存 内容 或 模型工具写入（AGENT，默认开启，可关闭）
+/织忆 保存 内容 或 /织忆 更新（EXPLICIT / USER）
    ├─ 规范化内容 → 同 Scope/Subject/类型下查重
    ├─ WriteCoordinator 串行写锁：入口校验 + 锁内二次校验 Consent
    ├─ SQLite 权威事务：记忆 + 初始 Revision + Source
@@ -110,6 +117,8 @@
         └─ 临时 TextPart 追加到本次请求；不写持久会话历史
 ```
 
+Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal Scope；`weave_memory_remember` 沿用 V1.2 入口，`weave_memory_update` 为 V1.3 新增但受宿主调用 ID 限制。由于 AstrBot 4.29.4 未向工具执行前的插件入口提供宿主 `tool_call_id`，Agent 写入工具 fail-closed；当前写入请使用个人命令。
+
 **失败语义**：索引不可用时检索 fail-closed，但正文不丢；写事务提交后索引失败会保留 dirty 标记，由启动恢复或显式重建修复；注入链路任何异常都只影响本轮记忆，不影响聊天。
 
 ## 🎛 配置项
@@ -119,7 +128,7 @@
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `auto_enroll` | bool | `true` | Personal 记忆默认登记。开启后，新用户或没有 consent 记录的私聊用户首次对话会自动登记并收到一次告知；设为 `false` 回到逐用户 `/织忆 授权`。已有授权/撤销记录不会被改写。 |
-| `agent_write_enabled` | bool | `true` | 允许模型工具在用户明确提到长期偏好、背景或目标时写入一条记忆。默认开启，可在配置关闭；确定性触发、候选确认与每日限额待后续补齐。宿主若为人格设置了工具白名单，必须把 `weave_memory_remember` 加入白名单。只保存记忆正文，不保存完整聊天原文。 |
+| `agent_write_enabled` | bool | `true` | 控制 Agent 记忆写入工具开关。AstrBot 4.29.4 未向插件暴露写入追溯所需的真实 `tool_call_id`，因此即使开启，Agent 写入工具仍 fail-closed；当前使用 `/织忆 保存`、`/织忆 更新`。 |
 | `group_admin_ids` | object | `{}` | 群管理员回退配置。键为 `platform\|tenant_id\|group_id`，值为管理员 ID 数组；仅在平台无法解析群主/管理员角色时使用。键必须精确匹配平台、平台实例与群 ID，避免跨群/跨实例复用。 |
 | `group_max_tokens` | int | `192` | 群记忆注入的 Token 预算（provider-neutral 估算值）。 |
 | `group_max_memories` | int | `2` | 群记忆注入的最大条数。 |
@@ -179,7 +188,7 @@ python scripts/build_astrbot_plugin.py
   - `core/`：领域模型、策略与端口；不导入 AstrBot、`sqlite3` 或具体基础设施实现
   - `app/`：应用服务编排（写入协调、检索、注入、生命周期、Consent、群服务）
   - `adapters/`：AstrBot 平台适配与 SQLite/FTS5 实现
-  - `scripts/`：自包含插件包构建
+  - `scripts/`：自包含插件包构建与离线 V1.4 评测 Harness
 - **权威数据与派生索引分离**：`memories`、`memory_revisions`、`memory_sources`、`memory_scopes`、`memory_tags`、`memory_operations` 等是权威表；`memory_fts` 是派生索引，可重建。索引未同步时检索 fail-closed，启动恢复会检查并重建。
 - **写入串行化**：所有内容写入经过单实例 `WriteCoordinator`；内容写与 Scope/Consent 元数据写共享同一把可重入写锁。保存前按 `(scope_id, subject_id, memory_type, normalized_content)` 查重，规范化采用 Unicode NFKC、空白折叠、`casefold()` 与去除末尾句末标点。
 - **乐观锁**：更新必须携带 `memory_id + expected_revision`；revision 不匹配返回冲突，不静默覆盖。正文、Revision、Source 在同一权威事务提交。
@@ -189,7 +198,7 @@ python scripts/build_astrbot_plugin.py
 - **SQLite schema v5**：V1.0 为 v4（`memory_relations` 预留表），V1.1 升到 v5（群 Scope/admin 字段）。从 v1–v4 升级到 v5 前，插件会自动在数据目录的 `migration_backups/` 生成一致性备份并校验完整性/版本；备份失败则中止迁移。升级前仍建议自行备份整个插件数据目录。有群数据时拒绝回滚到 V1.0，降级前对每个群执行 `群关闭 → 群销毁`（想保留群记忆就不要先做 `群清空`，否则备份只是清空后的快照），或按 `群关闭 → 群清空 → 群销毁` 处理。
 - **群生命周期**：群开启/关闭/清空/销毁均写操作审计；群关闭可逆，个人关闭永久；群销毁必须已经关闭，服务内自动备份并写 sidecar manifest，删除顺序为记忆/关联 → consent 历史 → operations 审计 → scope，提交后先恢复 FTS 再 secure purge。
 - **按作用域导出与审计**：`export_personal` / `export_group` 只导当前 scope 的 ACTIVE 记忆；个人导出需 consent，群导出需管理员，序列化在 `app/export.py`（命令 UX 留到 V1.3）。`memory_operations` 写入 `result=SUCCESS` 与操作元数据，不含正文；注入无缓存，删除/清空/关闭后下一次请求重新检索。
-- **测试与 CI**：2026-11-23 口径下 `158 passed`（Python 3.12.10），`ruff`、`mypy`、`compileall` 与插件包构建通过。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
+- **测试与 CI**：本地 `dev`（2026-11-23）完整测试 `199 passed`（Python 3.13.5）；`compileall`、配置 JSON 与差异检查通过。当前本地环境未安装 ruff/mypy，未执行。GitHub Actions 在 Ubuntu/Windows × Python 3.12/3.13 上跑编译、ruff 与 pytest，另跑 mypy 与 AstrBot 4.29.4 真框架导入；`main` 分支额外构建 ZIP 作为 Actions 产物。真实宿主 WebUI/群聊角色/Provider 注入仍走本机烟测，CI 只做可重复的代码与契约检查。
 
 ## 📜 版本与验收
 
@@ -198,12 +207,14 @@ python scripts/build_astrbot_plugin.py
 | V0「起针」 | 已完成：领域核心、SQLite + FTS5、写协调、生命周期、私聊闭环 |
 | V1.0「初织」 | 代码、私聊宿主烟测与专用 Scope 清空证据已完成；**正式验收待签署** |
 | V1.1「引线」 | M1/M2 群共享记忆已实现（158 passed）；**真实宿主群聊烟测待补** |
-| V1.2「锁边」 | Personal 默认登记 + opt-out、模型工具写入已实现（158 passed）；真实宿主首次告知/工具写入烟测待补 |
+| V1.2「锁边」 | Personal 默认登记 + opt-out 已实现；Agent 写入服务已具备，但 AstrBot 4.29.4 未暴露真实 `tool_call_id`，宿主写入链路仍 fail-closed |
+| V1.3「整经」 | 部分交付开发版本；Agent 写工具因 AstrBot 4.29.4 未暴露真实 `tool_call_id` 而 fail-closed；真实宿主验收待补 |
+| V1.4「验线」 | 进行中：50 条合成 Golden Set 初稿、离线 Harness 与首轮基线已建立；人工标注复核及注入有效性评分待完成 |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 
 已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响。
 
-后续版本（群导出、自动提取、Group personal、向量检索、WebUI 等）不在 V1.0/V1.1 范围内，按计划书逐版推进。
+V1.4 评测命令：`python scripts/evaluate_v14.py`。数据集只含合成内容，Harness 使用临时 SQLite 库；参数实验只允许 `--split train`，不得使用留出集调参。V1.5 自动提取、Group personal、向量检索、WebUI 等仍按路线图逐版推进。
 
 ## 🌙 注意事项
 

@@ -666,6 +666,14 @@ def test_delete_linearizing_between_fts_candidates_and_authoritative_fetch(stack
     consent.grant(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
 
     class DeleteAfterCandidateSearch:
+        def search_diagnostics(
+            self, query, *, scope_id, subject_id, limit=100, scope_type="PERSONAL",
+        ):
+            return index.search_diagnostics(
+                query, scope_id=scope_id, subject_id=subject_id, limit=limit,
+                scope_type=scope_type,
+            )
+
         def search(self, query, *, scope_id, subject_id, limit=20, at=None):
             candidates = index.search(
                 query, scope_id=scope_id, subject_id=subject_id, limit=limit, at=at,
