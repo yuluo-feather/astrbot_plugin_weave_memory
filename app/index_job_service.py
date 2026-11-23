@@ -96,7 +96,12 @@ class IndexJobService:
         if self._provider is None:
             raise VectorDimensionMismatch("embedding provider is not configured")
         provider = self._provider
-        vectors = await provider.embed_documents((memory.content,))
+        scope_type = await self._coordinator.run_serialized(
+            lambda: self._store.scope_type(memory.scope_id),
+        )
+        vectors = await provider.embed_documents(
+            (memory.content,), scope_type=scope_type, scope_id=memory.scope_id,
+        )
         if len(vectors) != 1:
             raise VectorDimensionMismatch("embedding provider returned no vector")
         vector = vectors[0]

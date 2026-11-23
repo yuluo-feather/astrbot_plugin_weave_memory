@@ -70,7 +70,11 @@ class IndexRebuildService:
             else:
                 memories = self._store.list_active_all()
             for memory in memories:
-                vectors = await provider.embed_documents((memory.content,))
+                scope_type = self._store.scope_type(memory.scope_id)
+                vectors = await provider.embed_documents(
+                    (memory.content,), scope_type=scope_type,
+                    scope_id=memory.scope_id,
+                )
                 if not vectors:
                     continue
                 lineage, creation_seq = await self._coordinator.run_serialized(

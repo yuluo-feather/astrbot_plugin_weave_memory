@@ -46,6 +46,20 @@ class ProviderPolicy:
         return self._provider is not None
 
     @property
+    def provider_id(self) -> str:
+        return self._provider.provider_id if self._provider is not None else ""
+
+    @property
+    def model(self) -> str:
+        return self._provider.model if self._provider is not None else ""
+
+    @property
+    def dimension(self) -> int:
+        if self._provider is None:
+            raise IndexNotConfigured("embedding provider is not configured")
+        return self._provider.dimension
+
+    @property
     def degraded(self) -> bool:
         return self._cooldown_until is not None and self._cooldown_until > self._clock.now()
 
@@ -58,6 +72,8 @@ class ProviderPolicy:
             "dim": provider.dimension if provider else None,
             "degraded": self.degraded,
             "cache_hits": self._cache.hits,
+            "external_opt_in": self._config.external_provider_opt_in,
+            "allowlist": list(self._config.external_provider_allowlist),
         }
 
     def _allowed(self) -> bool:

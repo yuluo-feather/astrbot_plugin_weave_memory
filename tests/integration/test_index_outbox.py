@@ -71,7 +71,7 @@ class FakeProvider:
     async def embed_query(self, text):
         return (1.0, 0.0)
 
-    async def embed_documents(self, texts):
+    async def embed_documents(self, texts, *, scope_type="", scope_id=""):
         return tuple((1.0, 0.0) for _ in texts)
 
 
@@ -221,3 +221,29 @@ def test_index_job_service_drains_upsert(stack):
     )
     with pytest.raises(NotFound):
         store.get_any("missing")
+
+
+def test_vector_snapshot_cache_hits_and_invalidates(stack):
+    _, store, coordinator, _, _, vector, scope = stack
+    memory = _memory(scope)
+    asyncio.run(coordinator.create(memory, _revision(memory), _source(memory)))
+    lineage, creation_seq = store.get_lineage(
+        memory.id, scope_id=scope.id, subject_id="u1",
+    )
+    vector.upsert(
+        memory.id, (1.0, 0.0), dim=2, provider="fake", model="m2",
+        content_hash="h", db_lineage_id=lineage, creation_seq=creation_seq,
+        revision=1, created_at=NOW,
+    )
+    vector.search((1.0, 0.0), scope_id=scope.id, subject_id="u1",
+                  limit=5, at=NOW)
+    vector.search((1.0, 0.0), scope_id=scope.id, subject_id="u1",
+                  limit=5, at=NOW)
+    stats = vector.snapshot_cache_stats()
+    assert stats["hits"] >= 1
+    vector.upsert(
+        memory.id, (1.0, 0.0), dim=2, provider="fake", model="m2",
+        content_hash="h2", db_lineage_id=lineage, creation_seq=creation_seq,
+        revision=1, created_at=NOW,
+    )
+    assert vector.snapshot_cache_stats()["bytes"] == 0

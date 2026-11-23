@@ -66,7 +66,7 @@ class HybridRecallService:
                  rerank_timeout_seconds: int = 5,
                  tag_candidate_limit: int = 10,
                  time_candidate_limit: int = 10,
-                 relevance_threshold: float = 0.3,
+                 relevance_threshold: float = 0.35,
                  fts_relevance_ratio: float = 0.5,
                  fusion_method: str = "rrf",
                  consent_type: PersonalConsentType | GroupConsentType = (

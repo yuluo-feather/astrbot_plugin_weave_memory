@@ -56,7 +56,7 @@ class FakeProvider:
     async def embed_query(self, text):
         return (1.0, 0.0)
 
-    async def embed_documents(self, texts):
+    async def embed_documents(self, texts, *, scope_type="", scope_id=""):
         return tuple((1.0, float(index)) for index, _ in enumerate(texts))
 
 

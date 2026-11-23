@@ -116,7 +116,7 @@
   "vector_relevance_threshold": {
     "description": "向量相关性阈值",
     "type": "float",
-    "default": 0.3,
+    "default": 0.35,
     "hint": "0 表示关闭；仅作用于向量通道的余弦分数，不影响 RRF 主序。范围 0–1。"
   },
   "fts_relevance_ratio": {
@@ -124,6 +124,12 @@
     "type": "float",
     "default": 0.5,
     "hint": "仅保留本 query FTS 最高分 × 该比例的候选；0 表示关闭。范围 0–1。"
+  },
+  "vector_snapshot_cache_mb": {
+    "description": "向量快照缓存（MB）",
+    "type": "int",
+    "default": 64,
+    "hint": "按 scope 缓存已授权向量快照；0 表示关闭。写入/删除/清空/恢复会失效。"
   },
   "embedding_provider_id": {
     "description": "Embedding Provider ID",

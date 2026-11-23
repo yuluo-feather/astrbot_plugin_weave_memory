@@ -579,6 +579,17 @@ class SQLiteMemoryStore:
             raise NotFound("memory not found")
         return self._row_to_memory(row)
 
+    def scope_type(self, scope_id: str) -> str:
+        try:
+            row = self.db.connection.execute(
+                "SELECT scope_type FROM memory_scopes WHERE id=?", (scope_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read scope type") from exc
+        if row is None:
+            raise NotFound("scope not found")
+        return str(row["scope_type"])
+
     def list_active_all(self) -> tuple[MemoryEntity, ...]:
         try:
             rows = self.db.connection.execute(

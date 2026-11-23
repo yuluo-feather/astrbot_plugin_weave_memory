@@ -363,11 +363,26 @@ def test_unknown_ledger_event_fails_closed_for_maintenance(ledger_stack):
                        'system', ?, '{}')""",
             (seq, NOW.isoformat()),
         )
+        connection.execute(
+            """INSERT INTO ledger_events
+               (event_id, state, seq, event_type, scope_id, subject_id, memory_id,
+                source, occurred_at, payload_json)
+               VALUES ('future-info', 'intent', ?, 'future_info', NULL, NULL, NULL,
+                       'system', ?, '{"category":"informational"}')""",
+            (seq + 1, NOW.isoformat()),
+        )
+        connection.execute(
+            "UPDATE ledger_meta SET value=? WHERE key='last_seq'", (str(seq + 1),),
+        )
+        connection.execute(
+            "UPDATE ledger_meta SET value=? WHERE key='end_seq'", (str(seq + 1),),
+        )
         connection.commit()
     finally:
         connection.close()
     applied, failed = ledger.drain_pending(store, consent_repo)
-    assert applied == 0
+    assert applied == 1
     assert "future-1" in failed
+    assert "future-info" not in failed
     with pytest.raises(StorageError):
         ledger.strict_drain(store, consent_repo)

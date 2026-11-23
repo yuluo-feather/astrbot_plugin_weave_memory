@@ -8,6 +8,7 @@ between the two stores cannot lose the deletion.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
@@ -34,6 +35,8 @@ from ..core.ports import (
     LedgerReplayStore,
     LedgerStore,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def time_from_payload(value: object, name: str) -> datetime:
@@ -286,6 +289,13 @@ class LedgerService:
             )
             return
         if intent.event_type is LedgerEventType.UNKNOWN:
+            category = str(intent.payload.get("category", "")).lower()
+            if category == "informational":
+                logger.warning(
+                    "unknown informational ledger event skipped: %s",
+                    intent.raw_event_type,
+                )
+                return
             raise LedgerUnknownDestructive(
                 f"unknown ledger event {intent.raw_event_type!r}",
             )

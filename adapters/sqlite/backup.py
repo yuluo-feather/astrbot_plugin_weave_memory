@@ -494,6 +494,8 @@ class BackupService:
         try:
             for event in ordered:
                 if event.event_type is LedgerEventType.UNKNOWN:
+                    if str(event.payload.get("category", "")).lower() == "informational":
+                        continue
                     raise StorageError(
                         f"unknown ledger event {event.raw_event_type!r}; refusing restore",
                     )

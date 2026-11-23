@@ -194,6 +194,7 @@ class WeaveMemoryPlugin(Star):
             vector_index: SQLiteVectorIndex | None = None
             index_jobs: SQLiteIndexJobStore | None = None
             index_worker: IndexWorker | None = None
+            index_rebuild: IndexRebuildService | None = None
             if provider is not None:
                 config_hash = sha256(
                     (
@@ -207,6 +208,7 @@ class WeaveMemoryPlugin(Star):
                     model=provider.model, dim=provider.dimension,
                     config_hash=config_hash,
                     states=SQLiteIndexStateStore(self._database),
+                    snapshot_cache_mb=provider_config.vector_snapshot_cache_mb,
                 )
                 index_jobs = SQLiteIndexJobStore(self._database)
                 index_service = IndexJobService(
@@ -453,6 +455,8 @@ class WeaveMemoryPlugin(Star):
                 group_recall=group_recall, consent=consent,
                 imports=imports, group_memories=group_memories,
                 backup=backup,
+                vector_rebuild=index_rebuild,
+                vector_enabled=provider_config.vector_index_enabled,
                 settings={
                     "auto_enroll": auto_enroll,
                     "agent_write_enabled": self._config_bool("agent_write_enabled", True),
@@ -481,6 +485,9 @@ class WeaveMemoryPlugin(Star):
                         provider_config.vector_relevance_threshold
                     ),
                     "fts_relevance_ratio": provider_config.fts_relevance_ratio,
+                    "vector_snapshot_cache_mb": (
+                        provider_config.vector_snapshot_cache_mb
+                    ),
                     "embedding_provider_id": provider_config.embedding_provider_id,
                     "embedding_model": provider_config.embedding_model,
                     "external_provider_opt_in": provider_config.external_provider_opt_in,
@@ -493,6 +500,7 @@ class WeaveMemoryPlugin(Star):
                             "target": vector_index.status().target.value,
                             "status": vector_index.status().status.value,
                             "dim": vector_index.status().dim,
+                            "cache": vector_index.snapshot_cache_stats(),
                         }
                         if vector_index is not None and vector_index.status() is not None
                         else None

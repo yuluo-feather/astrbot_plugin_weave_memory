@@ -54,13 +54,30 @@ def _dot(left: tuple[float, ...], right: tuple[float, ...]) -> float:
 class SQLiteVectorIndex(VectorIndex):
     def __init__(self, db: SQLiteDatabase, *, provider_id: str, model: str,
                  dim: int, config_hash: str,
-                 states: SQLiteIndexStateStore | None = None) -> None:
+                 states: SQLiteIndexStateStore | None = None,
+                 snapshot_cache_mb: int = 64) -> None:
         self._db = db
         self.provider_id = provider_id
         self.model = model
         self.dim = dim
         self.config_hash = config_hash
         self._states = states or SQLiteIndexStateStore(db)
+        self._snapshot_cache: dict[tuple[str, str, str], tuple[int, tuple]] = {}
+        self._snapshot_bytes = 0
+        self._snapshot_limit = max(0, snapshot_cache_mb) * 1024 * 1024
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+    def _invalidate_snapshot(self) -> None:
+        self._snapshot_cache.clear()
+        self._snapshot_bytes = 0
+
+    def snapshot_cache_stats(self) -> dict[str, int]:
+        return {
+            "hits": self._cache_hits,
+            "misses": self._cache_misses,
+            "bytes": self._snapshot_bytes,
+        }
 
     # ------------------------------------------------------------------ state
     def status(self) -> IndexStateRecord | None:
@@ -125,6 +142,7 @@ class SQLiteVectorIndex(VectorIndex):
                 )
         except sqlite3.Error as exc:
             raise StorageError("could not write memory embedding") from exc
+        self._invalidate_snapshot()
 
     def remove(self, memory_id: str) -> None:
         try:
@@ -134,6 +152,7 @@ class SQLiteVectorIndex(VectorIndex):
                 )
         except sqlite3.Error as exc:
             raise StorageError("could not remove memory embedding") from exc
+        self._invalidate_snapshot()
 
     def clear(self, *, scope_id: str | None = None,
               subject_id: str | None = None) -> None:
@@ -150,6 +169,7 @@ class SQLiteVectorIndex(VectorIndex):
                     )
         except sqlite3.Error as exc:
             raise StorageError("could not clear memory embeddings") from exc
+        self._invalidate_snapshot()
 
     def count(self, *, scope_id: str | None = None,
               subject_id: str | None = None) -> int:
@@ -179,32 +199,52 @@ class SQLiteVectorIndex(VectorIndex):
         normalized = _normalize(query)
         if len(normalized) != self.dim:
             raise VectorDimensionMismatch("query dimension does not match the index")
-        rows = self._db.connection.execute(
-            """SELECT e.memory_id, e.vector, e.dim, m.status,
-                      m.valid_from, m.valid_until, s.is_enabled
-               FROM memory_embeddings e
-               JOIN memories m ON m.id=e.memory_id
-                 AND m.db_lineage_id=e.db_lineage_id
-                 AND m.creation_seq=e.creation_seq
-                 AND m.current_revision=e.revision
-               JOIN memory_scopes s ON s.id=m.scope_id
-               WHERE m.scope_id=? AND m.subject_id=? AND s.scope_type=?""",
-            (scope_id, subject_id, scope_type),
-        ).fetchall()
-        scored: list[SearchCandidate] = []
-        for row in rows:
-            dim = int(row["dim"])
-            if dim != self.dim:
-                raise VectorDimensionMismatch("stored embedding dimension mismatch")
-            vector = _unpack(row["vector"], dim)
-            scored.append(SearchCandidate(
-                memory_id=str(row["memory_id"]),
-                score=_dot(normalized, vector),
-                status=MemoryStatus(row["status"]),
-                valid_from=_time_load(row["valid_from"]),
-                valid_until=_time_load(row["valid_until"]),
-                scope_enabled=bool(row["is_enabled"]),
-            ))
+        key = (scope_id, subject_id, scope_type)
+        cached = self._snapshot_cache.get(key)
+        if cached is not None:
+            self._cache_hits += 1
+            rows = cached[1]
+        else:
+            self._cache_misses += 1
+            raw_rows = self._db.connection.execute(
+                """SELECT e.memory_id, e.vector, e.dim, m.status,
+                          m.valid_from, m.valid_until, s.is_enabled
+                   FROM memory_embeddings e
+                   JOIN memories m ON m.id=e.memory_id
+                     AND m.db_lineage_id=e.db_lineage_id
+                     AND m.creation_seq=e.creation_seq
+                     AND m.current_revision=e.revision
+                   JOIN memory_scopes s ON s.id=m.scope_id
+                   WHERE m.scope_id=? AND m.subject_id=? AND s.scope_type=?""",
+                (scope_id, subject_id, scope_type),
+            ).fetchall()
+            parsed: list[tuple] = []
+            size = 0
+            for row in raw_rows:
+                dim = int(row["dim"])
+                if dim != self.dim:
+                    raise VectorDimensionMismatch("stored embedding dimension mismatch")
+                vector = _unpack(row["vector"], dim)
+                parsed.append((
+                    str(row["memory_id"]), vector, MemoryStatus(row["status"]),
+                    _time_load(row["valid_from"]), _time_load(row["valid_until"]),
+                    bool(row["is_enabled"]),
+                ))
+                size += len(vector) * 8 + 64
+            rows = tuple(parsed)
+            if self._snapshot_limit and 0 < size <= self._snapshot_limit:
+                if self._snapshot_bytes + size > self._snapshot_limit:
+                    self._invalidate_snapshot()
+                self._snapshot_cache[key] = (size, rows)
+                self._snapshot_bytes += size
+        scored = [
+            SearchCandidate(
+                memory_id=memory_id, score=_dot(normalized, vector),
+                status=status, valid_from=valid_from,
+                valid_until=valid_until, scope_enabled=scope_enabled,
+            )
+            for memory_id, vector, status, valid_from, valid_until, scope_enabled in rows
+        ]
         scored.sort(key=lambda item: (-item.score, item.memory_id))
         return tuple(scored[:max(0, limit)])
 
