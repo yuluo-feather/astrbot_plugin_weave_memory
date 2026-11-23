@@ -1,0 +1,5 @@
+# 只排除仓库卫生检查器本身：它按设计输出“文件:行号: 标签”，不输出匹配到的值，
+# CodeQL 的 clear-text-logging 规则会把它误判为记录敏感信息。
+name: "Weave Memory CodeQL"
+paths-ignore:
+  - scripts/preflight.py

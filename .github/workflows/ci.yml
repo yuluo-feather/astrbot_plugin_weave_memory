@@ -62,7 +62,8 @@ jobs:
         run: python scripts/preflight.py --ci
 
   static:
-    name: 静态类型 (mypy)    runs-on: ubuntu-latest
+    name: 静态类型 (mypy)
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
