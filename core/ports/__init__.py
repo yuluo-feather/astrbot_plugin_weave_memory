@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -14,6 +15,7 @@ from ..model import (
     ExtractionJobStatus,
     ExtractionWindow,
     Identity,
+    ImportJob,
     MemoryConsent,
     MemoryEntity,
     MemoryOperation,
@@ -72,6 +74,19 @@ class MemoryStore(Protocol):
                          purge_body: bool) -> None: ...
 
     def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]: ...
+
+    def list_for_export(
+        self, *, scope_id: str, subject_id: str,
+        statuses: tuple[MemoryStatus, ...],
+    ) -> tuple[MemoryEntity, ...]: ...
+
+    def find_import_source(self, evidence_ref: str) -> bool: ...
+
+    def record_operation(
+        self, *, operation_id: str, scope_id: str, memory_id: str | None,
+        operation_type: str, operator_type: OperatorType, operator_id: str,
+        occurred_at: datetime, metadata: Mapping[str, object],
+    ) -> None: ...
 
     def list_active_page(
         self, *, scope_id: str, subject_id: str, limit: int, offset: int,
@@ -172,6 +187,18 @@ class ExtractionJobStore(Protocol):
     ) -> tuple[ExtractionJob, ...]: ...
 
     def count_by_status(self, *, scope_id: str, subject_id: str) -> dict[str, int]: ...
+
+
+class ImportJobStore(Protocol):
+    """Durable import job state (schema v8, ADR-0017)."""
+
+    def find_latest(self, *, scope_id: str, file_sha256: str) -> ImportJob | None: ...
+
+    def create(self, job: ImportJob) -> ImportJob: ...
+
+    def update(self, job: ImportJob) -> None: ...
+
+    def get(self, job_id: str) -> ImportJob: ...
 
 
 class SchemaVersionProvider(Protocol):

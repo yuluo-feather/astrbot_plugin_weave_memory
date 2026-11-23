@@ -205,15 +205,17 @@ class FakeContext:
         self.routes.append((route, handler, methods, desc))
 
 
-def test_plugin_registers_read_only_management_api(monkeypatch, tmp_path):
+def test_plugin_registers_management_api(monkeypatch, tmp_path):
     import asyncio
 
     context = FakeContext()
     plugin, _ = load_plugin(monkeypatch, tmp_path, context=context)
     routes = {route: methods for route, _, methods, _ in context.routes}
-    assert len(context.routes) == 9
+    assert len(context.routes) == 11
     assert routes["/astrbot_plugin_weave_memory/v1/overview"] == ["GET"]
     assert routes["/astrbot_plugin_weave_memory/v1/retrieval/debug"] == ["POST"]
+    assert routes["/astrbot_plugin_weave_memory/v1/export"] == ["GET"]
+    assert routes["/astrbot_plugin_weave_memory/v1/import"] == ["POST"]
     assert routes["/astrbot_plugin_weave_memory/v1/memories/<id>"] == ["GET"]
     assert "/astrbot_plugin_weave_memory/v2" not in " ".join(routes)
     asyncio.run(plugin.terminate())
@@ -982,7 +984,7 @@ def test_v13_personal_management_commands_status_stats_operations_export(monkeyp
         message="/织忆 导出 json",
     ))))[0]
     export_payload = json.loads(exported_json)
-    assert export_payload["format"] == "weave-memory-export-v1"
+    assert export_payload["schema_version"] == "weave-memory-export-v2"
     assert export_payload["memories"][0]["content"] == "导出测试正文"
     exported_md = asyncio.run(collect(plugin.memory_export(FakeEvent(
         message="/织忆 导出 md",
@@ -1273,4 +1275,155 @@ def test_plugin_reports_closed_scope_when_consent_revoke_needs_retry(monkeypatch
         FakeEvent(message="/织忆 关闭 确认"),
     )))
     assert "永久关闭" in retried[0]
+    asyncio.run(plugin.terminate())
+
+
+class FakeFileComponent:
+    type = types.SimpleNamespace(name="File")
+
+    def __init__(self, path):
+        self._path = Path(path)
+        self.name = self._path.name
+
+    async def get_file(self):
+        return str(self._path)
+
+
+def attach_json_file(event, payload, directory, name="export.json"):
+    import json
+
+    path = Path(directory) / name
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    event.message_obj.message = [FakeFileComponent(path)]
+    return path
+
+
+def v17_export_payload(*, scope_type="PERSONAL", scope_external_id="u1",
+                       subject_id="u1", entries=None):
+    from datetime import UTC, datetime
+
+    stamp = datetime(2026, 11, 23, 12, 0, tzinfo=UTC).isoformat()
+    return {
+        "schema_version": "weave-memory-export-v2",
+        "export_id": "cmd-exp",
+        "source_platform": "test-platform",
+        "exported_at": stamp,
+        "scope": {
+            "platform": "test-platform", "tenant_id": "instance-1",
+            "scope_type": scope_type, "scope_external_id": scope_external_id,
+            "subject_type": "GROUP" if scope_type == "GROUP" else "USER",
+            "subject_id": subject_id,
+        },
+        "memories": entries or [{
+            "source_memory_id": "cmd-src", "source_revision": 1,
+            "memory_type": "FACT", "status": "ACTIVE", "content": "导入正文",
+            "source_type": "EXPLICIT", "created_at": stamp, "updated_at": stamp,
+            "valid_from": None, "valid_until": None, "metadata": {},
+            "exported_at": stamp, "schema_version": "weave-memory-export-v2",
+        }],
+    }
+
+
+def test_plugin_personal_import_dry_run_import_and_rollback(monkeypatch, tmp_path):
+    import asyncio
+    import re
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    asyncio.run(collect(plugin.memory_grant(
+        FakeEvent(user="u1", message="/织忆 授权"),
+    )))
+    payload = v17_export_payload()
+
+    event = FakeEvent(user="u1", message="/织忆 导入 dry-run")
+    attach_json_file(event, payload, tmp_path)
+    dry = asyncio.run(collect(plugin.memory_import(event)))[0]
+    assert "试运行" in dry
+    listed = asyncio.run(collect(plugin.memory_list(
+        FakeEvent(user="u1", message="/织忆 列表"),
+    )))[0]
+    assert "导入正文" not in listed
+
+    event = FakeEvent(user="u1", message="/织忆 导入")
+    attach_json_file(event, payload, tmp_path)
+    done = asyncio.run(collect(plugin.memory_import(event)))[0]
+    assert "导入完成" in done
+    assert "新建 1" in done
+    listed = asyncio.run(collect(plugin.memory_list(
+        FakeEvent(user="u1", message="/织忆 列表"),
+    )))[0]
+    assert "导入正文" in listed
+    job_id = re.search(r"任务：([0-9a-f]+)", done).group(1)
+
+    rolled = asyncio.run(collect(plugin.memory_import(
+        FakeEvent(user="u1", message=f"/织忆 导入 回滚 {job_id}"),
+    )))[0]
+    assert "已回滚" in rolled
+    listed = asyncio.run(collect(plugin.memory_list(
+        FakeEvent(user="u1", message="/织忆 列表"),
+    )))[0]
+    assert "导入正文" not in listed
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_import_without_attachment_is_reported(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    asyncio.run(collect(plugin.memory_grant(
+        FakeEvent(user="u1", message="/织忆 授权"),
+    )))
+    result = asyncio.run(collect(plugin.memory_import(
+        FakeEvent(user="u1", message="/织忆 导入"),
+    )))[0]
+    assert "附上" in result
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_export_all_includes_metadata_only(monkeypatch, tmp_path):
+    import asyncio
+    import json
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    asyncio.run(collect(plugin.memory_grant(
+        FakeEvent(user="u1", message="/织忆 授权"),
+    )))
+    asyncio.run(collect(plugin.memory_save(
+        FakeEvent(user="u1", message="/织忆 保存 导出全部测试"),
+    )))
+    exported = json.loads(asyncio.run(collect(plugin.memory_export(
+        FakeEvent(user="u1", message="/织忆 导出 json all"),
+    )))[0])
+    assert exported["schema_version"] == "weave-memory-export-v2"
+    assert exported["memories"][0]["status"] == "ACTIVE"
+    assert exported["memories"][0]["content"] == "导出全部测试"
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_group_import_requires_admin(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    admin = dict(user="admin-1", group_id="g1", group_owner="admin-1")
+    member = dict(user="member-1", group_id="g1", group_owner="admin-1")
+    asyncio.run(collect(plugin.memory_group_enable(
+        FakeEvent(message="/织忆 群开启", **admin),
+    )))
+
+    payload = v17_export_payload(
+        scope_type="GROUP", scope_external_id="g1", subject_id="g1",
+    )
+    denied_event = FakeEvent(message="/织忆 群导入", **member)
+    attach_json_file(denied_event, payload, tmp_path)
+    denied = asyncio.run(collect(plugin.memory_group_import(denied_event)))[0]
+    assert "失败" in denied
+    assert "管理员" in denied
+
+    accepted_event = FakeEvent(message="/织忆 群导入", **admin)
+    attach_json_file(accepted_event, payload, tmp_path)
+    accepted = asyncio.run(collect(plugin.memory_group_import(accepted_event)))[0]
+    assert "导入完成" in accepted
+    listed = asyncio.run(collect(plugin.memory_group_list(
+        FakeEvent(message="/织忆 群列表", **member),
+    )))[0]
+    assert "导入正文" in listed
     asyncio.run(plugin.terminate())

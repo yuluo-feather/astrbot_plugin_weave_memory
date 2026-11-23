@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from ..core.errors import AuthorizationDenied, ValidationError
 from ..core.model import (
     AdminDecision,
@@ -18,7 +20,7 @@ from ..core.model import (
 from ..core.normalization import normalize_content
 from ..core.ports import Clock, IdGenerator, MemoryStore, ScopeStore
 from .consent_service import ConsentService, GroupConsentType
-from .export import build_export
+from .export import EXPORTED_STATUSES, build_export
 from .write_coordinator import WriteCoordinator, WriteReceipt
 
 _GROUP_TYPES: dict[str, MemoryType] = {
@@ -130,10 +132,30 @@ class GroupMemoryService:
             scope_id=scope.id, subject_id=scope.identity.subject_id,
         )
 
-    def export_group(self, scope: Scope, decision: AdminDecision) -> dict:
+    def write_guard(self, scope: Scope) -> Callable[[], None]:
+        """Re-check group consent and enabled state for import writes."""
+        def guard() -> None:
+            self._require_readable(scope)
+        return guard
+
+    def export_group(self, scope: Scope, decision: AdminDecision, *,
+                     include_all: bool = False) -> dict:
         if not decision.allowed:
             raise AuthorizationDenied("group export requires an administrator")
-        return build_export(scope, self.list_group(scope), exported_at=self._clock.now())
+        self._require_readable(scope)
+        if include_all:
+            memories = self._store.list_for_export(
+                scope_id=scope.id, subject_id=scope.identity.subject_id,
+                statuses=EXPORTED_STATUSES,
+            )
+        else:
+            memories = self._store.list_active(
+                scope_id=scope.id, subject_id=scope.identity.subject_id,
+            )
+        return build_export(
+            scope, memories, exported_at=self._clock.now(),
+            export_id=self._ids.new_id("export"),
+        )
 
     def needs_cleanup(self, scope: Scope) -> bool:
         return len(self._store.list_active(

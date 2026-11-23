@@ -19,7 +19,7 @@ from ..core.normalization import normalize_content
 from ..core.policy.dedup import DedupKey
 from ..core.ports import Clock, IdGenerator, MemoryStore
 from .consent_service import ConsentService, PersonalConsentType
-from .export import build_export
+from .export import EXPORTED_STATUSES, build_export
 from .lifecycle_service import LifecycleService
 from .write_coordinator import WriteCoordinator, WriteReceipt
 
@@ -308,6 +308,17 @@ class MemoryApplicationService:
             limit=limit, offset=offset,
         )
 
-    def export_personal(self, scope: Scope) -> dict:
-        """Export only this Personal scope; consent is re-checked by list_active."""
-        return build_export(scope, self.list_active(scope), exported_at=self._clock.now())
+    def export_personal(self, scope: Scope, *, include_all: bool = False) -> dict:
+        """Export only this Personal scope; consent is re-checked before reading."""
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        if include_all:
+            memories = self._store.list_for_export(
+                scope_id=scope.id, subject_id=scope.identity.subject_id,
+                statuses=EXPORTED_STATUSES,
+            )
+        else:
+            memories = self.list_active(scope)
+        return build_export(
+            scope, memories, exported_at=self._clock.now(),
+            export_id=self._ids.new_id("export"),
+        )

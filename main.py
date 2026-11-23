@@ -26,6 +26,7 @@ from .adapters.sqlite.consents import SQLiteConsentStore
 from .adapters.sqlite.database import SQLiteDatabase
 from .adapters.sqlite.extraction_jobs import SQLiteExtractionJobStore
 from .adapters.sqlite.fts import SQLiteFTSIndex
+from .adapters.sqlite.import_jobs import SQLiteImportJobStore
 from .adapters.sqlite.store import SQLiteMemoryStore
 from .adapters.system import SystemClock, UUID4IdGenerator
 from .app.consent_service import ConsentService
@@ -33,6 +34,7 @@ from .app.extraction_service import ExtractionService
 from .app.group_lifecycle_service import GroupLifecycleService
 from .app.group_memory_service import GroupMemoryService
 from .app.group_recall_service import GroupContextComposer, GroupRecallService
+from .app.import_service import ImportService
 from .app.lifecycle_service import LifecycleService
 from .app.management_service import ManagementService
 from .app.memory_service import MemoryApplicationService
@@ -126,6 +128,10 @@ class WeaveMemoryPlugin(Star):
             consent = ConsentService(consent_repository, coordinator, clock, ids)
             lifecycle = LifecycleService(coordinator, store, consent)
             memories = MemoryApplicationService(store, coordinator, consent, lifecycle, clock, ids)
+            imports = ImportService(
+                store, SQLiteImportJobStore(self._database), coordinator,
+                lifecycle, clock, ids,
+            )
             diagnostics_enabled = self._config_bool("recall_diagnostics_enabled", True)
             diagnostics = None
             if diagnostics_enabled:
@@ -203,11 +209,11 @@ class WeaveMemoryPlugin(Star):
             self._coordinator = coordinator
             auto_enroll = self._config_bool("auto_enroll", True)
             self._commands = AstrBotMemoryCommands(
-                scopes, consent, memories, recall, lifecycle, clock, ids,
+                scopes, consent, memories, recall, lifecycle, clock, ids, imports,
                 auto_enroll=auto_enroll,
             )
             self._group_commands = AstrBotGroupCommands(
-                group_scopes, group_lifecycle, group_memories, group_recall,
+                group_scopes, group_lifecycle, group_memories, group_recall, imports,
                 retention_days=self._config_int("group_retention_days", 90),
                 backup_retention_days=destroy_backup_retention,
             )
@@ -229,6 +235,7 @@ class WeaveMemoryPlugin(Star):
             management = ManagementService(
                 repository=store, store=store, index=index, groups=group_scopes,
                 group_recall=group_recall, consent=consent,
+                imports=imports, group_memories=group_memories,
                 settings={
                     "auto_enroll": auto_enroll,
                     "agent_write_enabled": self._config_bool("agent_write_enabled", True),
@@ -494,6 +501,14 @@ class WeaveMemoryPlugin(Star):
             yield event.plain_result(self._command_service().export_command(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("导出", exc))
+
+    @memory.command("导入")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_import(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(await self._command_service().import_command(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("导入", exc))
 
     @memory.command("删除")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
@@ -786,6 +801,16 @@ class WeaveMemoryPlugin(Star):
             yield event.plain_result(self._group_command_service().export(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(AstrBotGroupCommands._error_text("群导出", exc))
+
+    @memory.command("群导入")
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def memory_group_import(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(
+                await self._group_command_service().import_command(event),
+            )
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(AstrBotGroupCommands._error_text("群导入", exc))
 
     @filter.on_llm_request()
     async def inject_personal_memory(self, event: AstrMessageEvent, req: ProviderRequest):

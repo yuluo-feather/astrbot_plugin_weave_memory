@@ -401,6 +401,53 @@ class SQLiteMemoryStore:
             raise StorageError("could not list active memories") from exc
         return tuple(self._row_to_memory(row) for row in rows)
 
+    def list_for_export(
+        self, *, scope_id: str, subject_id: str,
+        statuses: tuple[MemoryStatus, ...],
+    ) -> tuple[MemoryEntity, ...]:
+        if not statuses:
+            return ()
+        targets = tuple(status.value for status in statuses)
+        placeholders = ",".join("?" for _ in targets)
+        try:
+            rows = self.db.connection.execute(
+                f"""SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                WHERE m.scope_id=? AND m.subject_id=? AND s.is_enabled=1
+                  AND m.status IN ({placeholders})
+                ORDER BY m.created_at, m.id""",
+                (scope_id, subject_id, *targets),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list memories for export") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
+
+    def find_import_source(self, evidence_ref: str) -> bool:
+        try:
+            row = self.db.connection.execute(
+                """SELECT 1 FROM memory_sources
+                WHERE source_type='IMPORTED' AND evidence_ref=? LIMIT 1""",
+                (evidence_ref,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read imported source") from exc
+        return row is not None
+
+    def record_operation(
+        self, *, operation_id: str, scope_id: str, memory_id: str | None,
+        operation_type: str, operator_type: OperatorType, operator_id: str,
+        occurred_at: datetime, metadata: Mapping[str, object],
+    ) -> None:
+        try:
+            with self.db.transaction() as conn:
+                self._insert_operation(
+                    conn, operation_id=operation_id, scope_id=scope_id,
+                    memory_id=memory_id, operation_type=operation_type,
+                    operator_type=operator_type, operator_id=operator_id,
+                    occurred_at=occurred_at, metadata=metadata,
+                )
+        except sqlite3.Error as exc:
+            raise StorageError("could not record memory operation") from exc
+
     def list_active_page(
         self, *, scope_id: str, subject_id: str, limit: int, offset: int,
         memory_type: MemoryType | None = None,

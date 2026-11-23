@@ -329,6 +329,46 @@ class ExtractionCandidate:
         object.__setattr__(self, "source_message_ids", source_ids)
 
 
+class ImportJobStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
+
+
+@dataclass(frozen=True, slots=True)
+class ImportJob:
+    id: str
+    scope_id: str
+    subject_id: str
+    file_sha256: str
+    dataset_version: str
+    status: ImportJobStatus
+    cursor: int
+    created_memory_ids: tuple[str, ...]
+    created_at: datetime
+    updated_at: datetime
+    last_error: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in (
+            "id", "scope_id", "subject_id", "file_sha256", "dataset_version",
+        ):
+            if not getattr(self, name).strip():
+                raise ValidationError(f"{name} must be non-empty")
+        if self.cursor < 0:
+            raise ValidationError("cursor must be non-negative")
+        created_ids = tuple(self.created_memory_ids)
+        if any(not memory_id.strip() for memory_id in created_ids):
+            raise ValidationError("created_memory_ids must be non-empty")
+        object.__setattr__(self, "created_memory_ids", created_ids)
+        for name in ("created_at", "updated_at"):
+            object.__setattr__(self, name, require_aware_utc(getattr(self, name), name))
+        if self.updated_at < self.created_at:
+            raise ValidationError("updated_at must not be earlier than created_at")
+
+
 @dataclass(frozen=True, slots=True)
 class MemoryConsent:
     id: str

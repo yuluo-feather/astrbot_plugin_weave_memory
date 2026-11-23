@@ -145,7 +145,10 @@ def test_personal_export_is_scope_scoped_and_excludes_deleted(personal_stack):
     assert "住在东京" in text
     assert "别人的秘密" not in text
     assert payload["scope"]["subject_id"] == "u1"
-    assert {memory["scope_id"] for memory in payload["memories"]} == {scope.id}
+    assert "scope_id" not in payload["memories"][0]
+    assert payload["schema_version"] == "weave-memory-export-v2"
+    assert payload["export_id"]
+    assert payload["source_platform"] == "astrbot"
 
     store.delete(
         first.id, scope_id=scope.id, subject_id="u1",
@@ -155,7 +158,7 @@ def test_personal_export_is_scope_scoped_and_excludes_deleted(personal_stack):
     after_delete = memories.export_personal(scope)
     assert "喜欢黑咖啡" not in to_json(after_delete)
     assert "住在东京" in to_markdown(after_delete)
-    assert second.id in {memory["id"] for memory in after_delete["memories"]}
+    assert second.id in {memory["source_memory_id"] for memory in after_delete["memories"]}
 
     consent.revoke(scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1")
     with pytest.raises(AuthorizationDenied):

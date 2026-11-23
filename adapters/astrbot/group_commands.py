@@ -9,6 +9,11 @@ from ...app.export import to_json, to_markdown
 from ...app.group_lifecycle_service import GroupLifecycleService
 from ...app.group_memory_service import GroupMemoryService
 from ...app.group_recall_service import GroupRecallService
+from ...app.import_service import (
+    IMPORT_MAX_FILE_BYTES,
+    ImportService,
+    payload_sha256,
+)
 from ...app.scope_service import GroupScopeService
 from ...core.errors import (
     AuthorizationDenied,
@@ -23,20 +28,24 @@ from ...core.errors import (
     ValidationError,
 )
 from ...core.model import AdminSource, Scope
+from .attachments import read_json_attachment
 from .identity import AstrBotIdentityAdapter
+from .import_result import format_import_result, format_rollback_result
 
 logger = logging.getLogger(__name__)
 
 
 class AstrBotGroupCommands:
     def __init__(self, scopes: GroupScopeService, lifecycle: GroupLifecycleService,
-                 memories: GroupMemoryService, recall: GroupRecallService, *,
+                 memories: GroupMemoryService, recall: GroupRecallService,
+                 import_service: ImportService, *,
                  retention_days: int = 90,
                  backup_retention_days: int = 30) -> None:
         self._scopes = scopes
         self._lifecycle = lifecycle
         self._memories = memories
         self._recall = recall
+        self._imports = import_service
         self._retention_days = max(1, retention_days)
         self._backup_retention_days = max(1, backup_retention_days)
         self._identity = AstrBotIdentityAdapter()
@@ -122,7 +131,9 @@ class AstrBotGroupCommands:
             "/织忆 群列表 —— 查看当前群记忆（需已开启）\n"
             "/织忆 群查询 <问题> —— 检索当前群记忆（需已开启）\n"
             "/织忆 群状态 —— 查看当前群状态\n"
-            "/织忆 群导出 [json|md] —— 群管理员导出当前群共享记忆"
+            "/织忆 群导出 [json|md] [all] —— 群管理员导出当前群共享记忆（all 含其他状态元数据）\n"
+            "/织忆 群导入 [dry-run] —— 群管理员附 JSON 文件导入；dry-run 只预演\n"
+            "/织忆 群导入 回滚 <任务ID> —— 删除该任务本次新建的群记忆"
         )
 
     async def enable(self, event: Any) -> str:
@@ -232,17 +243,50 @@ class AstrBotGroupCommands:
         return "检索到的群记忆：\n" + "\n".join(lines)
 
     def export(self, event: Any) -> str:
-        format_name = self._tail(event, "群导出") or "json"
-        normalized_format = format_name.strip().lower()
+        tokens = self._tail(event, "群导出").split()
+        include_all = any(token.lower() == "all" for token in tokens)
+        normalized_format = next(
+            (token.lower() for token in tokens if token.lower() != "all"), "json",
+        )
         if normalized_format not in {"json", "md", "markdown"}:
-            return "导出失败：格式只支持 json 或 md。"
+            return "导出失败：格式只支持 json 或 md（可加 all 附带其他状态元数据）。"
         identity, _, decision = self._identity_and_decision(event)
         self._require_admin(decision)
         scope = self._find_scope(identity)
-        payload = self._memories.export_group(scope, decision)
+        payload = self._memories.export_group(
+            scope, decision, include_all=include_all,
+        )
         if normalized_format == "json":
             return to_json(payload)
         return to_markdown(payload)
+
+    async def import_command(self, event: Any) -> str:
+        tail = self._tail(event, "群导入")
+        identity, sender_id, decision = self._identity_and_decision(event)
+        self._require_admin(decision)
+        if tail.startswith("回滚"):
+            job_id = tail[len("回滚"):].strip()
+            if not job_id:
+                return "用法：/织忆 群导入 回滚 <任务ID>"
+            scope = self._find_scope(identity)
+            result = await self._imports.rollback(
+                scope, job_id, operator_id=sender_id,
+            )
+            return format_rollback_result(result, scope_label="当前群")
+        dry_run = tail.strip().lower() in {"dry-run", "dryrun", "试运行"}
+        if tail.strip() and not dry_run:
+            return "用法：/织忆 群导入 [dry-run]（请在同一条消息附上 JSON 导出文件）"
+        payload, _name = await read_json_attachment(
+            event, max_bytes=IMPORT_MAX_FILE_BYTES, purpose="群导入",
+        )
+        scope = self._find_scope(identity)
+        result = await self._imports.import_payload(
+            scope, payload, operator_id=sender_id,
+            file_sha256=payload_sha256(payload),
+            guard=self._memories.write_guard(scope),
+            dry_run=dry_run,
+        )
+        return format_import_result(result, scope_label="当前群")
 
     def status(self, event: Any) -> str:
         identity, _, _ = self._identity_and_decision(event)

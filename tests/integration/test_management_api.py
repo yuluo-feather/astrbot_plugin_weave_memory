@@ -74,7 +74,15 @@ class FakeService:
 
     def maintenance_status(self):
         self.calls.append(("maintenance_status", {}))
-        return {"schema_version": 7}
+        return {"schema_version": 8}
+
+    def export_group_payload(self, **kwargs):
+        self.calls.append(("export_group_payload", kwargs))
+        return {"schema_version": "weave-memory-export-v2", "memories": []}
+
+    async def import_group_payload(self, **kwargs):
+        self.calls.append(("import_group_payload", kwargs))
+        return {"imported": 0, "total": 0}
 
 
 def make_api(*, username="admin", query=None, body=None,
@@ -88,17 +96,62 @@ def make_api(*, username="admin", query=None, body=None,
     return api, service
 
 
-def test_register_all_read_only_routes():
+def test_register_all_management_routes():
     api, _ = make_api()
     context = FakeContext()
     assert api.register(context) is True
-    assert len(context.routes) == 9
+    assert len(context.routes) == 11
     routes = {route: methods for route, _, methods, _ in context.routes}
     assert routes["/astrbot_plugin_weave_memory/v1/overview"] == ["GET"]
     assert routes["/astrbot_plugin_weave_memory/v1/retrieval/debug"] == ["POST"]
+    assert routes["/astrbot_plugin_weave_memory/v1/export"] == ["GET"]
+    assert routes["/astrbot_plugin_weave_memory/v1/import"] == ["POST"]
     assert "/astrbot_plugin_weave_memory/v1/memories/<id>" in routes
     assert "/astrbot_plugin_weave_memory/v1/memories/<id>/history" in routes
     assert api.register(object()) is False
+
+
+def test_import_export_fail_closed_without_admin_whitelist():
+    api, service = make_api(username="admin")
+    payload, status = asyncio.run(api.h_export())
+    assert status == 403
+    assert payload["error"] == "AuthorizationDenied"
+    assert service.calls == []
+
+    api, service = make_api(username="someone", admin_usernames=("admin",))
+    _, status = asyncio.run(api.h_export())
+    assert status == 403
+    assert service.calls == []
+
+    api, service = make_api(username=None, admin_usernames=("admin",))
+    _, status = asyncio.run(api.h_import())
+    assert status == 403
+    assert service.calls == []
+
+
+def test_admin_export_and_import_reach_service():
+    query = {"platform": "astrbot", "tenant_id": "t", "group_id": "g", "all": "1"}
+    api, service = make_api(
+        username="admin", query=query, admin_usernames=("admin",),
+    )
+    payload = asyncio.run(api.h_export())
+    assert payload["status"] == "ok"
+    name, kwargs = service.calls[-1]
+    assert name == "export_group_payload"
+    assert kwargs["include_all"] is True
+    assert kwargs["username"] == "admin"
+    assert kwargs["group_id"] == "g"
+
+    api, service = make_api(
+        username="admin", query=query, admin_usernames=("admin",),
+        body={"memories": []},
+    )
+    result = asyncio.run(api.h_import())
+    assert result["status"] == "ok"
+    name, kwargs = service.calls[-1]
+    assert name == "import_group_payload"
+    assert kwargs["payload"] == {"memories": []}
+    assert kwargs["username"] == "admin"
 
 
 def test_missing_username_is_forbidden():
@@ -185,6 +238,6 @@ def test_retrieval_debug_body_and_personal_rejection():
 def test_settings_and_maintenance_are_read_only():
     api, service = make_api()
     assert asyncio.run(api.h_settings())["data"] == {"candidate_ttl_days": 7}
-    assert asyncio.run(api.h_maintenance_status())["data"] == {"schema_version": 7}
+    assert asyncio.run(api.h_maintenance_status())["data"] == {"schema_version": 8}
     methods = {name for name, _ in service.calls}
     assert methods == {"settings", "maintenance_status"}

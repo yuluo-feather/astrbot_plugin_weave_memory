@@ -1,7 +1,9 @@
-"""AstrBot read-only management Web API adapter (V1.6, ADR-0016).
+"""AstrBot management Web API adapter (V1.6 read-only, V1.7 group import/export).
 
 The host only forwards the dashboard username; there is no platform identity or
-role. Every endpoint is therefore read-only, and personal scopes are rejected.
+role. Read endpoints are therefore limited to non-personal scopes. The V1.7
+import/export endpoints are the only writers and are fail-closed on an explicit
+``api_admin_usernames`` whitelist (ADR-0017).
 """
 
 from __future__ import annotations
@@ -78,6 +80,20 @@ class AstrBotManagementApi:
             raise AuthorizationDenied("dashboard user is not in api_admin_usernames")
         return username
 
+    def _authorize_admin(self) -> str:
+        """Fail closed: import/export require an explicit admin whitelist."""
+        if not self._admin_usernames:
+            raise AuthorizationDenied("import/export requires api_admin_usernames")
+        return self._authorize()
+
+    @staticmethod
+    def _flag(value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        return isinstance(value, str) and value.strip().lower() in {
+            "1", "true", "yes", "all",
+        }
+
     def _query(self, name: str, default: object = None) -> object:
         return self._proxy().query.get(name, default)
 
@@ -93,6 +109,16 @@ class AstrBotManagementApi:
         try:
             self._authorize()
             result = operation()
+            if inspect.isawaitable(result):
+                result = await result
+        except DomainError as exc:
+            return _error_response(exc)
+        return {"status": "ok", "data": result}
+
+    async def _run_admin(self, operation: Callable[[str], object]) -> object:
+        try:
+            username = self._authorize_admin()
+            result = operation(username)
             if inspect.isawaitable(result):
                 result = await result
         except DomainError as exc:
@@ -116,6 +142,8 @@ class AstrBotManagementApi:
         register(f"{prefix}/settings", self.h_settings, ["GET"], "Weave settings")
         register(f"{prefix}/maintenance/status", self.h_maintenance_status, ["GET"],
                  "Weave maintenance status")
+        register(f"{prefix}/export", self.h_export, ["GET"], "Weave group export")
+        register(f"{prefix}/import", self.h_import, ["POST"], "Weave group import")
         return True
 
     async def h_overview(self) -> object:
@@ -185,3 +213,25 @@ class AstrBotManagementApi:
 
     async def h_maintenance_status(self) -> object:
         return await self._run(self._service.maintenance_status)
+
+    async def h_export(self) -> object:
+        def operation(username: str) -> object:
+            platform, tenant_id, group_id = self._group_args()
+            return self._service.export_group_payload(
+                platform=platform, tenant_id=tenant_id, group_id=group_id,
+                username=username, include_all=self._flag(self._query("all")),
+            )
+        return await self._run_admin(operation)
+
+    async def h_import(self) -> object:
+        async def operation(username: str) -> object:
+            platform, tenant_id, group_id = self._group_args()
+            body = await self._proxy().json(default=None)
+            if body is None:
+                raise ValidationError("request body must be a JSON export")
+            return await self._service.import_group_payload(
+                platform=platform, tenant_id=tenant_id, group_id=group_id,
+                username=username, payload=body,
+                dry_run=self._flag(self._query("dry_run")),
+            )
+        return await self._run_admin(operation)

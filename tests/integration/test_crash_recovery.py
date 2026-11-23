@@ -65,7 +65,7 @@ time.sleep(60)
     _kill_child_after_ready(script, db_path)
 
     reopened = SQLiteDatabase(db_path)
-    assert reopened.schema_version() == 7
+    assert reopened.schema_version() == 8
     assert reopened.connection.execute(
         "SELECT value FROM memory_meta WHERE key='before_crash'",
     ).fetchone()[0] == "kept"
@@ -180,7 +180,7 @@ time.sleep(60)
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone() is None
     recovered.migrate()
-    assert recovered.schema_version() == 7
+    assert recovered.schema_version() == 8
     assert recovered.connection.execute(
         "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone()[0] == 1

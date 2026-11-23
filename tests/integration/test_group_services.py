@@ -283,12 +283,12 @@ def test_group_clear_then_destroy_rolls_back_and_remigrates(group_stack):
     assert receipt.affected_count == 0
 
     db = group_stack["db"]
-    assert db.schema_version() == 7
+    assert db.schema_version() == 8
     db.rollback_to_v5()
     db.rollback_to_v10()
     assert db.schema_version() == 4
     db.migrate()
-    assert db.schema_version() == 7
+    assert db.schema_version() == 8
 
 
 def test_group_enable_does_not_enable_when_grant_fails(group_stack, monkeypatch):

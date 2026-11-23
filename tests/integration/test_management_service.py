@@ -12,6 +12,9 @@ from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.database import (
     SQLiteDatabase,
 )
 from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.fts import SQLiteFTSIndex
+from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.import_jobs import (
+    SQLiteImportJobStore,
+)
 from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
     SQLiteMemoryStore,
 )
@@ -31,6 +34,7 @@ from data.plugins.astrbot_plugin_weave_memory.app.group_memory_service import (
 from data.plugins.astrbot_plugin_weave_memory.app.group_recall_service import (
     GroupRecallService,
 )
+from data.plugins.astrbot_plugin_weave_memory.app.import_service import ImportService
 from data.plugins.astrbot_plugin_weave_memory.app.lifecycle_service import (
     LifecycleService,
 )
@@ -99,9 +103,12 @@ def management_stack(tmp_path):
         diagnostics.append,
     )
     personal_scopes = PersonalScopeService(store, coordinator, clock)
+    lifecycle = LifecycleService(coordinator, store, consent)
     memories = MemoryApplicationService(
-        store, coordinator, consent, LifecycleService(coordinator, store, consent),
-        clock, ids,
+        store, coordinator, consent, lifecycle, clock, ids,
+    )
+    imports = ImportService(
+        store, SQLiteImportJobStore(db), coordinator, lifecycle, clock, ids,
     )
 
     personal_identity = Identity(
@@ -131,6 +138,7 @@ def management_stack(tmp_path):
     service = ManagementService(
         repository=store, store=store, index=index, groups=group_scopes,
         group_recall=group_recall, consent=consent,
+        imports=imports, group_memories=group_memories,
         settings={
             "candidate_ttl_days": 7,
             "rejected_keep_body": False,
@@ -239,7 +247,7 @@ def test_groups_and_maintenance_are_read_only_views(management_stack):
         "created_at": groups[0]["created_at"],
     }]
     status = service.maintenance_status()
-    assert status["schema_version"] == 7
+    assert status["schema_version"] == 8
     assert status["memory_total"] == 3
     assert status["candidate_total"] == 0
     assert status["index"]["healthy"] is True
@@ -248,3 +256,62 @@ def test_groups_and_maintenance_are_read_only_views(management_stack):
         "rejected_keep_body": False,
         "api_admin_whitelist_enabled": False,
     }
+
+
+def test_group_export_and_import_payloads(management_stack):
+    stack = management_stack
+    exported = stack["service"].export_group_payload(
+        platform="astrbot", tenant_id="instance-1", group_id="g1",
+        username="admin-1",
+    )
+    assert exported["schema_version"] == "weave-memory-export-v2"
+    assert "每周五复盘项目进度" in {
+        item["content"] for item in exported["memories"]
+    }
+
+    payload = {
+        "schema_version": "weave-memory-export-v2",
+        "export_id": "mgmt-exp",
+        "source_platform": "astrbot",
+        "exported_at": NOW.isoformat(),
+        "scope": {
+            "platform": "astrbot", "tenant_id": "instance-1",
+            "scope_type": "GROUP", "scope_external_id": "g1",
+            "subject_type": "GROUP", "subject_id": "g1",
+        },
+        "memories": [{
+            "source_memory_id": "mgmt-src", "source_revision": 1,
+            "memory_type": "FACT", "status": "ACTIVE", "content": "管理 API 导入",
+            "source_type": "EXPLICIT",
+            "created_at": NOW.isoformat(), "updated_at": NOW.isoformat(),
+            "valid_from": None, "valid_until": None, "metadata": {},
+            "exported_at": NOW.isoformat(),
+            "schema_version": "weave-memory-export-v2",
+        }],
+    }
+    result = asyncio.run(stack["service"].import_group_payload(
+        platform="astrbot", tenant_id="instance-1", group_id="g1",
+        username="admin-1", payload=payload,
+    ))
+    assert result["imported"] == 1
+    after = stack["store"].list_active(
+        scope_id=stack["group_scope"].id, subject_id="g1",
+    )
+    assert "管理 API 导入" in {memory.content for memory in after}
+
+
+def test_management_import_export_reject_disabled_group(management_stack):
+    stack = management_stack
+    asyncio.run(stack["group_lifecycle"].disable(
+        stack["group_scope"], stack["decision"], operator_id="admin-1",
+    ))
+    with pytest.raises(AuthorizationDenied):
+        stack["service"].export_group_payload(
+            platform="astrbot", tenant_id="instance-1", group_id="g1",
+            username="admin-1",
+        )
+    with pytest.raises(AuthorizationDenied):
+        asyncio.run(stack["service"].import_group_payload(
+            platform="astrbot", tenant_id="instance-1", group_id="g1",
+            username="admin-1", payload={},
+        ))

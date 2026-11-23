@@ -34,11 +34,24 @@ class IndexState(StrEnum):
     PENDING_REBUILD = "PENDING_REBUILD"
 
 
+class ImportWriteOutcome(StrEnum):
+    CREATED = "CREATED"
+    DUPLICATE_IMPORT = "DUPLICATE_IMPORT"
+    DUPLICATE_ACTIVE = "DUPLICATE_ACTIVE"
+
+
 @dataclass(frozen=True, slots=True)
 class WriteReceipt:
     entity_id: str
     revision: int
     index_state: IndexState
+
+
+@dataclass(frozen=True, slots=True)
+class ImportWriteResult:
+    outcome: ImportWriteOutcome
+    memory: MemoryEntity | None = None
+    receipt: WriteReceipt | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +146,42 @@ class WriteCoordinator:
                     memory.id, memory.current_revision, self._sync_one(memory.id),
                 )
                 return memory, receipt, True
+
+    async def create_import(self, memory: MemoryEntity,
+                            revision: MemoryRevision, source: MemorySource, *,
+                            guard: Callable[[], None]) -> ImportWriteResult:
+        """Create one imported memory, deduplicating on both import key and content.
+
+        The four-tuple idempotency lookup, content dedup and insert share the
+        coordinator lock, so concurrent imports of the same file cannot race.
+        A CANDIDATE or unique-index collision escapes as ``Conflict`` and is
+        reported per entry by the import service.
+        """
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                guard()
+                if source.evidence_ref and self._store.find_import_source(
+                    source.evidence_ref,
+                ):
+                    return ImportWriteResult(ImportWriteOutcome.DUPLICATE_IMPORT)
+                existing = self._store.find_active_duplicate(
+                    DedupKey.from_memory(memory),
+                )
+                if existing is not None:
+                    receipt = WriteReceipt(
+                        existing.id, existing.current_revision, self._index_state(),
+                    )
+                    return ImportWriteResult(
+                        ImportWriteOutcome.DUPLICATE_ACTIVE, existing, receipt,
+                    )
+                self._store.create(memory, revision, source)
+                receipt = WriteReceipt(
+                    memory.id, memory.current_revision, self._sync_one(memory.id),
+                )
+                return ImportWriteResult(
+                    ImportWriteOutcome.CREATED, memory, receipt,
+                )
 
     async def update(self, memory: MemoryEntity, *, expected_revision: int,
                      revision: MemoryRevision, source: MemorySource | None = None,

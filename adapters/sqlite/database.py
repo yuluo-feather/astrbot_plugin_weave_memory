@@ -26,7 +26,7 @@ class SQLiteDatabase:
     multi-process write coordination.
     """
 
-    CURRENT_SCHEMA_VERSION = 7
+    CURRENT_SCHEMA_VERSION = 8
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -225,11 +225,40 @@ class SQLiteDatabase:
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (7, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("candidate_expiry",),
                     )
+                    version = 7
+                if version < 8:
+                    migration_v8 = (Path(__file__).parent / "migrations" / "008_import_jobs.sql").read_text(encoding="utf-8")
+                    for statement in migration_v8.split(";"):
+                        if statement.strip():
+                            conn.execute(statement)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, name, applied_at) VALUES (8, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        ("import_jobs",),
+                    )
         except sqlite3.Error as exc:
             raise StorageError("SQLite schema migration failed") from exc
         finally:
             self.connection.execute("PRAGMA foreign_keys = ON")
         return backup_path
+
+    def _ensure_rollback_guards(self, *, no_import_jobs: bool = False,
+                                no_candidates: bool = False,
+                                no_extraction_jobs: bool = False) -> None:
+        """Preflight the whole downgrade chain so a refused rollback changes nothing."""
+        version = self.schema_version()
+        checks: list[tuple[bool, int, str, str]] = [
+            (no_import_jobs, 8, "import_jobs",
+             "cannot roll back while import_jobs contains data"),
+            (no_candidates, 7, "memories WHERE status='CANDIDATE'",
+             "cannot roll back while CANDIDATE memories exist"),
+            (no_extraction_jobs, 6, "extraction_jobs",
+             "cannot roll back while extraction_jobs contains data"),
+        ]
+        for enabled, minimum, target, message in checks:
+            if not enabled or version < minimum:
+                continue
+            if int(self.connection.execute(f"SELECT count(*) FROM {target}").fetchone()[0]):
+                raise StorageError(message)
 
     def rollback_to_v05(self) -> None:
         """Roll back the V1.0-only reserved relation table to the V0.5 schema.
@@ -239,6 +268,11 @@ class SQLiteDatabase:
         Later schema versions are rolled back first, each with its own guard.
         """
         self._ensure_open()
+        self._ensure_rollback_guards(
+            no_import_jobs=True, no_candidates=True, no_extraction_jobs=True,
+        )
+        if self.schema_version() == 8:
+            self.rollback_to_v7()
         if self.schema_version() == 7:
             self.rollback_to_v6()
         if self.schema_version() == 6:
@@ -268,6 +302,11 @@ class SQLiteDatabase:
         A v7 database is first rolled back to v6 (requiring no candidate rows).
         """
         self._ensure_open()
+        self._ensure_rollback_guards(
+            no_import_jobs=True, no_candidates=True, no_extraction_jobs=True,
+        )
+        if self.schema_version() == 8:
+            self.rollback_to_v7()
         if self.schema_version() == 7:
             self.rollback_to_v6()
         try:
@@ -290,6 +329,9 @@ class SQLiteDatabase:
     def rollback_to_v6(self) -> None:
         """Roll v7 back to v6 only when no candidate row depends on the TTL column."""
         self._ensure_open()
+        self._ensure_rollback_guards(no_import_jobs=True, no_candidates=True)
+        if self.schema_version() == 8:
+            self.rollback_to_v7()
         try:
             with self.transaction() as conn:
                 version = int(conn.execute(
@@ -307,6 +349,29 @@ class SQLiteDatabase:
                 conn.execute("DELETE FROM schema_migrations WHERE version=7")
         except sqlite3.Error as exc:
             raise StorageError("could not roll back V1.6 schema to V1.5") from exc
+
+    def rollback_to_v7(self) -> None:
+        """Roll v8 back to v7 only when no import job remains."""
+        self._ensure_open()
+        try:
+            with self.transaction() as conn:
+                version = int(conn.execute(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                ).fetchone()[0])
+                if version != 8:
+                    raise StorageError("V1.7 rollback requires schema version 8")
+                jobs = int(conn.execute(
+                    "SELECT count(*) FROM import_jobs",
+                ).fetchone()[0])
+                if jobs:
+                    raise StorageError("cannot roll back while import_jobs contains data")
+                conn.execute("DROP INDEX ix_import_jobs_status")
+                conn.execute("DROP INDEX ix_import_jobs_lookup")
+                conn.execute("DROP INDEX ix_memory_sources_evidence_ref")
+                conn.execute("DROP TABLE import_jobs")
+                conn.execute("DELETE FROM schema_migrations WHERE version=8")
+        except sqlite3.Error as exc:
+            raise StorageError("could not roll back V1.7 schema to V1.6") from exc
 
     def rollback_preview(self) -> dict[str, object]:
         """Return a read-only report of what a v5→v4 rollback would remove."""
@@ -339,12 +404,17 @@ class SQLiteDatabase:
                 candidates = int(self.connection.execute(
                     "SELECT count(*) FROM memories WHERE status='CANDIDATE'",
                 ).fetchone()[0])
+            import_jobs = 0
+            if version >= 8:
+                import_jobs = int(self.connection.execute(
+                    "SELECT count(*) FROM import_jobs",
+                ).fetchone()[0])
         except sqlite3.Error as exc:
             raise StorageError("could not preview V1.1 rollback") from exc
         can_rollback = (
-            version in (5, 6, 7)
+            version in (5, 6, 7, 8)
             and not group_scopes and not group_memories and not group_consents
-            and not extraction_jobs and not candidates
+            and not extraction_jobs and not candidates and not import_jobs
         )
         return {
             "schema_version": version,
@@ -353,6 +423,7 @@ class SQLiteDatabase:
             "group_consent_count": group_consents,
             "extraction_job_count": extraction_jobs,
             "candidate_count": candidates,
+            "import_job_count": import_jobs,
             "groups": [
                 {
                     "scope_id": row["id"], "platform": row["platform"],
@@ -363,6 +434,7 @@ class SQLiteDatabase:
             ],
             "can_rollback": can_rollback,
             "steps": [
+                "（v8）清空 import_jobs 或接受 rollback_to_v7 拒绝",
                 "（v7）归档/清理候选，或接受 rollback_to_v6 拒绝",
                 "（v6）清空 extraction_jobs 或接受 rollback_to_v5 拒绝",
                 "关闭 → [清空 →] 销毁每个群（会写入备份）",
@@ -455,7 +527,7 @@ class SQLiteDatabase:
             with self.transaction() as conn:
                 conn.execute("DROP TABLE IF EXISTS memory_fts")
                 for table in (
-                    "extraction_jobs",
+                    "import_jobs", "extraction_jobs",
                     "memory_relations", "memory_consents", "memory_operations", "memory_tags", "memory_sources",
                     "memory_revisions", "memories", "memory_scopes",
                     "memory_meta", "schema_migrations",

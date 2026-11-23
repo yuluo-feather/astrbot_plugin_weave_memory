@@ -6,6 +6,11 @@ from typing import Any
 
 from ...app.consent_service import ConsentService, PersonalConsentType
 from ...app.export import to_json, to_markdown
+from ...app.import_service import (
+    IMPORT_MAX_FILE_BYTES,
+    ImportService,
+    payload_sha256,
+)
 from ...app.lifecycle_service import LifecycleService
 from ...app.memory_service import MemoryApplicationService
 from ...app.recall_service import RecallService, estimate_tokens
@@ -14,7 +19,9 @@ from ...core.errors import AuthorizationDenied, NotFound, ValidationError
 from ...core.model import MemoryType, OperatorType
 from ...core.normalization import normalize_content
 from ...core.ports import Clock, IdGenerator
+from .attachments import read_json_attachment
 from .identity import AstrBotIdentityAdapter
+from .import_result import format_import_result, format_rollback_result
 from .notices import AUTO_ENROLL_NOTICE
 
 _AUTO_ENROLL_FLAG = "_weave_auto_enroll_notice"
@@ -24,7 +31,8 @@ class AstrBotMemoryCommands:
     def __init__(self, scopes: PersonalScopeService, consent: ConsentService,
                  memories: MemoryApplicationService, recall: RecallService,
                  lifecycle: LifecycleService, clock: Clock,
-                 ids: IdGenerator, *, auto_enroll: bool = True) -> None:
+                 ids: IdGenerator, import_service: ImportService, *,
+                 auto_enroll: bool = True) -> None:
         self._scopes = scopes
         self._consent = consent
         self._memories = memories
@@ -32,6 +40,7 @@ class AstrBotMemoryCommands:
         self._lifecycle = lifecycle
         self._clock = clock
         self._ids = ids
+        self._imports = import_service
         self._auto_enroll = auto_enroll
         self._identity = AstrBotIdentityAdapter()
 
@@ -127,7 +136,9 @@ class AstrBotMemoryCommands:
             "/织忆 状态 —— 查看个人空间、授权和索引状态\n"
             "/织忆 统计 —— 查看记忆数量分布\n"
             "/织忆 操作记录 —— 查看不含正文的操作审计\n"
-            "/织忆 导出 [json|md] —— 导出当前个人空间的 ACTIVE 记忆（导出不是备份，完整备份/恢复在 V1.8）\n"
+            "/织忆 导出 [json|md] [all] —— 导出当前个人空间的 ACTIVE 记忆（all 含其他状态元数据；导出不是备份）\n"
+            "/织忆 导入 [dry-run] —— 附上 JSON 导出文件导入；dry-run 只预演\n"
+            "/织忆 导入 回滚 <任务ID> —— 删除该任务本次新建的记忆（不走完整备份）\n"
             "/织忆 删除 <记忆ID> 确认 —— 二次确认后不可恢复地删除一条记忆\n"
             "/织忆 清空 确认 —— 不可恢复地清空个人记忆\n"
             "/织忆 关闭 确认 —— 永久关闭个人记忆空间（不提供重新开启；只想停止功能请用 /织忆 撤销授权，可逆）\n"
@@ -407,17 +418,51 @@ class AstrBotMemoryCommands:
         ) + self._take_notice(event)
 
     def export(self, event: Any, format_name: str = "json") -> str:
+        tokens = format_name.split()
+        include_all = any(token.lower() == "all" for token in tokens)
+        normalized_format = next(
+            (token.lower() for token in tokens if token.lower() != "all"), "json",
+        )
         scope = self._scope(event)
-        payload = self._memories.export_personal(scope)
-        normalized_format = format_name.strip().lower()
+        payload = self._memories.export_personal(scope, include_all=include_all)
         if normalized_format == "json":
             return to_json(payload) + self._take_notice(event)
         if normalized_format in {"md", "markdown"}:
             return to_markdown(payload) + self._take_notice(event)
-        return "导出失败：格式只支持 json 或 md。"
+        return "导出失败：格式只支持 json 或 md（可加 all 附带其他状态元数据）。"
 
     def export_command(self, event: Any) -> str:
         return self.export(event, self._tail(event, "导出") or "json")
+
+    async def import_command(self, event: Any) -> str:
+        tail = self._tail(event, "导入")
+        if tail.startswith("回滚"):
+            job_id = tail[len("回滚"):].strip()
+            if not job_id:
+                return "用法：/织忆 导入 回滚 <任务ID>"
+            scope = self._scope(event, enroll=False)
+            operator_id = self._identity.resolve_operator_id(event)
+            result = await self._imports.rollback(
+                scope, job_id, operator_id=operator_id,
+            )
+            return format_rollback_result(result, scope_label="个人空间")
+        dry_run = tail.strip().lower() in {"dry-run", "dryrun", "试运行"}
+        if tail.strip() and not dry_run:
+            return "用法：/织忆 导入 [dry-run]（请在同一条消息附上 JSON 导出文件）"
+        payload, _name = await read_json_attachment(
+            event, max_bytes=IMPORT_MAX_FILE_BYTES, purpose="导入",
+        )
+        scope = self._scope(event)
+        operator_id = self._identity.resolve_operator_id(event)
+        result = await self._imports.import_payload(
+            scope, payload, operator_id=operator_id,
+            file_sha256=payload_sha256(payload),
+            guard=lambda: self._consent.require(
+                scope, PersonalConsentType.PERSONAL_MEMORY,
+            ),
+            dry_run=dry_run,
+        )
+        return format_import_result(result, scope_label="个人空间") + self._take_notice(event)
 
     async def update(self, event: Any) -> str:
         payload = self._tail(event, "更新")

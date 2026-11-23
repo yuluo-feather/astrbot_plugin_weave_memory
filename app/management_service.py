@@ -17,6 +17,8 @@ from ..core.errors import (
     ValidationError,
 )
 from ..core.model import (
+    AdminDecision,
+    AdminSource,
     Identity,
     MemoryEntity,
     MemoryStatus,
@@ -27,11 +29,13 @@ from ..core.model import (
 )
 from ..core.ports import ManagementRepository, MemoryStore, SearchIndex
 from .consent_service import ConsentService, GroupConsentType
+from .group_memory_service import GroupMemoryService
 from .group_recall_service import (
     GROUP_CONTEXT_PREFIX,
     GROUP_CONTEXT_SUFFIX,
     GroupRecallService,
 )
+from .import_service import ImportResult, ImportService, payload_sha256
 from .recall_service import select_with_budget
 from .scope_service import GroupScopeService
 
@@ -71,6 +75,7 @@ class ManagementService:
     def __init__(self, *, repository: ManagementRepository, store: MemoryStore,
                  index: SearchIndex, groups: GroupScopeService,
                  group_recall: GroupRecallService, consent: ConsentService,
+                 imports: ImportService, group_memories: GroupMemoryService,
                  settings: Mapping[str, object], group_max_tokens: int = 192,
                  group_max_memories: int = 2) -> None:
         self._repository = repository
@@ -79,6 +84,8 @@ class ManagementService:
         self._groups = groups
         self._group_recall = group_recall
         self._consent = consent
+        self._imports = imports
+        self._group_memories = group_memories
         self._settings = dict(settings)
         self._group_max_tokens = group_max_tokens
         self._group_max_memories = group_max_memories
@@ -265,3 +272,53 @@ class ManagementService:
             **self._repository.maintenance_status(),
             "index": self._index_status(),
         }
+
+    @staticmethod
+    def _admin_decision(username: str) -> AdminDecision:
+        return AdminDecision(
+            AdminSource.EXPLICIT_CONFIG, (username,), True, True,
+        )
+
+    def export_group_payload(self, *, platform: object, tenant_id: object,
+                             group_id: object, username: str,
+                             include_all: object = False) -> dict[str, object]:
+        scope = self._group_scope(platform, tenant_id, group_id)
+        return self._group_memories.export_group(
+            scope, self._admin_decision(username),
+            include_all=include_all is True,
+        )
+
+    @staticmethod
+    def _import_summary(result: ImportResult) -> dict[str, object]:
+        return {
+            "job_id": result.job_id,
+            "dry_run": result.dry_run,
+            "total": result.total,
+            "imported": result.imported,
+            "metadata_only": result.metadata_only,
+            "skipped": result.skipped,
+            "conflicts": result.conflicts,
+            "failed": result.failed,
+            "resumed_from": result.resumed_from,
+            "note": result.note,
+            "entries": [{
+                "index": entry.index,
+                "source_memory_id": entry.source_memory_id,
+                "outcome": entry.outcome.value,
+                "reason": entry.reason,
+                "memory_id": entry.memory_id,
+            } for entry in result.entries],
+        }
+
+    async def import_group_payload(self, *, platform: object, tenant_id: object,
+                                   group_id: object, username: str,
+                                   payload: object,
+                                   dry_run: object = False) -> dict[str, object]:
+        scope = self._group_scope(platform, tenant_id, group_id)
+        result = await self._imports.import_payload(
+            scope, payload, operator_id=username,
+            file_sha256=payload_sha256(payload),
+            guard=self._group_memories.write_guard(scope),
+            dry_run=dry_run is True,
+        )
+        return self._import_summary(result)
