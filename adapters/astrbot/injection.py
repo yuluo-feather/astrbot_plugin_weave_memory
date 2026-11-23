@@ -7,11 +7,7 @@ from ...app.recall_service import MemoryContextComposer
 from ...app.scope_service import PersonalScopeService
 from ...core.errors import AuthorizationDenied
 from .identity import AstrBotIdentityAdapter
-
-_AUTO_ENROLL_NOTICE = (
-    "织忆已默认开启：只记录你明确提到的长期偏好、背景或目标，并在对话中按需参考。"
-    "发送 /织忆 关闭 可停止，/织忆 清空 可删除。"
-)
+from .notices import AUTO_ENROLL_NOTICE
 
 
 class AstrBotMemoryInjector:
@@ -27,7 +23,7 @@ class AstrBotMemoryInjector:
 
     async def _send_auto_enroll_notice(self, event: Any) -> None:
         try:
-            await event.send(event.plain_result(_AUTO_ENROLL_NOTICE))
+            await event.send(event.plain_result(AUTO_ENROLL_NOTICE))
         except Exception:
             # A notice failure must not break the chat request.
             pass

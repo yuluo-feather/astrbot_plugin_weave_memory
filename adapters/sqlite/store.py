@@ -600,6 +600,23 @@ class SQLiteMemoryStore:
         except sqlite3.Error as exc:
             raise StorageError("could not count active memories") from exc
 
+    def group_row_counts(self, scope_id: str) -> dict[str, int]:
+        try:
+            counts = {}
+            for table, column in (
+                ("memories", "scope_id"),
+                ("memory_consents", "scope_id"),
+                ("memory_operations", "scope_id"),
+                ("memory_scopes", "id"),
+            ):
+                row = self.db.connection.execute(
+                    f"SELECT count(*) FROM {table} WHERE {column}=?", (scope_id,),
+                ).fetchone()
+                counts[table] = int(row[0])
+            return counts
+        except sqlite3.Error as exc:
+            raise StorageError("could not count group rows") from exc
+
     def backup_group_scope(self, scope_id: str, destination: str) -> str:
         try:
             row = self.db.connection.execute(

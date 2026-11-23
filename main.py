@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from astrbot.api import logger
@@ -44,6 +45,8 @@ _COMMAND_ERRORS = (
     AuthorizationDenied, Conflict, IndexUnavailable, InvalidTransition, NotFound,
     ServiceClosed, StorageError, ValidationError,
 )
+
+_TERMINATE_TIMEOUT_SECONDS = 5.0
 
 
 class WeaveMemoryPlugin(Star):
@@ -419,8 +422,16 @@ class WeaveMemoryPlugin(Star):
 
     async def terminate(self):
         if self._coordinator is not None:
-            await self._coordinator.close()
+            try:
+                await asyncio.wait_for(
+                    self._coordinator.close(), timeout=_TERMINATE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("织忆热重载收尾超时：写协调器未在限定时间内关闭，继续释放连接。")
         if self._database is not None:
-            self._database.close()
+            try:
+                self._database.close()
+            except Exception as exc:  # noqa: BLE001 - shutdown must not raise
+                logger.warning(f"织忆关闭数据库失败：{type(exc).__name__}")
             self._database = None
         self._ready = False

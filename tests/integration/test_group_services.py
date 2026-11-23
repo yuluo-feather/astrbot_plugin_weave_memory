@@ -203,6 +203,44 @@ def test_group_destroy_backs_up_memory_and_requires_no_group_data_for_rollback(g
     assert group_stack["db"].schema_version() == 4
 
 
+def test_group_destroy_reuses_existing_backup_and_records_row_counts(group_stack):
+    from pathlib import Path
+
+    identity = group_identity()
+    scope, decision = make_scope(group_stack, identity)
+    lifecycle = group_stack["lifecycle"]
+    memories = group_stack["memories"]
+    store = group_stack["store"]
+    asyncio.run(lifecycle.enable(scope, decision, operator_id="admin-1"))
+    asyncio.run(memories.save_group(
+        scope, "群约定：周五复盘", group_label="agreement",
+        operator_id="admin-1", decision=decision,
+    ))
+    asyncio.run(lifecycle.disable(scope, decision, operator_id="admin-1"))
+
+    op = "op-retry"
+    backups = Path(group_stack["db"].path).parent / "backups"
+    backups.mkdir(parents=True, exist_ok=True)
+    preset = backups / f"group-{scope.id}-{op}-20260101T000000000000.sqlite3"
+    digest = store.backup_group_scope(scope.id, str(preset))
+
+    receipt = asyncio.run(lifecycle.destroy(
+        scope, decision, operator_id="admin-1", operation_id=op,
+    ))
+    assert receipt.backup_path == str(preset)
+    assert receipt.backup_sha256 == digest
+    backup = sqlite3.connect(f"file:{preset}?mode=ro", uri=True)
+    try:
+        assert backup.execute(
+            "SELECT count(*) FROM memories WHERE scope_id=?", (scope.id,),
+        ).fetchone()[0] == 1
+    finally:
+        backup.close()
+    manifest = json.loads(preset.with_suffix(".json").read_text(encoding="utf-8"))
+    assert manifest["row_counts"]["memories"] == 1
+    assert manifest["row_counts"]["memory_scopes"] == 1
+
+
 def test_group_member_cannot_manage_or_write(group_stack):
     identity = group_identity()
     scopes = group_stack["scopes"]

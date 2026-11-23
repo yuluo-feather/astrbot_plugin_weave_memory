@@ -11,6 +11,9 @@ from ...core.errors import AuthorizationDenied, NotFound, ValidationError
 from ...core.model import MemoryType, OperatorType
 from ...core.ports import Clock, IdGenerator
 from .identity import AstrBotIdentityAdapter
+from .notices import AUTO_ENROLL_NOTICE
+
+_AUTO_ENROLL_FLAG = "_weave_auto_enroll_notice"
 
 
 class AstrBotMemoryCommands:
@@ -45,7 +48,27 @@ class AstrBotMemoryCommands:
                 operator_id=identity.subject_id,
             ):
                 raise AuthorizationDenied("personal memory consent is revoked")
+            set_extra = getattr(event, "set_extra", None)
+            if callable(set_extra):
+                set_extra(_AUTO_ENROLL_FLAG, True)
         return scope
+
+    @staticmethod
+    def _notice_pending(event: Any) -> bool:
+        get_extra = getattr(event, "get_extra", None)
+        return bool(callable(get_extra) and get_extra(_AUTO_ENROLL_FLAG, False))
+
+    @staticmethod
+    def _clear_notice(event: Any) -> None:
+        set_extra = getattr(event, "set_extra", None)
+        if callable(set_extra):
+            set_extra(_AUTO_ENROLL_FLAG, False)
+
+    def _take_notice(self, event: Any) -> str:
+        if not self._notice_pending(event):
+            return ""
+        self._clear_notice(event)
+        return "\n\n" + AUTO_ENROLL_NOTICE
 
     @staticmethod
     def _tail(event: Any, subcommand: str) -> str:
@@ -97,7 +120,7 @@ class AstrBotMemoryCommands:
             memory_type=MemoryType.FACT,
         )
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已保存，索引待恢复"
-        return f"已保存记忆：{memory.id}\n{state}"
+        return f"已保存记忆：{memory.id}\n{state}" + self._take_notice(event)
 
     async def remember(self, event: Any, content: str,
                        memory_type: str = "FACT") -> str:
@@ -121,11 +144,21 @@ class AstrBotMemoryCommands:
                 operator_id=operator_id,
             ):
                 return "未保存：个人记忆已撤销，发送 /织忆 授权 可重新开启。"
+            set_extra = getattr(event, "set_extra", None)
+            if callable(set_extra):
+                set_extra(_AUTO_ENROLL_FLAG, True)
         memory, receipt = await self._memories.save_agent(
             scope, content, operator_id=operator_id, memory_type=parsed_type,
         )
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已保存，索引待恢复"
-        return f"已保存记忆：{memory.id}\n{state}"
+        notice = ""
+        if self._notice_pending(event):
+            self._clear_notice(event)
+            try:
+                await event.send(event.plain_result(AUTO_ENROLL_NOTICE))
+            except Exception:
+                notice = "\n\n" + AUTO_ENROLL_NOTICE
+        return f"已保存记忆：{memory.id}\n{state}" + notice
 
     async def update(self, event: Any) -> str:
         payload = self._tail(event, "更新")
@@ -146,16 +179,16 @@ class AstrBotMemoryCommands:
             operator_id=operator_id,
         )
         state = "索引已同步" if receipt.index_state.value == "HEALTHY" else "正文已更新，索引待恢复"
-        return f"记忆已更新：{memory.id}（revision {memory.current_revision}）\n{state}"
+        return f"记忆已更新：{memory.id}（revision {memory.current_revision}）\n{state}" + self._take_notice(event)
 
     def list(self, event: Any) -> str:
         scope = self._scope(event)
         memories = self._memories.list_active(scope)
         if not memories:
-            return "当前没有可用的个人记忆。"
+            return "当前没有可用的个人记忆。" + self._take_notice(event)
         lines = [f"{item.id} [{item.memory_type.value}] [revision {item.current_revision}] {item.content}" for item in memories[:30]]
         suffix = f"\n另有 {len(memories) - 30} 条未显示" if len(memories) > 30 else ""
-        return "个人记忆：\n" + "\n".join(lines) + suffix
+        return "个人记忆：\n" + "\n".join(lines) + suffix + self._take_notice(event)
 
     async def query(self, event: Any) -> str:
         query = self._tail(event, "查询")
@@ -164,10 +197,10 @@ class AstrBotMemoryCommands:
         scope = self._scope(event)
         memories = self._recall.recall(query, scope)
         if not memories:
-            return "没有找到相关记忆。"
+            return "没有找到相关记忆。" + self._take_notice(event)
         await self._recall.record_access(tuple(item.id for item in memories), scope)
         lines = [f"[{item.memory_type.value}] {item.content}（{item.id}）" for item in memories]
-        return "检索到的个人记忆：\n" + "\n".join(lines)
+        return "检索到的个人记忆：\n" + "\n".join(lines) + self._take_notice(event)
 
     async def delete(self, event: Any) -> str:
         memory_id = self._tail(event, "删除")

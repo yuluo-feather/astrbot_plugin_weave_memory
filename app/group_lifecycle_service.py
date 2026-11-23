@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -132,8 +134,15 @@ class GroupLifecycleService:
         if self._store.is_scope_enabled(scope.id):
             raise InvalidTransition("disable group scope before destroy")
         self._backup_dir.mkdir(parents=True, exist_ok=True)
-        backup_path = self._backup_dir / f"group-{scope.id}-{op}.sqlite3"
-        digest = self._store.backup_group_scope(scope.id, str(backup_path))
+        existing = sorted(self._backup_dir.glob(f"group-{scope.id}-{op}-*.sqlite3"))
+        if existing:
+            backup_path = existing[0]
+            digest = _sha256_file(backup_path)
+        else:
+            stamp = self._clock.now().strftime("%Y%m%dT%H%M%S%f")
+            backup_path = self._backup_dir / f"group-{scope.id}-{op}-{stamp}.sqlite3"
+            digest = self._store.backup_group_scope(scope.id, str(backup_path))
+        row_counts = self._store.group_row_counts(scope.id)
 
         def destroy_operation() -> tuple[int, bool]:
             removed = self._store.delete_group_scope(
@@ -153,16 +162,29 @@ class GroupLifecycleService:
         affected, purged = await self._coordinator.run_serialized(destroy_operation)
         manifest = backup_path.with_suffix(".json")
         temp = manifest.with_suffix(manifest.suffix + ".tmp")
-        temp.write_text(json.dumps({
+        payload = json.dumps({
             "operation_id": op,
             "scope_id": scope.id,
             "backup_path": str(backup_path),
             "backup_sha256": digest,
             "affected_count": affected,
             "purged": purged,
+            "row_counts": row_counts,
             "destroyed_at": self._clock.now().isoformat(),
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        }, ensure_ascii=False, indent=2)
+        with temp.open("w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
         temp.replace(manifest)
         return GroupDestroyReceipt(
             op, scope.id, str(backup_path), digest, affected, purged,
         )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

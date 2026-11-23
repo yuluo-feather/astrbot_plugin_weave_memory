@@ -32,6 +32,13 @@ class FakeEvent:
         self._user = user
         self._platform_id = platform_id
         self.sent = []
+        self._extras = {}
+
+    def set_extra(self, key, value):
+        self._extras[key] = value
+
+    def get_extra(self, key, default=None):
+        return self._extras.get(key, default)
 
     def is_private_chat(self):
         return not bool(self.message_obj.group_id)
@@ -257,6 +264,7 @@ def test_plugin_group_shared_enable_save_inject_close_clear_destroy(monkeypatch,
         FakeEvent(message="/织忆 群状态", **member),
     )))[0]
     assert "已开启" in status
+    assert "管理员可用 是" in status
 
     asyncio.run(collect(plugin.memory_grant(FakeEvent(user="u1", message="/织忆 授权"))))
     asyncio.run(collect(plugin.memory_save(
@@ -440,6 +448,50 @@ def test_plugin_auto_enroll_grants_once_and_notifies(monkeypatch, tmp_path):
         "SELECT count(*) FROM memory_consents",
     ).fetchone()[0] == 1
     asyncio.run(plugin.terminate())
+
+
+def test_plugin_command_auto_enroll_notifies_user(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    result = asyncio.run(collect(plugin.memory_save(
+        FakeEvent(message="/织忆 保存 我喜欢黑咖啡"),
+    )))[0]
+    assert "已保存记忆" in result
+    assert "默认开启" in result
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_agent_tool_auto_enroll_notifies_user(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    event = FakeEvent(message="记住我喜欢黑咖啡")
+    result = asyncio.run(collect(plugin.memory_remember_tool(
+        event, "我喜欢黑咖啡", "PREFERENCE",
+    )))[0]
+    assert "已保存记忆" in result
+    assert len(event.sent) == 1
+    assert "默认开启" in event.sent[0]
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_terminate_times_out_when_coordinator_hangs(monkeypatch, tmp_path):
+    import asyncio
+    import time
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    module = sys.modules[plugin.__class__.__module__]
+    monkeypatch.setattr(module, "_TERMINATE_TIMEOUT_SECONDS", 0.01)
+
+    async def hang():
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(plugin._coordinator, "close", hang)
+    started = time.monotonic()
+    asyncio.run(plugin.terminate())
+    assert time.monotonic() - started < 1
+    assert plugin._database is None
 
 
 def test_plugin_auto_enroll_disabled_requires_explicit_grant(monkeypatch, tmp_path):

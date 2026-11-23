@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ...app.group_lifecycle_service import GroupLifecycleService
@@ -15,8 +16,10 @@ from ...core.errors import (
     InvalidTransition,
     NotFound,
 )
-from ...core.model import Scope
+from ...core.model import AdminSource, Scope
 from .identity import AstrBotIdentityAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class AstrBotGroupCommands:
@@ -41,6 +44,11 @@ class AstrBotGroupCommands:
         identity = self._identity.resolve_group_identity(event)
         sender_id = self._identity.resolve_group_operator_id(event)
         decision = self._scopes.admin_decision(identity, sender_id, event)
+        if decision.source is AdminSource.NONE:
+            logger.warning(
+                "织忆群管理员来源丢失：platform=%s tenant=%s group=%s",
+                identity.platform, identity.tenant_id, identity.scope_external_id,
+            )
         return identity, sender_id, decision
 
     def _find_scope(self, identity) -> Scope:
@@ -169,7 +177,8 @@ class AstrBotGroupCommands:
         if not status.created:
             return "当前群尚未开启织忆群记忆。"
         state = "已开启" if status.enabled else "已关闭"
+        available = "是" if status.admin_available else "否"
         return (
             f"当前群织忆状态：{state}；记忆 {status.count} 条；"
-            f"管理员来源 {status.admin_source.value}。"
+            f"管理员来源 {status.admin_source.value}；管理员可用 {available}。"
         )
