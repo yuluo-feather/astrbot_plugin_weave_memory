@@ -254,7 +254,7 @@ python scripts/build_astrbot_plugin.py
 | V1.5「添线」 | 核心实现：schema v6、分层 consent、单条/批量私聊捕获、敏感前置过滤、候选确认/拒绝、任务恢复与离线指标 harness；默认关闭，真实宿主模型调用与质量采集待补 |
 | V1.6「候线」 | 核心实现：schema v7、候选 TTL/惰性归档、确认/拒绝/过期审计、拒绝默认清正文、只读管理 JSON API 与 `weave_admin` 候选/维护命令；真实宿主管理 API 烟测已通过 |
 | V1.7「接线」 | 核心实现：schema v8、导出格式 v2、导入/导出/回滚/dry-run/断点续跑、群导入导出命令与管理 API 端点；宿主真机导入导出烟测待补 |
-| V1.8「归档」 | 核心实现：schema v9 谱系/序号、独立 ledger-first 删除/清空/consent/群销毁、备份产物与三模式恢复、restore journal、维护 API 与私聊命令；真实宿主 v8→v9 迁移、备份/恢复、维护 API 烟测已通过（`docs/HOST_SMOKE_V1.8_20261123.md`） |
+| V1.8「归档」 | 核心实现：schema v9 谱系/序号、独立 ledger-first 删除/清空/consent/群销毁、备份产物与三模式恢复、restore journal、维护 API 与私聊命令；真实宿主 v8→v9 迁移、备份/恢复、维护 API、空库 disaster-rebuild、群销毁与附件删除恢复排除烟测已通过（`docs/HOST_SMOKE_V1.8_20261123.md`） |
 | 发布 | **未正式发版**；运行目录已存在（接收方，当前安装较早的开发包）；`metadata.yaml` 版本保持 `v1.0.0-dev.1`，版本号变更待项目负责人确认 |
 
 已完成的宿主验证：AstrBot v4.29.4 真实宿主加载、`/织忆 帮助`、`/织忆 授权`、`/织忆 保存`、`/织忆 列表` 私聊烟测通过；专用测试 Scope 的 `/织忆 清空 确认` 通过，主测试 Scope 未受影响；V1.8 的 v8→v9 迁移、`/织忆 备份|恢复`（merge/revert/dry-run）、旧备份不复活删除与维护管理 API 已通过（`docs/HOST_SMOKE_V1.8_20261123.md`）。

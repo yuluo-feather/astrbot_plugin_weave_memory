@@ -1,6 +1,6 @@
 # V1.8 宿主烟测记录（2026-11-23）
 
-状态：通过（v8→v9 迁移、ledger-first 删除、备份/列表/dry-run/merge/revert、旧备份不复活删除、维护管理 API、备份产物与脱敏、单文件快照）。`disaster-rebuild` 空库路径由本地测试覆盖，本次宿主只在非空库验证其拒绝。
+状态：通过（v8→v9 迁移、ledger-first 删除、备份/列表/dry-run/merge/revert、旧备份不复活删除、维护管理 API、备份产物与脱敏、单文件快照、disaster-rebuild 空库导入、群销毁恢复排除、附件删除恢复排除）。群命令 UI 本身仍需真实群管理员执行；本次群销毁/附件验证走宿主侧服务与真实 SQLite/账本。
 
 ## 环境
 
@@ -73,6 +73,54 @@
 - 修复后新备份只含 4 个文件，无 `-wal`/`-shm`；`main.sqlite3` sha256 64 位、size > 0。
 - 恢复过程生成 `restore_snapshots/<utc>/main.sqlite3`，完成后 `restore_journal.json` 不存在（无半恢复窗口）。
 
+## 补充验证（第二轮）
+
+为避免破坏运行库，先做数据安全快照：
+`data/plugin_backups/weave_memory_data_pre_v18_smoke2_20261123_235628/`（主库 + 账本）。以下测试只创建临时作用域/记忆，结束后已清理；真实群 `aiocqhttp/default/1046500733` 与原有 2 条个人记忆未受影响。
+
+### disaster-rebuild 空库导入
+
+使用生产数据的只读副本（主库 + 账本）构造 source，另建空 schema v9 target，target 使用同一账本副本：
+
+| 项 | 结果 |
+|---|---|
+| source → backup | `20261123T155715773186Z-6b28e956a61a4eb6a19373d6e27f6d8a` |
+| target 空库导入 | `restored=true`、`mode=disaster-rebuild` |
+| 当前谱系轮转 | source `6b28e956…` → target `f5853b9e…` |
+| 导入行 | 2/2；每行保留原 `db_lineage_id`/`creation_seq` |
+| 旧 lineage 合并 | 拒绝（Conflict），不会产生重号 |
+| 灾后新建 | 新谱系 `creation_seq=1`，不继承旧谱系高水位 |
+
+### 群销毁恢复排除
+
+在运行库创建临时群 `smoke/smoke/smoke_v18_group`（scope `82890ed63a1e5486bed31871becd6fb6`）与 1 条群记忆；创建 V1.8 备份后执行 `群关闭 → 群销毁`（默认备份）：
+
+| 项 | 结果 |
+|---|---|
+| 销毁备份 | `group-82890ed63a1e5486bed31871becd6fb6-smoke-v18-group-destroy-20261123T155715905113.sqlite3/.json` |
+| 销毁 | `affected_count=1`；scope 与群记忆均不存在 |
+| ledger | `destroy_scope` intent/committed 成对写入 |
+| 恢复旧备份（merge） | scope 未复活、群记忆 0 条（`destroy_scope` 排除生效） |
+| 清理 | 临时 V1.8 备份、恢复前快照、群销毁备份/sidecar 已删除 |
+
+### 附件删除恢复排除
+
+在既有个人作用域 `webchat/webchat/weave_clear_smoke_u1` 创建临时记忆并插入 tag `smoke-v18-attach`；创建 V1.8 备份后调用宿主 `WriteCoordinator.remove_attachment`：
+
+| 项 | 结果 |
+|---|---|
+| 记忆 | `58c1bf48823d47c9a5427c3e6fbbdc55` |
+| remove_attachment | `removed=true`；tag 计数 0 |
+| ledger | `remove_attachment` intent/committed 成对写入 |
+| 恢复旧备份（merge） | tag 计数仍为 0（合并后最终排除生效） |
+| 清理 | 临时记忆已 `delete_memory` 删除；备份与恢复前快照已删除 |
+
+### 最终状态
+
+- 真实群 `aiocqhttp/default/1046500733` 仍 enabled；原有 2 条个人记忆保留；临时群 scope 与附件测试记忆均不存在。
+- `memory_tags=0`、FTS dirty `[]`；`backups/v1.8/`、`restore_snapshots/`、`group_backups/` 无烟测残留；`restore_journal.json` 不存在。
+- 账本保留 `last_seq=14`：`consent_change` 4、`delete_memory` 6、`destroy_scope` 2、`remove_attachment` 2（intent/committed 各半），均为烟测审计，不回滚账本。
+
 ## 清理
 
 - 烟测创建的 4 份 V1.8 备份、4 份恢复前快照与临时配置备份已删除；最终 `backups/v1.8/` 与 `restore_snapshots/` 为空。
@@ -81,7 +129,7 @@
 
 ## 限制
 
-- `disaster-rebuild` 的空目标导入只在本地测试验证；本次宿主在非空库验证了拒绝路径。
-- 群销毁/附件删除的 ledger-first 由本地测试覆盖，未在真实群聊执行。
+- `disaster-rebuild` 空库导入使用生产数据的只读副本 + 空 target 验证，未在运行中的插件 API 上直接清空主库；这是为了避免破坏真实数据。
+- 群销毁/附件删除通过宿主侧服务与真实 SQLite/账本验证；群命令 UI 仍需真实群管理员在真实群聊执行。
 - 未验证多进程/多实例并发、账本分段轮转的宿主长跑（本地测试覆盖轮转与分段读取）。
 - 宿主日志未逐条抓取；迁移与注册以自动备份文件、运行库 schema 和 API/命令结果为准。

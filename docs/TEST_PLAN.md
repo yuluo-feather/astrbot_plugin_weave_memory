@@ -429,4 +429,4 @@ V0.5 宿主报告已覆盖第二测试用户只能读取自己的 Scope，V1.0 �
 | 高水位 | 恢复后推进到最终表最大值、备份水位与 ledger clear 边界之上 |
 | 入口 | 私聊备份/恢复命令；管理 API 管理员白名单 + `confirm=true` |
 
-验证口径（2026-11-23）：333 passed；`ruff check .`、`mypy`、`mypy .`、`compileall`、插件构建通过。真实宿主备份/恢复烟测已通过（`docs/HOST_SMOKE_V1.8_20261123.md`）。
+验证口径（2026-11-23）：333 passed；`ruff check .`、`mypy`、`mypy .`、`compileall`、插件构建通过。真实宿主备份/恢复、空库 disaster-rebuild、群销毁与附件删除恢复排除烟测已通过（`docs/HOST_SMOKE_V1.8_20261123.md`）。
