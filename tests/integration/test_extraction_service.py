@@ -71,13 +71,18 @@ class FixedClock:
 
 
 class FakeExtractor:
-    def __init__(self, candidates=(), error: Exception | None = None) -> None:
+    def __init__(self, candidates=(), error: Exception | None = None,
+                 fail_times: int = 0) -> None:
         self.candidates = tuple(candidates)
         self.error = error
+        self.fail_times = fail_times
         self.calls: list[ExtractionWindow] = []
 
     async def extract(self, window, *, allowed_types, sensitive_categories):
         self.calls.append(window)
+        if self.fail_times > 0:
+            self.fail_times -= 1
+            raise RuntimeError("transient failure")
         if self.error is not None:
             raise self.error
         return self.candidates
@@ -277,32 +282,51 @@ def test_confirm_revision_conflict_and_reject(extraction_stack):
     assert asyncio.run(stack["service"].list_candidates(stack["scope"]))[1] == 0
 
 
-def test_extractor_failure_does_not_raise_and_job_can_retry(extraction_stack):
+def test_extractor_failure_retries_in_process_then_succeeds(extraction_stack):
     stack = extraction_stack
     _grant_all(stack["consent"], stack["scope"])
-    stack["extractor"].error = RuntimeError("provider down")
-    failed = _submit(stack, "我喜欢黑咖啡")
-    assert failed is not None and failed.status is ExtractionJobStatus.PENDING
-    assert failed.last_error == "RuntimeError"
-    stack["extractor"].error = None
+    stack["extractor"].fail_times = 1
     stack["extractor"].candidates = (
         ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡"),
     )
-    retried = _submit(stack, "我喜欢黑咖啡")
-    assert retried is not None and retried.status is ExtractionJobStatus.SUCCEEDED
+    job = _submit(stack, "我喜欢黑咖啡")
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert len(stack["extractor"].calls) == 2
+    assert stack["jobs"].get(job.id).attempts == 2
 
 
-def test_recover_interrupted_marks_running_job_failed(extraction_stack):
+def test_extractor_failure_exhausts_retries_and_marks_failed(extraction_stack):
     stack = extraction_stack
-    job = ExtractionJob(
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].error = RuntimeError("provider down")
+    job = _submit(stack, "我喜欢黑咖啡")
+    assert job is not None and job.status is ExtractionJobStatus.FAILED
+    assert job.last_error == "RuntimeError"
+    assert len(stack["extractor"].calls) == 3
+    assert stack["jobs"].count_by_status(
+        scope_id=stack["scope"].id, subject_id="u1",
+    )[ExtractionJobStatus.PENDING.value] == 0
+
+
+def test_recover_interrupted_marks_running_and_pending_jobs_failed(extraction_stack):
+    stack = extraction_stack
+    running = ExtractionJob(
         id="job-running", platform="astrbot", tenant_id="default",
         scope_id=stack["scope"].id, subject_id="u1", conversation_id="conv",
         watermark=0, content_hash="hash", status=ExtractionJobStatus.RUNNING,
         attempts=1, created_at=NOW, updated_at=NOW,
     )
-    stack["jobs"].create_or_get(job)
-    assert stack["service"].recover_interrupted() == 1
-    assert stack["jobs"].get(job.id).status is ExtractionJobStatus.FAILED
+    pending = ExtractionJob(
+        id="job-pending", platform="astrbot", tenant_id="default",
+        scope_id=stack["scope"].id, subject_id="u1", conversation_id="conv",
+        watermark=1, content_hash="hash-2", status=ExtractionJobStatus.PENDING,
+        attempts=0, created_at=NOW, updated_at=NOW,
+    )
+    stack["jobs"].create_or_get(running)
+    stack["jobs"].create_or_get(pending)
+    assert stack["service"].recover_interrupted() == 2
+    assert stack["jobs"].get(running.id).status is ExtractionJobStatus.FAILED
+    assert stack["jobs"].get(pending.id).status is ExtractionJobStatus.FAILED
 
 
 def test_batch_messages_drops_blocked_sensitive_messages(extraction_stack):

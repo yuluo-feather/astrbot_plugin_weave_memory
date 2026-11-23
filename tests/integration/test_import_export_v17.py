@@ -52,6 +52,7 @@ from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
 )
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     AuthorizationDenied,
+    Conflict,
     StorageError,
     ValidationError,
 )
@@ -428,6 +429,38 @@ def test_group_import_requires_enabled_and_stays_isolated(group_stack, personal_
     assert "群内约定" not in json.dumps(
         personal["memories"].export_personal(personal["scope"]), ensure_ascii=False,
     )
+
+
+def test_concurrent_same_file_import_is_rejected(personal_stack, monkeypatch):
+    stack = personal_stack
+    scope = stack["scope"]
+    imports = stack["imports"]
+    data = payload(entry("src-1", content="并发导入"))
+    file_sha = payload_sha256(data)
+    original = imports._import_entry
+
+    async def yielding_entry(*args, **kwargs):
+        await asyncio.sleep(0)
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(imports, "_import_entry", yielding_entry)
+
+    async def run_twice():
+        return await asyncio.gather(
+            imports.import_payload(
+                scope, data, operator_id="u1", file_sha256=file_sha,
+                guard=lambda: None,
+            ),
+            imports.import_payload(
+                scope, data, operator_id="u1", file_sha256=file_sha,
+                guard=lambda: None,
+            ),
+            return_exceptions=True,
+        )
+
+    results = asyncio.run(run_twice())
+    assert any(isinstance(result, Conflict) for result in results)
+    assert any(not isinstance(result, Exception) for result in results)
 
 
 def test_rollback_deletes_only_created_memories_and_allows_new_job(personal_stack):

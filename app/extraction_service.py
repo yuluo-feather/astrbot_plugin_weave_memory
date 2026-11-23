@@ -227,37 +227,49 @@ class ExtractionService:
         except Conflict:
             return self._jobs.get(job.id)
 
-        try:
-            async with asyncio.timeout(self._timeout):
-                candidates = await self._extractor.extract(
-                    window, allowed_types=_ALLOWED_TYPES,
-                    sensitive_categories=gates.sensitive_categories,
+        current = running
+        while True:
+            try:
+                async with asyncio.timeout(self._timeout):
+                    candidates = await self._extractor.extract(
+                        window, allowed_types=_ALLOWED_TYPES,
+                        sensitive_categories=gates.sensitive_categories,
+                    )
+                created_any, skipped_any, created = await self._materialize(
+                    scope, job.id, candidates,
                 )
-            created_any, skipped_any, created = await self._materialize(
-                scope, job.id, candidates,
-            )
-        except (AuthorizationDenied, ValidationError) as exc:
-            return self._finish(
-                running, ExtractionJobStatus.FAILED, last_error=type(exc).__name__,
-            )
-        except Exception as exc:  # Boundary: extractor/task failure must not block chat.
-            return self._finish(
-                running,
-                ExtractionJobStatus.FAILED
-                if running.attempts >= self._max_retries
-                else ExtractionJobStatus.PENDING,
-                last_error=type(exc).__name__,
-            )
+                break
+            except (AuthorizationDenied, ValidationError) as exc:
+                return self._finish(
+                    current, ExtractionJobStatus.FAILED,
+                    last_error=type(exc).__name__,
+                )
+            except Exception as exc:  # Boundary: extractor/task failure must not block chat.
+                if current.attempts >= self._max_retries:
+                    return self._finish(
+                        current, ExtractionJobStatus.FAILED,
+                        last_error=type(exc).__name__,
+                    )
+                current = replace(
+                    current, attempts=current.attempts + 1,
+                    updated_at=self._clock.now(),
+                )
+                try:
+                    self._jobs.update(
+                        current, expected_status=ExtractionJobStatus.RUNNING,
+                    )
+                except Conflict:
+                    return self._jobs.get(job.id)
         if created and on_candidates is not None:
             try:
                 await on_candidates(created)
             except Exception:  # Notification failure must not fail the job.
                 pass
         if created_any:
-            return self._finish(running, ExtractionJobStatus.SUCCEEDED)
+            return self._finish(current, ExtractionJobStatus.SUCCEEDED)
         if skipped_any:
-            return self._finish(running, ExtractionJobStatus.SKIPPED_DUPLICATE_ACTIVE)
-        return self._finish(running, ExtractionJobStatus.SUCCEEDED)
+            return self._finish(current, ExtractionJobStatus.SKIPPED_DUPLICATE_ACTIVE)
+        return self._finish(current, ExtractionJobStatus.SUCCEEDED)
 
     def _finish(
         self, job: ExtractionJob, status: ExtractionJobStatus, *,
@@ -472,19 +484,22 @@ class ExtractionService:
         )
 
     def recover_interrupted(self) -> int:
-        """Mark jobs interrupted by restart as FAILED; windows are not persisted."""
+        """Mark jobs interrupted by restart as FAILED; windows are not persisted.
+
+        PENDING rows are included: the message window is not stored, so they can
+        never be resumed and would otherwise occupy the queue forever.
+        """
         now = self._clock.now()
         recovered = 0
-        for job in self._jobs.list_by_status(
-            statuses=(ExtractionJobStatus.RUNNING,), limit=1000,
-        ):
-            failed = replace(
-                job, status=ExtractionJobStatus.FAILED,
-                last_error="interrupted_by_restart", updated_at=now,
-            )
-            try:
-                self._jobs.update(failed, expected_status=ExtractionJobStatus.RUNNING)
-            except Conflict:
-                continue
-            recovered += 1
+        for status in (ExtractionJobStatus.RUNNING, ExtractionJobStatus.PENDING):
+            for job in self._jobs.list_by_status(statuses=(status,), limit=1000):
+                failed = replace(
+                    job, status=ExtractionJobStatus.FAILED,
+                    last_error="interrupted_by_restart", updated_at=now,
+                )
+                try:
+                    self._jobs.update(failed, expected_status=status)
+                except Conflict:
+                    continue
+                recovered += 1
         return recovered

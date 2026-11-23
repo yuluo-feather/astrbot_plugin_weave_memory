@@ -1,4 +1,5 @@
 # 运行环境要求：Python 3.12+（与 AstrBot 最低要求一致）；AstrBot 版本范围在下方 astrbot_version 正式声明
+# SQLite >= 3.35.0 且编译启用 FTS5（备份/恢复使用 UPDATE ... FROM 与 ALTER TABLE DROP COLUMN）
 name: astrbot_plugin_weave_memory
 display_name: 织忆
 desc: 本地优先的 AstrBot 记忆引擎：默认登记、可随时关闭，支持 Personal Agent 读写工具、命令管理、SQLite+FTS5 检索、私聊与群聊上下文注入
@@ -28,7 +29,7 @@ help: |
   [候选 V1.6] 候选默认 7 天有效（candidate_ttl_days）；过期在读取列表时转归档；拒绝默认清除正文，只保留审计
   [管理 API V1.6/V1.7/V1.8] 插件路由 /astrbot_plugin_weave_memory/v1/{overview|candidates|memories|groups|retrieval/debug|settings|maintenance/status|export|import|maintenance/backup|maintenance/restore|maintenance/reindex}；只读端点需 dashboard 登录，export/import 与 maintenance/* 需非空 api_admin_usernames 白名单
   [备份 V1.8] /织忆 备份 [列表] 创建/查看主库快照；账本独立保存，备份不含账本
-  [恢复 V1.8] /织忆 恢复 <备份ID> [merge|revert|disaster-rebuild] 确认；不带确认即 dry-run，旧备份按 ledger 排除删除/清空/撤销授权
+  [恢复 V1.8] /织忆 恢复 <备份ID> [merge|revert|disaster-rebuild] 确认（默认 merge）；不带确认即 dry-run，旧备份按 ledger 排除删除/清空/撤销授权
   触发：个人命令仅私聊生效，群命令仅群聊生效；统一前缀 /织忆
   状态：开发预览 v1.0.0-dev.1，未正式发版；V1.8 核心已实现，真实宿主 v8→v9 迁移、备份/恢复与维护 API 烟测已通过
 version: v1.0.0-dev.1

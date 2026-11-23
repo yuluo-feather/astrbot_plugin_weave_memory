@@ -352,7 +352,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - 同键已有 `CANDIDATE`：幂等更新候选内容与来源，不新增行。
 - 显式保存 / AGENT 工具写入撞到同键 `CANDIDATE`：返回 `Conflict`，要求先确认或拒绝；不静默替换。
 - 候选不参与检索/注入；确认后才进入 FTS；拒绝记录原因；过期转 `ARCHIVED`，不物理删除（TTL 在 V1.6）。
-- 模型失败、超时、输出不合法：任务失败/有限重试，聊天继续；不得传播为聊天失败。
+- 模型失败、超时、输出不合法：任务失败/有限重试，聊天继续；不得传播为聊天失败。有限重试在本任务内完成；消息窗口不持久化，`PENDING` 不跨重启保留，启动时与 `RUNNING` 一并置 `FAILED`。
 
 ### 配置
 
@@ -425,7 +425,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 ### 导入任务与回滚
 
 - `import_jobs` 字段：`id`、`scope_id`、`subject_id`、`file_sha256`（规范化 JSON 指纹）、`dataset_version`、`status`（`PENDING` / `RUNNING` / `DONE` / `FAILED` / `SKIPPED`）、`cursor`、`created_memory_ids`、`last_error`、`created_at`、`updated_at`。
-- 同一作用域同一指纹：`PENDING`/`RUNNING` 从 `cursor` 续跑；`DONE` 返回幂等摘要；`FAILED` 不续跑，重新导入新建任务。
+- 同一作用域同一指纹：`PENDING`/`RUNNING` 从 `cursor` 续跑；`DONE` 返回幂等摘要；`FAILED` 不续跑，重新导入新建任务。进程内同一 `(scope_id, file_sha256)` 的并发导入返回 `Conflict`，避免 `created_memory_ids` 互相覆盖；重启后仍按 `cursor` 续跑。
 - 回滚按 `created_memory_ids` 逐条走 `LifecycleService.delete_memory`（`DELETED` + 物理擦除），任务置 `FAILED`、`last_error=rolled back by operator`；不依赖完整备份，不涉及已有记忆。
 - 导入前/中撤销 consent 或群关闭时，任务置 `FAILED` 并向上报错。
 
@@ -466,7 +466,7 @@ Consent 撤销事件追加失败时抛出 `ConsentRevocationPending`（StorageEr
 - 校验：备份哈希/schema、`ledger_id`、分段连续与 seq 覆盖；`merge`/`revert` 要求当前 `db_lineage_id` 等于备份；任一失败 fail closed。
 - 先合并/覆盖全部表，再按 `seq > ledger_seq_at_backup` 重放排除；被排除的行在合并阶段即跳过。
 - 恢复前快照 + 原子 `restore_journal.json`；启动先重做未完成 journal，损坏/缺失拒绝启动。
-- 恢复后重建 FTS、推进高水位、清理导入任务中的失效 memory ID。
+- 恢复后重建 FTS、推进高水位、清理导入任务中的失效 memory ID。恢复事务同时把 `fts_dirty_ids` 置为非空哨兵；FTS 重建失败时索引保持 unhealthy，启动恢复会重试，不得以陈旧索引对外检索。
 
 ### 入口
 

@@ -158,7 +158,8 @@ class WeaveMemoryPlugin(Star):
                 logger.info(f"织忆账本重放：{applied} 个 pending 事件已提交。")
             if failed:
                 logger.warning(
-                    f"织忆账本仍有 {len(failed)} 个 pending 事件未完成，将在备份/下次启动重试。",
+                    f"织忆账本仍有 {len(failed)} 个 pending 事件未完成，"
+                    f"ids={list(failed[:10])}，将在备份/下次启动重试。",
                 )
             StartupRecoveryService(self._database, index).run()
             try:
@@ -213,7 +214,7 @@ class WeaveMemoryPlugin(Star):
             group_composer = GroupContextComposer(
                 group_recall,
                 max_tokens=self._config_int("group_max_tokens", 192),
-                max_memories=self._config_int("group_max_memories", 2),
+                max_memories=self._config_non_negative_int("group_max_memories", 2),
                 candidate_limit=self._config_int("group_candidate_limit", 8),
             )
 
@@ -287,7 +288,9 @@ class WeaveMemoryPlugin(Star):
                     "candidate_ttl_days": self._config_int("candidate_ttl_days", 7),
                     "rejected_keep_body": self._config_bool("rejected_keep_body", False),
                     "group_max_tokens": self._config_int("group_max_tokens", 192),
-                    "group_max_memories": self._config_int("group_max_memories", 2),
+                    "group_max_memories": self._config_non_negative_int(
+                        "group_max_memories", 2,
+                    ),
                     "group_candidate_limit": self._config_int("group_candidate_limit", 8),
                     "group_max_active": self._config_int("group_max_active", 200),
                     "group_retention_days": self._config_int("group_retention_days", 90),
@@ -310,7 +313,9 @@ class WeaveMemoryPlugin(Star):
                     ),
                 },
                 group_max_tokens=self._config_int("group_max_tokens", 192),
-                group_max_memories=self._config_int("group_max_memories", 2),
+                group_max_memories=self._config_non_negative_int(
+                    "group_max_memories", 2,
+                ),
             )
             management_api = AstrBotManagementApi(
                 management, admin_usernames=api_admin_usernames,
@@ -439,6 +444,10 @@ class WeaveMemoryPlugin(Star):
     def _error_text(action: str, exc: Exception) -> str:
         if isinstance(exc, ConsentRevocationPending):
             return "个人记忆空间已关闭，数据已停止读写；但授权撤销记录写入失败，请重试 /织忆 关闭 确认。"
+        if isinstance(exc, ServiceClosed):
+            return "织忆当前未就绪，请检查插件日志。"
+        if isinstance(exc, InvalidTransition):
+            return f"{action}失败：当前状态不允许该操作。"
         if isinstance(exc, AuthorizationDenied):
             return f"{action}失败：尚未授权或个人记忆空间已关闭。"
         if isinstance(exc, NotFound):
@@ -465,9 +474,7 @@ class WeaveMemoryPlugin(Star):
             "/织忆 候选 确认 <ID> 或 /织忆 候选 拒绝 <ID> [原因]。"
         )
         try:
-            from astrbot.api.event import MessageChain
-            from astrbot.api.message_components import Plain
-            await event.send(MessageChain([Plain(text)]))
+            await event.send(event.plain_result(text))
         except Exception as exc:  # Notification is best-effort.
             logger.warning(f"织忆候选通知发送失败：{type(exc).__name__}")
 
@@ -478,7 +485,7 @@ class WeaveMemoryPlugin(Star):
     @memory.command("帮助")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def memory_help(self, event: AstrMessageEvent):
-        if self._commands is None:
+        if not self._ready or self._commands is None:
             yield event.plain_result("织忆当前未就绪，请检查插件日志和 SQLite FTS5 支持。")
             return
         yield event.plain_result(self._commands.help())
@@ -802,7 +809,7 @@ class WeaveMemoryPlugin(Star):
     @memory.command("群帮助")
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def memory_group_help(self, event: AstrMessageEvent):
-        if self._group_commands is None:
+        if not self._ready or self._group_commands is None:
             yield event.plain_result("织忆当前未就绪，请检查插件日志和 SQLite FTS5 支持。")
             return
         yield event.plain_result(self._group_commands.help())

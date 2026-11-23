@@ -49,6 +49,10 @@ BACKUP_FORMAT = "weave-memory-backup-v1"
 MANIFEST_SCHEMA = 1
 BACKUP_ROOT_PARTS = ("backups", "v1.8")
 JOURNAL_NAME = "restore_journal.json"
+# Restore rewrites authoritative tables directly, bypassing the store's dirty
+# marker. A non-empty sentinel commits with the transaction so a failed
+# index.rebuild() leaves is_healthy() False until a rebuild really succeeds.
+_RESTORE_FTS_SENTINEL = '["__restore__"]'
 
 _TABLES = (
     "memory_scopes", "memories", "memory_revisions", "memory_sources",
@@ -610,6 +614,11 @@ class BackupService:
                         current_lineage=new_lineage,
                     )
                     self._cleanup_import_jobs(tx)
+                    tx.execute(
+                        "INSERT INTO memory_meta(key,value) VALUES('fts_dirty_ids',?) "
+                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (_RESTORE_FTS_SENTINEL,),
+                    )
             self._index.rebuild()
             journal["phase"] = "complete"
             journal["completed_at"] = self._clock.now().isoformat()
@@ -722,6 +731,9 @@ class BackupService:
                 "DELETE FROM memory_tags WHERE memory_id IN "
                 "(SELECT id FROM backup_db.memories)",
             )
+            # Revert resets source-owned child rows of restored memories to the
+            # backup. Relations whose source is not in the backup belong to a
+            # non-restored memory and are intentionally left untouched.
             tx.execute(
                 "DELETE FROM memory_relations WHERE source_memory_id IN "
                 "(SELECT id FROM backup_db.memories)",

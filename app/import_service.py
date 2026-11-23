@@ -262,6 +262,9 @@ class ImportService:
         self._lifecycle = lifecycle
         self._clock = clock
         self._ids = ids
+        # In-process guard: one import per (scope, file) at a time so concurrent
+        # callers cannot overwrite each other's created_memory_ids bookkeeping.
+        self._active_imports: set[tuple[str, str]] = set()
 
     @staticmethod
     def _enforce_scope(envelope: ExportEnvelope, scope: Scope) -> None:
@@ -373,6 +376,22 @@ class ImportService:
         if dry_run:
             return self._dry_run(scope, envelope)
 
+        key = (scope.id, file_sha256)
+        if key in self._active_imports:
+            raise Conflict("import already running for this file")
+        self._active_imports.add(key)
+        try:
+            return await self._import_entries(
+                scope, envelope, operator_id=operator_id,
+                file_sha256=file_sha256, guard=guard,
+            )
+        finally:
+            self._active_imports.discard(key)
+
+    async def _import_entries(
+        self, scope: Scope, envelope: ExportEnvelope, *,
+        operator_id: str, file_sha256: str, guard: Callable[[], None],
+    ) -> ImportResult:
         job, resumed_from, note = self._begin_job(scope, envelope, file_sha256)
         entries: list[ImportEntryResult] = []
         imported = metadata_only = skipped = conflicts = failed = 0

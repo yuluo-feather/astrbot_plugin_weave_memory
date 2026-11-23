@@ -48,6 +48,7 @@ from data.plugins.astrbot_plugin_weave_memory.app.write_coordinator import (
 )
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     Conflict,
+    IndexUnavailable,
     StorageError,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
@@ -308,6 +309,24 @@ def test_revert_overwrites_same_id_with_backup_version(stack):
     ).fetchone()
     assert row["content"] == "旧内容"
     assert row["current_revision"] == 1
+
+
+def test_failed_index_rebuild_keeps_restore_marked_dirty(stack, monkeypatch):
+    save(stack, "旧内容")
+    backup_id = make_backup(stack)
+    original_rebuild = stack.index.rebuild
+
+    def boom() -> int:
+        raise IndexUnavailable("disk full")
+
+    monkeypatch.setattr(stack.index, "rebuild", boom)
+    with pytest.raises(IndexUnavailable):
+        stack.backup.restore(backup_id, mode="merge", confirm=True)
+    assert stack.index.is_healthy() is False
+
+    monkeypatch.setattr(stack.index, "rebuild", original_rebuild)
+    assert stack.index.rebuild() > 0
+    assert stack.index.is_healthy() is True
 
 
 def test_disaster_rebuild_requires_empty_target_and_rotates_lineage(tmp_path):
