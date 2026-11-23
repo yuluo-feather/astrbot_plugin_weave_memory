@@ -25,6 +25,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "data.plugins.astrbot_plugin_weave_memory"
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 
 def install_package_namespace() -> None:
@@ -117,14 +119,14 @@ def cmd_groups(args: argparse.Namespace) -> int:
             "enabled": bool(row["is_enabled"]),
         }
         for row in rows
-    ], ensure_ascii=False, indent=2))
+    ], ensure_ascii=True, indent=2))
     return 0
 
 
 def cmd_rollback_preview(args: argparse.Namespace) -> int:
     db = _database(args.data_dir)
     try:
-        print(json.dumps(db.rollback_preview(), ensure_ascii=False, indent=2))
+        print(json.dumps(db.rollback_preview(), ensure_ascii=True, indent=2))
     finally:
         db.close()
     return 0
@@ -143,7 +145,7 @@ def cmd_group_destroy(args: argparse.Namespace) -> int:
             "backup": not args.no_backup,
             "confirmed": False,
             "message": "re-run with --confirm to destroy; this action is irreversible",
-        }, ensure_ascii=False, indent=2))
+        }, ensure_ascii=True, indent=2))
         return 2
     db = _database(args.data_dir)
     try:
@@ -156,7 +158,7 @@ def cmd_group_destroy(args: argparse.Namespace) -> int:
             scope, decision, operator_id=args.admin_id,
             with_backup=not args.no_backup,
         ))
-        print(json.dumps(asdict(receipt), ensure_ascii=False, indent=2))
+        print(json.dumps(asdict(receipt), ensure_ascii=True, indent=2))
     finally:
         db.close()
     return 0
@@ -167,7 +169,7 @@ def cmd_cleanup_backups(args: argparse.Namespace) -> int:
     try:
         _, lifecycle = _lifecycle(db, args.data_dir)
         removed = lifecycle.cleanup_destroy_backups(args.days)
-        print(json.dumps({"removed": removed}, ensure_ascii=False))
+        print(json.dumps({"removed": removed}, ensure_ascii=True))
     finally:
         db.close()
     return 0
