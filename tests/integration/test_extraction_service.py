@@ -230,6 +230,8 @@ def test_candidate_is_inferred_not_searchable_until_confirmed(extraction_stack):
         stack["scope"], candidate.id, expected_revision=candidate.current_revision,
     ))
     assert confirmed.status is MemoryStatus.ACTIVE
+    assert confirmed.metadata["auto"] is False
+    assert confirmed.metadata["user_confirmed"] is True
     assert stack["index"].search("黑咖啡", scope_id=stack["scope"].id, subject_id="u1") == (candidate.id,)
 
 

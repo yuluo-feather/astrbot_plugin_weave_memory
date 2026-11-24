@@ -1010,6 +1010,8 @@ def test_explicit_save_merges_near_duplicate_inferred_memory(app_stack):
     assert saved.id == inferred.id
     assert saved.source_type is SourceType.EXPLICIT
     assert saved.current_revision == 2
+    assert saved.metadata["auto"] is False
+    assert saved.metadata["user_confirmed"] is True
     assert receipt.entity_id == inferred.id
     rows, total = store.list_active_page(
         scope_id=scope.id, subject_id="u1", limit=10, offset=0,

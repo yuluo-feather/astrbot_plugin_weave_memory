@@ -795,7 +795,12 @@ class ExtractionService:
             raise Conflict("revision conflict")
         memory = replace(
             memory,
-            metadata={**dict(memory.metadata), "importance": _CONFIRMED_IMPORTANCE},
+            metadata={
+                **dict(memory.metadata),
+                "importance": _CONFIRMED_IMPORTANCE,
+                "auto": False,
+                "user_confirmed": True,
+            },
         )
         now = self._clock.now()
         operation = MemoryOperation(

@@ -124,6 +124,9 @@ class MemoryApplicationService:
             if _SOURCE_PRIORITY[source_type] >= _SOURCE_PRIORITY[current.source_type]
             else current.source_type
         )
+        if new_source_type in {SourceType.EXPLICIT, SourceType.AGENT}:
+            metadata["auto"] = False
+            metadata["user_confirmed"] = True
         updated = replace(
             current, content=content, normalized_content=normalized,
             source_type=new_source_type,

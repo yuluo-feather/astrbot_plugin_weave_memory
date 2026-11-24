@@ -70,6 +70,20 @@ def test_auto_memory_injection_can_be_disabled_without_hiding_explicit_memory():
     assert "黑咖啡" not in context.content
 
 
+def test_user_confirmed_inferred_memory_still_injects_when_auto_is_disabled():
+    confirmed = _memory(
+        "m-confirmed", "用户喜欢黑咖啡", SourceType.INFERRED,
+        {"auto": False, "user_confirmed": True, "importance": 0.8},
+    )
+    recall = FakeRecall((confirmed,))
+    composer = MemoryContextComposer(
+        recall, max_tokens=200, max_memories=4, auto_memory_enabled=False,
+    )
+    context = asyncio.run(composer.compose("我喜欢什么", SCOPE))
+    assert context is not None
+    assert context.selected_memory_ids == ("m-confirmed",)
+
+
 def test_auto_memory_injection_is_kept_when_enabled():
     auto = _memory(
         "m-auto", "用户喜欢黑咖啡", SourceType.INFERRED,
