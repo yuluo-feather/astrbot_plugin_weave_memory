@@ -48,6 +48,11 @@ class IndexWorker:
         while not self._stopped:
             try:
                 await self._service.drain_once()
+                if not self._rebuild.verify_config():
+                    try:
+                        await self._rebuild.rebuild_all()
+                    except Exception:  # noqa: BLE001 - provider may be absent
+                        pass
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - worker must not die

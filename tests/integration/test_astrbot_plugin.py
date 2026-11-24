@@ -780,11 +780,11 @@ def test_plugin_writes_privacy_safe_recall_diagnostics_jsonl(monkeypatch, tmp_pa
     assert len(lines) == 1
     record = json.loads(lines[0])
     assert record["trace_id"]
-    assert record["query_hash"]
+    assert record["query"]["hash"]
     assert record["scope"]["type"] == "PERSONAL"
-    assert record["final_injected_ids"]
-    assert record["estimated_tokens"] > 0
-    assert "query" not in record
+    assert record["final"]["injected_ids"]
+    assert record["final"]["estimated_tokens"] > 0
+    assert "text" not in record["query"]
     assert "我喜欢什么咖啡" not in lines[0]
     assert "我喜欢黑咖啡" not in lines[0]
     asyncio.run(plugin.terminate())

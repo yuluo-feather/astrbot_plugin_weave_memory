@@ -408,14 +408,30 @@ class ImportService:
                         index, source_memory_id, ImportOutcome.FAILED, str(exc),
                     ))
                 else:
+                    def reserve(memory_id: str) -> None:
+                        if memory_id in created_ids:
+                            return
+                        created_ids.append(memory_id)
+                        self._jobs.update(ImportJob(
+                            id=job.id, scope_id=job.scope_id,
+                            subject_id=job.subject_id,
+                            file_sha256=job.file_sha256,
+                            dataset_version=job.dataset_version,
+                            status=ImportJobStatus.RUNNING, cursor=index,
+                            created_memory_ids=tuple(created_ids),
+                            created_at=job.created_at,
+                            updated_at=self._clock.now(),
+                        ))
+
                     result = await self._import_entry(
                         scope, envelope, parsed, index=index, operator_id=operator_id,
-                        guard=guard, job_id=job.id,
+                        guard=guard, job_id=job.id, on_reserve=reserve,
                     )
                     if result.outcome is ImportOutcome.IMPORTED:
                         imported += 1
                         assert result.memory_id is not None
-                        created_ids.append(result.memory_id)
+                        if result.memory_id not in created_ids:
+                            created_ids.append(result.memory_id)
                     elif result.outcome is ImportOutcome.METADATA_ONLY:
                         metadata_only += 1
                     elif result.outcome is ImportOutcome.CONFLICT:
@@ -490,7 +506,9 @@ class ImportService:
     async def _import_entry(self, scope: Scope, envelope: ExportEnvelope,
                             parsed: ParsedEntry, *, index: int, operator_id: str,
                             guard: Callable[[], None],
-                            job_id: str) -> ImportEntryResult:
+                            job_id: str,
+                            on_reserve: Callable[[str], None] | None = None,
+                            ) -> ImportEntryResult:
         if parsed.status is not MemoryStatus.ACTIVE:
             if parsed.status not in _IMPORTABLE_STATUSES:
                 return ImportEntryResult(
@@ -509,6 +527,10 @@ class ImportService:
             scope, parsed, source_platform=envelope.source_platform,
             export_id=envelope.export_id, operator_id=operator_id,
         )
+        # Record the id before writing so a crash between the two commits can
+        # only leave a reserved id that rollback safely skips, never an orphan.
+        if on_reserve is not None:
+            on_reserve(memory.id)
         try:
             written = await self._coordinator.create_import(
                 memory, revision, source, guard=guard,

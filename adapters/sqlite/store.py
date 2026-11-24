@@ -374,6 +374,7 @@ class SQLiteMemoryStore:
                 )
                 self._insert_revision(conn, revision)
                 self._insert_source(conn, source)
+                self._insert_tags(conn, memory)
                 self._mark_fts_dirty(conn, memory.id)
                 if memory.status is MemoryStatus.ACTIVE:
                     self._enqueue_vector(
@@ -386,6 +387,35 @@ class SQLiteMemoryStore:
             raise Conflict("memory violates an identifier or active/candidate deduplication constraint") from exc
         except sqlite3.Error as exc:
             raise StorageError("could not create memory transaction") from exc
+
+    @staticmethod
+    def _normalize_tags(raw: object) -> tuple[str, ...]:
+        if raw is None:
+            return ()
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, (list, tuple)):
+            return ()
+        result: list[str] = []
+        for value in raw:
+            tag = str(value).strip()
+            if not tag or len(tag) > 32 or tag in result:
+                continue
+            result.append(tag)
+            if len(result) >= 10:
+                break
+        return tuple(result)
+
+    def _insert_tags(self, conn, memory: MemoryEntity) -> None:
+        metadata = memory.metadata if isinstance(memory.metadata, Mapping) else {}
+        tags = self._normalize_tags(metadata.get("tags"))
+        if not tags:
+            return
+        conn.executemany(
+            """INSERT OR IGNORE INTO memory_tags(memory_id, tag, created_at)
+               VALUES (?, ?, ?)""",
+            [(memory.id, tag, _time_dump(memory.created_at)) for tag in tags],
+        )
 
     def update(self, memory: MemoryEntity, *, expected_revision: int,
                revision: MemoryRevision, source: MemorySource | None = None,
@@ -599,6 +629,33 @@ class SQLiteMemoryStore:
             ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError("could not list active memories for rebuild") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
+
+    def list_active_by_tag_text(self, query_text: str, *, scope_id: str,
+                                subject_id: str, limit: int = 20,
+                                at: datetime | None = None,
+                                ) -> tuple[MemoryEntity, ...]:
+        text = (query_text or "").strip()
+        if not text or limit < 1:
+            return ()
+        at = at or datetime.now(UTC)
+        at_key = at.astimezone(UTC).isoformat(timespec="microseconds").replace(
+            "+00:00", "Z",
+        )
+        try:
+            rows = self.db.connection.execute(
+                """SELECT DISTINCT m.* FROM memories m
+                   JOIN memory_scopes s ON s.id=m.scope_id
+                   JOIN memory_tags t ON t.memory_id=m.id
+                   WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                     AND s.is_enabled=1 AND INSTR(?, t.tag) > 0
+                     AND (m.valid_from IS NULL OR m.valid_from <= ?)
+                     AND (m.valid_until IS NULL OR m.valid_until > ?)
+                   ORDER BY m.created_at DESC, m.id LIMIT ?""",
+                (scope_id, subject_id, text, at_key, at_key, limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list active memories by tag") from exc
         return tuple(self._row_to_memory(row) for row in rows)
 
     def list_active_in_window(self, start: datetime, end: datetime, *,

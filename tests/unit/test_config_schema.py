@@ -19,9 +19,9 @@ def test_config_schema_uses_astrbot_supported_types():
 def test_v2_defaults_are_safe_and_frozen():
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     expected = {
-        "hybrid_retrieval_enabled": False,
-        "vector_index_enabled": False,
-        "rerank_enabled": False,
+        "hybrid_retrieval_enabled": True,
+        "vector_index_enabled": True,
+        "rerank_enabled": True,
         "auto_enroll": True,
         "personal_max_tokens": 384,
         "personal_max_memories": 4,
@@ -30,6 +30,7 @@ def test_v2_defaults_are_safe_and_frozen():
         "query_classifier_mode": "rules",
         "vector_candidate_limit": 20,
         "hybrid_candidate_limit": 24,
+        "tag_candidate_limit": 10,
         "time_candidate_limit": 10,
         "vector_relevance_threshold": 0.35,
         "fts_relevance_ratio": 0.3,

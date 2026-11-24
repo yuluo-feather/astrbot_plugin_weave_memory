@@ -86,6 +86,7 @@ class ProviderConfig:
     vector_candidate_limit: int
     hybrid_candidate_limit: int
     query_classifier_mode: str
+    tag_candidate_limit: int
     time_candidate_limit: int
     vector_relevance_threshold: float
     fts_relevance_ratio: float
@@ -128,10 +129,10 @@ class ProviderConfig:
             rerank_max_text_chars=_int(
                 config, "rerank_max_text_chars", 1200, 100, 8000,
             ),
-            rerank_enabled=_bool(config, "rerank_enabled", False),
-            vector_index_enabled=_bool(config, "vector_index_enabled", False),
+            rerank_enabled=_bool(config, "rerank_enabled", True),
+            vector_index_enabled=_bool(config, "vector_index_enabled", True),
             hybrid_retrieval_enabled=_bool(
-                config, "hybrid_retrieval_enabled", False,
+                config, "hybrid_retrieval_enabled", True,
             ),
             index_job_max_attempts=_int(
                 config, "index_job_max_attempts", 5, 1, 100,
@@ -148,6 +149,9 @@ class ProviderConfig:
             query_classifier_mode=_str(
                 config, "query_classifier_mode", "rules",
             ) or "rules",
+            tag_candidate_limit=_int(
+                config, "tag_candidate_limit", 10, 1, 100,
+            ),
             time_candidate_limit=_int(
                 config, "time_candidate_limit", 10, 1, 100,
             ),

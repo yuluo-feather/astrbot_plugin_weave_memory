@@ -279,8 +279,20 @@ class AstrBotManagementApi:
             body = await self._body()
             if not self._flag(body.get("confirm", self._query("confirm"))):
                 raise ValidationError("reindex requires confirm=true")
+            scope_id = str(
+                body.get("scope_id") or self._query("scope_id") or "",
+            ).strip()
+            subject_id = str(
+                body.get("subject_id") or self._query("subject_id") or "",
+            ).strip()
+            if bool(scope_id) != bool(subject_id):
+                raise ValidationError(
+                    "scope_id and subject_id must be provided together",
+                )
             async_reindex = getattr(self._service, "reindex_async", None)
             if callable(async_reindex):
-                return await async_reindex()
+                return await async_reindex(
+                    scope_id=scope_id or None, subject_id=subject_id or None,
+                )
             return self._service.reindex()
         return await self._run_admin(operation)

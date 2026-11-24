@@ -1,6 +1,6 @@
 """Personal-memory use cases: explicit save/update and the constrained agent tool write."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 
@@ -70,7 +70,9 @@ class MemoryApplicationService:
 
     async def save_explicit(self, scope: Scope, content: str, *,
                             operator_id: str,
-                            memory_type: MemoryType = MemoryType.FACT) -> tuple[MemoryEntity, WriteReceipt]:
+                            memory_type: MemoryType = MemoryType.FACT,
+                            tags: Sequence[str] = (),
+                            ) -> tuple[MemoryEntity, WriteReceipt]:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
         normalized = normalize_content(content)
         now = self._clock.now()
@@ -82,6 +84,7 @@ class MemoryApplicationService:
             memory_type=memory_type, content=content, normalized_content=normalized,
             status=MemoryStatus.ACTIVE, source_type=SourceType.EXPLICIT,
             current_revision=1, created_at=now, updated_at=now,
+            metadata={"tags": list(tags)} if tags else {},
         )
         revision = MemoryRevision(
             id=self._ids.new_id("revision"), memory_id=memory_id, revision=1,
@@ -106,6 +109,7 @@ class MemoryApplicationService:
                          evidence_ref: str,
                          memory_type: MemoryType = MemoryType.FACT,
                          source_metadata: Mapping[str, object] | None = None,
+                         tags: Sequence[str] = (),
                          ) -> tuple[MemoryEntity, WriteReceipt]:
         """Save a memory requested by the model through an explicit user signal.
 
@@ -126,6 +130,7 @@ class MemoryApplicationService:
             memory_type=memory_type, content=content, normalized_content=normalized,
             status=MemoryStatus.ACTIVE, source_type=SourceType.AGENT,
             current_revision=1, created_at=now, updated_at=now,
+            metadata={"tags": list(tags)} if tags else {},
         )
         revision = MemoryRevision(
             id=self._ids.new_id("revision"), memory_id=memory_id, revision=1,

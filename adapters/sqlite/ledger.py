@@ -21,6 +21,9 @@ from ...core.errors import Conflict, StorageError, ValidationError
 from ...core.model import LedgerEvent, LedgerEventType, LedgerState
 from .store import _json_dump, _json_load, _time_dump, _time_load_required
 
+_LEDGER_READER_VERSION = 2
+_LEDGER_WRITER_VERSION = 2
+
 _LEDGER_SCHEMA = (
     """
     CREATE TABLE IF NOT EXISTS ledger_meta (
@@ -142,8 +145,8 @@ class SQLiteLedger:
                     "earliest_retained_seq": "1",
                     "base_seq": "1",
                     "end_seq": "0",
-                    "ledger_format_version": "2",
-                    "min_reader_version": "2",
+                    "ledger_format_version": str(_LEDGER_WRITER_VERSION),
+                    "min_reader_version": str(_LEDGER_READER_VERSION),
                 }
                 with self._lock:
                     self._conn().execute("BEGIN IMMEDIATE")
@@ -171,6 +174,11 @@ class SQLiteLedger:
                             self._conn().execute("ROLLBACK")
                         raise StorageError("could not upgrade ledger metadata") from exc
                 meta = self._read_meta(self._conn())
+            required = int(meta.get("min_reader_version", "1"))
+            if required > _LEDGER_READER_VERSION:
+                raise StorageError(
+                    "ledger requires a newer reader; refusal is fail-closed",
+                )
             return meta
 
     def format_version(self) -> int:
