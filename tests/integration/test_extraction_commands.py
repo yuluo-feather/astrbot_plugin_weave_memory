@@ -209,3 +209,12 @@ def test_group_command_is_rejected(command_stack):
     event = FakeEvent("/织忆 提取 状态", private=False, group_id="g1")
     with pytest.raises(AuthorizationDenied):
         asyncio.run(stack["commands"].handle_extract(event))
+
+
+def test_cancel_missing_job_reports_job_not_found(command_stack):
+    stack = command_stack
+    text = asyncio.run(stack["commands"].handle_extract(
+        FakeEvent("/织忆 提取 取消 no-such-job"),
+    ))
+    assert "没有找到该提取任务" in text
+    assert "个人记忆或作用域" not in text
