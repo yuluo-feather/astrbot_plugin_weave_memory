@@ -259,6 +259,12 @@
     "default": 0,
     "hint": "轮转只移动文件，不裁剪事件；seq 全局连续，恢复读取全部分段。"
   },
+  "backup_interval_hours": {
+    "description": "定时备份间隔（小时，0 为不启用）",
+    "type": "int",
+    "default": 0,
+    "hint": "大于 0 时按间隔在后台创建整库备份；需要账本启用。范围 0–168。"
+  },
   "backup_keep_last": {
     "description": "备份保留份数（至少保留最近 N 份）",
     "type": "int",
@@ -277,6 +283,24 @@
     "default": {},
     "hint": "仅在平台无法解析群主/管理员角色时使用。支持 dict 键 platform|tenant_id|group_id，或 [{platform,tenant_id,group_id,admin_ids}] 列表；键必须精确匹配平台、平台实例和群 ID，避免跨群/跨实例复用。",
     "obvious_hint": true
+  },
+  "personal_max_tokens": {
+    "description": "个人记忆注入 Token 预算（估算值）",
+    "type": "int",
+    "default": 384,
+    "hint": "provider-neutral 估算，不是精确 tokenizer 计数；范围 64–4096。"
+  },
+  "personal_max_memories": {
+    "description": "个人记忆注入最大条数",
+    "type": "int",
+    "default": 4,
+    "hint": "0 表示不注入；正整数为每条消息最多注入的条数；范围 0–20。"
+  },
+  "personal_candidate_limit": {
+    "description": "个人检索候选上限",
+    "type": "int",
+    "default": 12,
+    "hint": "注入前最多重排/预算筛选的候选数；范围 1–50。"
   },
   "group_max_tokens": {
     "description": "群记忆注入 Token 预算（估算值）",

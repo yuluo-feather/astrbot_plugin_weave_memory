@@ -127,6 +127,7 @@ class WeaveMemoryPlugin(Star):
         self._backup_commands: AstrBotBackupCommands | None = None
         self._extraction_capture: AstrBotExtractionCapture | None = None
         self._retention: RetentionService | None = None
+        self._scheduled_backup_task: asyncio.Task[None] | None = None
         self._index_worker: IndexWorker | None = None
         self._provider_policy: ProviderPolicy | None = None
         self._injector: AstrBotMemoryInjector | None = None
@@ -257,6 +258,20 @@ class WeaveMemoryPlugin(Star):
             )
             # Restore journal must be resolved before any read or write is served.
             backup.recover_if_needed()
+            backup_interval_hours = self._config_int("backup_interval_hours", 0)
+            if backup_interval_hours > 0 and backup.enabled:
+                try:
+                    self._scheduled_backup_task = (
+                        asyncio.get_running_loop().create_task(
+                            self._scheduled_backup_loop(
+                                backup, backup_interval_hours * 3600,
+                            ),
+                        )
+                    )
+                except RuntimeError:
+                    logger.warning(
+                        "织忆定时备份未启动：当前没有运行中的事件循环。",
+                    )
             applied, failed = ledger.drain_pending(store, consent_repository)
             if applied:
                 logger.info(f"织忆账本重放：{applied} 个 pending 事件已提交。")
@@ -359,7 +374,14 @@ class WeaveMemoryPlugin(Star):
                         "recall_diagnostics_include_query", False,
                     ),
                 )
-            composer = MemoryContextComposer(hybrid or recall)
+            composer = MemoryContextComposer(
+                hybrid or recall,
+                max_tokens=self._config_int("personal_max_tokens", 384),
+                max_memories=self._config_non_negative_int(
+                    "personal_max_memories", 4,
+                ),
+                candidate_limit=self._config_int("personal_candidate_limit", 12),
+            )
             group_admins = AstrBotGroupAdminResolver(
                 self._explicit_group_admins(self._config),
             )
@@ -528,6 +550,13 @@ class WeaveMemoryPlugin(Star):
                         index_jobs.count_by_status() if index_jobs is not None else {}
                     ),
                     "rejected_keep_body": self._config_bool("rejected_keep_body", False),
+                    "personal_max_tokens": self._config_int("personal_max_tokens", 384),
+                    "personal_max_memories": self._config_non_negative_int(
+                        "personal_max_memories", 4,
+                    ),
+                    "personal_candidate_limit": self._config_int(
+                        "personal_candidate_limit", 12,
+                    ),
                     "group_max_tokens": self._config_int("group_max_tokens", 192),
                     "group_max_memories": self._config_non_negative_int(
                         "group_max_memories", 2,
@@ -778,6 +807,16 @@ class WeaveMemoryPlugin(Star):
             yield event.plain_result(await self._command_service().query(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("检索", exc))
+
+    @memory.command("检索调试")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_retrieval_debug(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(
+                await self._command_service().retrieval_debug(event),
+            )
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("检索调试", exc))
 
     @memory.command("状态")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
@@ -1224,7 +1263,29 @@ class WeaveMemoryPlugin(Star):
         if callable(stop_event):
             stop_event()
 
+    async def _scheduled_backup_loop(self, backup: BackupService,
+                                     interval_seconds: int) -> None:
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                result = await asyncio.to_thread(backup.create_backup)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - background maintenance
+                logger.warning(
+                    "织忆定时备份失败：%s", type(exc).__name__,
+                )
+            else:
+                logger.info("织忆定时备份完成：%s", result.get("backup_id"))
+
     async def terminate(self):
+        if self._scheduled_backup_task is not None:
+            self._scheduled_backup_task.cancel()
+            try:
+                await self._scheduled_backup_task
+            except asyncio.CancelledError:
+                pass
+            self._scheduled_backup_task = None
         if self._index_worker is not None:
             try:
                 await asyncio.wait_for(

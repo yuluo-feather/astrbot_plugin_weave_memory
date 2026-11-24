@@ -468,6 +468,13 @@ def test_plugin_grant_save_and_private_only_temporary_injection(monkeypatch, tmp
     )))
     assert "检索到的个人记忆" in query_result[0]
 
+    debug_result = asyncio.run(collect(plugin.memory_retrieval_debug(
+        FakeEvent(message="/织忆 检索调试 黑咖啡"),
+    )))
+    assert "检索调试" in debug_result[0]
+    assert "rerank:" in debug_result[0]
+    assert "final:" in debug_result[0]
+
     group_request = types.SimpleNamespace(extra_user_content_parts=[])
     asyncio.run(plugin.inject_personal_memory(
         FakeEvent(group_id="group-1", message="你记得什么？"), group_request,
