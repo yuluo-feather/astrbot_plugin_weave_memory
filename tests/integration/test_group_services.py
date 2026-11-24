@@ -150,7 +150,7 @@ def test_group_enable_save_recall_disable_clear_destroy(group_stack):
     context = asyncio.run(composer.compose("周五复盘", scope))
     assert context is not None and "周五复盘" in context.content
     assert "weave_memory_group_context" in context.content
-    assert "（2026-11-23）" in context.content
+    assert f"（{memory.created_at.date().isoformat()}）" in context.content
 
     diagnostics = []
     diagnostic_recall = GroupRecallService(
