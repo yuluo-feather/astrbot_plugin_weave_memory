@@ -281,18 +281,21 @@ class AstrBotGroupCommands:
         return format_import_result(result, scope_label="当前群")
 
     def status(self, event: Any) -> str:
-        identity, _, _ = self._identity_and_decision(event)
+        identity, _, decision = self._identity_and_decision(event)
         status = self._scopes.status(identity)
         if not status.created:
             return "当前群尚未开启织忆群记忆。"
         scope = self._scopes.find(identity)
         state = "已开启" if status.enabled else "已关闭"
         available = "是" if status.admin_available else "否"
+        current = "是" if decision.admin_available else "否"
+        current_source = decision.source.value
         omitted = self._recall.last_omitted_count(scope.id) if scope is not None else 0
         return (
             f"当前群织忆状态：{state}；记忆 {status.count} 条；"
             f"管理员来源 {status.admin_source.value}（启用时快照）；"
             f"管理员可用 {available}（快照）。\n"
+            f"当前事件解析：来源 {current_source}，管理员可用 {current}；"
             f"上次注入截断 {omitted} 条；"
             f"群数据保留期建议 {self._retention_days} 天（不自动删除）；"
             f"销毁备份保留 {self._backup_retention_days} 天；"

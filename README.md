@@ -184,6 +184,7 @@ Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal S
 | `ledger_rotate_events` | int | `0` | 账本多少事件后轮转到新分段；0 为不自动轮转。只移动文件，不裁剪事件。 |
 | `backup_keep_last` | int | `5` | 至少保留最近 N 份备份；不删除最新一份。 |
 | `backup_retention_days` | int | `30` | 备份保留天数；与份数条件同时生效。 |
+| `operation_retention_days` | int | `365` | 操作审计保留天数；启动时清理早于该期限的 `memory_operations`（不含正文），0 为永久保留。 |
 | `backup_interval_hours` | int | `0` | 大于 0 时后台按小时自动整库备份；0 为关闭，需要账本启用。 |
 | `personal_max_tokens` | int | `384` | 个人记忆注入的估算 Token 预算。 |
 | `personal_max_memories` | int | `4` | 个人记忆每条消息最多注入条数。 |
@@ -197,7 +198,7 @@ Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal S
 }
 ```
 
-> 个人记忆的注入预算当前固定在代码里：最多 4 条、384 estimated tokens。token 数是中性估算（CJK 字符与标点各计 1，ASCII 字母/数字连续段每 4 字符计 1），不是某个模型 tokenizer 的精确计数。
+> 个人记忆的注入预算可配：`personal_max_memories`（默认 4 条）、`personal_max_tokens`（默认 384）与 `personal_candidate_limit`（默认 12）。token 数是中性估算（CJK 字符与标点各计 1，ASCII 字母/数字连续段每 4 字符计 1），不是某个模型 tokenizer 的精确计数。
 
 ## 📦 安装方法
 

@@ -93,6 +93,24 @@
       "180 天"
     ]
   },
+  "operation_retention_days": {
+    "description": "操作审计保留期（天）",
+    "type": "int",
+    "default": 365,
+    "hint": "memory_operations 只含操作类型、时间、操作者与结果，不含正文；启动时清理早于该期限的记录。0 表示永久保留。",
+    "options": [
+      90,
+      180,
+      365,
+      0
+    ],
+    "labels": [
+      "90 天",
+      "180 天",
+      "365 天 推荐",
+      "永久保留"
+    ]
+  },
   "purge_batch_size": {
     "description": "到期清理每批处理条数",
     "type": "int",

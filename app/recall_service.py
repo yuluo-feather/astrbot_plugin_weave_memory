@@ -277,13 +277,17 @@ class MemoryContextComposer:
     _SUFFIX = "\n</weave_memory_context>"
 
     def __init__(self, recall: Any, *, max_tokens: int = 384,
-                 max_memories: int = 4, candidate_limit: int = 12) -> None:
+                 max_memories: int = 4, candidate_limit: int = 12,
+                 maintenance: Callable[[], bool] | None = None) -> None:
         self._recall = recall
         self._max_tokens = max_tokens
         self._max_memories = max_memories
         self._candidate_limit = candidate_limit
+        self._maintenance = maintenance
 
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
+        if self._maintenance is not None and self._maintenance():
+            return None
         result = self._recall.recall_with_trace(
             query, scope, limit=self._candidate_limit,
         )

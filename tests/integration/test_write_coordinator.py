@@ -756,3 +756,24 @@ def test_coordinator_close_waits_for_writer_then_rejects_queued_work(stack):
             await coordinator.create(first, first_revision, first_source)
 
     asyncio.run(run())
+
+
+def test_maintenance_mode_freezes_writes_and_restores_the_lease(stack):
+    _db, store, _index, scope, coordinator = stack
+    memory, revision, source = build(scope, mid="m-maintenance")
+    observed: dict[str, bool] = {}
+
+    def operation():
+        observed["inside"] = coordinator.in_maintenance
+        with pytest.raises(ServiceClosed):
+            coordinator.write_metadata(lambda: None)
+        return "done"
+
+    assert coordinator.run_maintenance_locked(operation) == "done"
+    assert observed["inside"] is True
+    assert coordinator.in_maintenance is False
+
+    asyncio.run(coordinator.create(memory, revision, source))
+    assert [item.id for item in store.list_active(
+        scope_id=scope.id, subject_id="u1",
+    )] == [memory.id]

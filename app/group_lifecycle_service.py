@@ -54,7 +54,8 @@ class GroupLifecycleService:
     def __init__(self, store: GroupScopeStore, coordinator: WriteCoordinator,
                  consent: ConsentService, index: SearchIndex,
                  clock: Clock, ids: IdGenerator, backup_dir: str | Path,
-                 ledger: LedgerService | None = None) -> None:
+                 ledger: LedgerService | None = None,
+                 backup_retention_days: int = 30) -> None:
         self._store = store
         self._coordinator = coordinator
         self._consent = consent
@@ -63,6 +64,7 @@ class GroupLifecycleService:
         self._ids = ids
         self._backup_dir = Path(backup_dir)
         self._ledger = ledger
+        self._backup_retention_days = max(1, backup_retention_days)
 
     @staticmethod
     def _require_group(scope: Scope) -> None:
@@ -256,6 +258,8 @@ class GroupLifecycleService:
                 "织忆群销毁未写备份：scope_id=%s operation_id=%s",
                 scope.id, op,
             )
+        if with_backup:
+            self.cleanup_destroy_backups(self._backup_retention_days)
         return GroupDestroyReceipt(
             op, scope.id, str(backup_path) if with_backup else "",
             digest, affected, purged,

@@ -27,6 +27,32 @@ class RetentionService:
         self._task: asyncio.Task[None] | None = None
         self._stopped = False
 
+    async def expire_overdue(self, now: datetime | None = None) -> int:
+        """Move ACTIVE rows past valid_until to EXPIRED; never deletes them."""
+        at = now or self._clock.now()
+        expired_total = 0
+        while True:
+            rows = self._store.list_expired_active(at=at, limit=self._batch_size)
+            if not rows:
+                return expired_total
+            progressed = 0
+            for memory in rows:
+                try:
+                    receipt = await self._lifecycle.expire_active(
+                        memory, revision_id=self._ids.new_id("revision"), at=at,
+                    )
+                except (DomainError, OSError) as exc:
+                    logger.warning(
+                        "semantic expiry failed: memory=%s error=%s",
+                        memory.id, type(exc).__name__,
+                    )
+                    continue
+                if receipt is not None:
+                    progressed += 1
+                    expired_total += 1
+            if progressed == 0:
+                return expired_total
+
     async def purge_expired(self, now: datetime | None = None) -> int:
         """Purge one or more batches; return the number of rows removed."""
         at = now or self._clock.now()
@@ -60,6 +86,7 @@ class RetentionService:
     async def run_forever(self) -> None:
         while not self._stopped:
             try:
+                await self.expire_overdue()
                 await self.purge_expired()
             except asyncio.CancelledError:
                 raise

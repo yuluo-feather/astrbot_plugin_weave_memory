@@ -335,6 +335,24 @@ class WeaveMemoryPlugin(Star):
                     logger.warning(
                         "织忆访问审计清理失败：%s", type(exc).__name__,
                     )
+            operation_retention_days = self._config_int(
+                "operation_retention_days", 365,
+            )
+            if operation_retention_days > 0:
+                try:
+                    pruned_operations = store.prune_operations(
+                        before=clock.now() - timedelta(
+                            days=operation_retention_days,
+                        ),
+                    )
+                    if pruned_operations:
+                        logger.info(
+                            f"织忆操作审计清理：{pruned_operations} 条",
+                        )
+                except StorageError as exc:
+                    logger.warning(
+                        "织忆操作审计清理失败：%s", type(exc).__name__,
+                    )
             if (
                 provider is not None and not provider.ready
                 and provider_config.vector_index_enabled
@@ -454,20 +472,22 @@ class WeaveMemoryPlugin(Star):
                     "personal_max_memories", 4,
                 ),
                 candidate_limit=self._config_int("personal_candidate_limit", 12),
+                maintenance=lambda: coordinator.in_maintenance,
             )
             group_admins = AstrBotGroupAdminResolver(
                 self._explicit_group_admins(self._config),
             )
             group_scopes = GroupScopeService(store, group_admins, coordinator, clock)
-            group_lifecycle = GroupLifecycleService(
-                store, coordinator, consent, index, clock, ids,
-                data_dir / "group_backups", ledger=ledger,
-            )
-            self._group_scopes = group_scopes
-            self._group_lifecycle = group_lifecycle
             destroy_backup_retention = self._config_int(
                 "group_destroy_backup_retention_days", 30,
             )
+            group_lifecycle = GroupLifecycleService(
+                store, coordinator, consent, index, clock, ids,
+                data_dir / "group_backups", ledger=ledger,
+                backup_retention_days=destroy_backup_retention,
+            )
+            self._group_scopes = group_scopes
+            self._group_lifecycle = group_lifecycle
             removed_backups = group_lifecycle.cleanup_destroy_backups(
                 destroy_backup_retention,
             )
@@ -489,6 +509,7 @@ class WeaveMemoryPlugin(Star):
                 max_tokens=self._config_int("group_max_tokens", 192),
                 max_memories=self._config_non_negative_int("group_max_memories", 2),
                 candidate_limit=self._config_int("group_candidate_limit", 8),
+                maintenance=lambda: coordinator.in_maintenance,
             )
             if hybrid is not None:
                 hybrid_group = HybridGroupRecallService(
@@ -522,6 +543,7 @@ class WeaveMemoryPlugin(Star):
                         "group_max_memories", 2,
                     ),
                     candidate_limit=self._config_int("group_candidate_limit", 8),
+                    maintenance=lambda: coordinator.in_maintenance,
                 )
 
             extraction_enabled = self._config_bool("extraction_enabled", False)
@@ -552,6 +574,7 @@ class WeaveMemoryPlugin(Star):
             self._commands = AstrBotMemoryCommands(
                 scopes, consent, memories, recall, lifecycle, clock, ids, imports,
                 auto_enroll=auto_enroll,
+                maintenance=lambda: coordinator.in_maintenance,
             )
             self._group_commands = AstrBotGroupCommands(
                 group_scopes, group_lifecycle, group_memories, group_recall, imports,
@@ -800,6 +823,8 @@ class WeaveMemoryPlugin(Star):
         if isinstance(exc, ConsentRevocationPending):
             return "个人记忆空间已关闭，数据已停止读写；但授权撤销记录写入失败，请重试 /织忆 关闭 确认。"
         if isinstance(exc, ServiceClosed):
+            if "maintenance" in str(exc):
+                return "织忆正在维护（备份/恢复/回滚），请稍后重试。"
             return "织忆当前未就绪，请检查插件日志。"
         if isinstance(exc, InvalidTransition):
             return f"{action}失败：当前状态不允许该操作。"

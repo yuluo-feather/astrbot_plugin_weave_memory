@@ -47,6 +47,8 @@ class AstrBotBackupCommands:
             "/织忆 备份恢复 <备份ID> —— dry-run，只输出将复活/不会复活清单\n"
             "/织忆 备份恢复 <备份ID> 确认 —— 以 merge 模式恢复\n"
             "/织忆 备份恢复 <备份ID> <merge|revert|disaster-rebuild> 确认 —— 显式模式恢复\n"
+            "/织忆 备份恢复 快照 —— 列出恢复前快照\n"
+            "/织忆 备份恢复 快照 <快照名> 确认 —— 回滚到该恢复前快照\n"
             "备份不含 memory_ledger.sqlite3；旧备份不会复活已删除/清空/撤销授权的内容。"
         )
 
@@ -69,6 +71,21 @@ class AstrBotBackupCommands:
         if not tail:
             return "用法：/织忆 备份恢复 <备份ID> [merge|revert|disaster-rebuild] 确认"
         parts = tail.split()
+        if parts[0] in {"快照", "snapshot"}:
+            if len(parts) == 1:
+                return json.dumps(
+                    {"snapshots": self._service.list_restore_snapshots()},
+                    ensure_ascii=False, indent=2,
+                )
+            if len(parts) == 2:
+                return "用法：/织忆 备份恢复 快照 <快照名> 确认"
+            confirm = parts[2] in {"确认", "confirm"}
+            if len(parts) != 3 or not confirm:
+                raise ValidationError("快照回滚必须显式附带「确认」")
+            result = self._service.rollback_to_snapshot(
+                parts[1], confirm=True,
+            )
+            return json.dumps(result, ensure_ascii=False, indent=2)
         backup_id = parts[0]
         mode = "merge"
         confirm = False
