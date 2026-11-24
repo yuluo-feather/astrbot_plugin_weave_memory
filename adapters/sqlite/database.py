@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -122,12 +123,31 @@ class SQLiteDatabase:
         if self._closed:
             raise ServiceClosed("SQLite database is closed")
 
+    def _begin(self, *, immediate: bool, attempts: int = 5) -> None:
+        """Start a transaction, retrying transient cross-process lock errors.
+
+        ``busy_timeout`` covers most contention, but a second instance can still
+        hit "database is locked" at BEGIN under sustained writes. Retrying the
+        BEGIN is safe because the caller's body has not run yet.
+        """
+        statement = "BEGIN IMMEDIATE" if immediate else "BEGIN"
+        for attempt in range(attempts):
+            try:
+                self.connection.execute(statement)
+                return
+            except sqlite3.OperationalError as exc:
+                message = str(exc).lower()
+                transient = "locked" in message or "busy" in message
+                if not transient or attempt == attempts - 1:
+                    raise
+                time.sleep(0.02 * (2 ** attempt))
+
     @contextmanager
     def transaction(self, *, immediate: bool = True) -> Iterator[sqlite3.Connection]:
         with self._lock:
             self._ensure_open()
+            self._begin(immediate=immediate)
             try:
-                self.connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
                 yield self.connection
                 self.connection.execute("COMMIT")
             except BaseException:
