@@ -76,6 +76,8 @@ class ProviderConfig:
     rerank_provider_id: str
     rerank_model: str
     rerank_timeout_seconds: int
+    rerank_max_docs: int
+    rerank_max_text_chars: int
     rerank_enabled: bool
     vector_index_enabled: bool
     hybrid_retrieval_enabled: bool
@@ -122,6 +124,10 @@ class ProviderConfig:
             rerank_model=_str(config, "rerank_model"),
             rerank_timeout_seconds=_int(
                 config, "rerank_timeout_seconds", 5, 1, 30,
+            ),
+            rerank_max_docs=_int(config, "rerank_max_docs", 16, 1, 100),
+            rerank_max_text_chars=_int(
+                config, "rerank_max_text_chars", 1200, 100, 8000,
             ),
             rerank_enabled=_bool(config, "rerank_enabled", False),
             vector_index_enabled=_bool(config, "vector_index_enabled", False),

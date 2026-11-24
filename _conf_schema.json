@@ -189,7 +189,19 @@
     "description": "Rerank 调用超时（秒）",
     "type": "int",
     "default": 5,
-    "hint": "超时/失败保持 RRF 顺序；范围 1–30。"
+    "hint": "超时/失败保持 RRF 顺序，并在 provider_failure_cooldown_seconds 内跳过重排；范围 1–30。"
+  },
+  "rerank_max_docs": {
+    "description": "Rerank 候选上限",
+    "type": "int",
+    "default": 16,
+    "hint": "最多对前 N 条候选重排，其余保持原顺序；范围 1–100。"
+  },
+  "rerank_max_text_chars": {
+    "description": "Rerank 单条截断（字符）",
+    "type": "int",
+    "default": 1200,
+    "hint": "送入重排前按字符截断，控制长记忆导致的延迟；范围 100–8000。"
   },
   "provider_failure_cooldown_seconds": {
     "description": "Provider 失败冷却（秒）",

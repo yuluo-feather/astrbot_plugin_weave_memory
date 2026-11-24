@@ -64,6 +64,9 @@ class HybridRecallService:
                  classifier_mode: str = "rules",
                  rerank_enabled: bool = False,
                  rerank_timeout_seconds: int = 5,
+                 rerank_max_docs: int = 16,
+                 rerank_max_text_chars: int = 1200,
+                 rerank_cooldown_seconds: int = 60,
                  tag_candidate_limit: int = 10,
                  time_candidate_limit: int = 10,
                  relevance_threshold: float = 0.35,
@@ -89,6 +92,10 @@ class HybridRecallService:
         self._classifier_mode = classifier_mode
         self._rerank_enabled = rerank_enabled
         self._rerank_timeout = max(1, rerank_timeout_seconds)
+        self._rerank_max_docs = max(1, rerank_max_docs)
+        self._rerank_max_text_chars = max(1, rerank_max_text_chars)
+        self._rerank_cooldown = max(0, rerank_cooldown_seconds)
+        self._rerank_cooldown_until = 0.0
         self._tag_limit = max(1, tag_candidate_limit)
         self._time_limit = max(1, time_candidate_limit)
         self._relevance_threshold = max(0.0, min(1.0, relevance_threshold))
@@ -290,29 +297,40 @@ class HybridRecallService:
         }
         if self._rerank_enabled and self._rerank is not None and selected:
             rerank_started = monotonic()
-            try:
-                scores = await asyncio.wait_for(
-                    self._rerank.rerank(
-                        query, tuple(memory.content for memory in selected),
-                        len(selected),
-                    ),
-                    timeout=self._rerank_timeout,
-                )
-                by_index = {index: score for index, score in scores}
-                ranked = [
-                    (by_index.get(index, 0.0), memory)
-                    for index, memory in enumerate(selected)
-                ]
-                ranked.sort(key=lambda pair: (-pair[0], pair[1].id))
-                selected = [memory for _, memory in ranked]
-                rerank_info["candidates"] = [
-                    {"memory_id": memory.id, "score": score}
-                    for score, memory in ranked
-                ]
-            except Exception:  # noqa: BLE001 - rerank is optional
-                rerank_info["degraded"] = True
-            finally:
-                rerank_ms = int((monotonic() - rerank_started) * 1000)
+            if self._rerank_cooldown_until > rerank_started:
+                rerank_info["skipped"] = "cooldown"
+            else:
+                try:
+                    head = selected[:self._rerank_max_docs]
+                    tail = selected[len(head):]
+                    documents = tuple(
+                        memory.content[:self._rerank_max_text_chars]
+                        for memory in head
+                    )
+                    scores = await asyncio.wait_for(
+                        self._rerank.rerank(query, documents, len(documents)),
+                        timeout=self._rerank_timeout,
+                    )
+                    by_index = {index: score for index, score in scores}
+                    ranked = [
+                        (by_index.get(index, 0.0), memory)
+                        for index, memory in enumerate(head)
+                    ]
+                    ranked.sort(key=lambda pair: (-pair[0], pair[1].id))
+                    selected = [memory for _, memory in ranked] + tail
+                    rerank_info["candidates"] = [
+                        {"memory_id": memory.id, "score": score}
+                        for score, memory in ranked
+                    ]
+                    self._rerank_cooldown_until = 0.0
+                except Exception:  # noqa: BLE001 - rerank is optional
+                    rerank_info["degraded"] = True
+                    if self._rerank_cooldown > 0:
+                        self._rerank_cooldown_until = (
+                            monotonic() + self._rerank_cooldown
+                        )
+                finally:
+                    rerank_ms = int((monotonic() - rerank_started) * 1000)
 
         trace = RetrievalTrace(
             trace_id=uuid4().hex,

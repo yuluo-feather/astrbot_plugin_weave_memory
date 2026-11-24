@@ -297,3 +297,58 @@ def test_hybrid_rerank_reorders_and_trace_records_provider(stack):
     assert trace.rerank["model"] == "bge-reranker-v2-m3"
     assert trace.rerank["candidates"]
     assert "degraded" not in trace.rerank
+
+
+class RecordingRerank:
+    provider_id = "recording"
+    model = "test-model"
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    async def rerank(self, query, documents, top_n):
+        self.calls.append(list(documents))
+        return tuple((index, 1.0 - index / 10) for index in range(len(documents)))
+
+
+class FailingRerank:
+    provider_id = "failing"
+    model = "test-model"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def rerank(self, query, documents, top_n):
+        self.calls += 1
+        raise RuntimeError("rerank down")
+
+
+def test_rerank_truncates_candidates_and_document_text(stack):
+    _, store, index, vector, consent, coordinator, scope = stack
+    reranker = RecordingRerank()
+    hybrid = HybridRecallService(
+        store, index, consent, FixedClock(), store, coordinator,
+        vector=vector, provider=_policy(), rerank=reranker, rerank_enabled=True,
+        rerank_max_docs=1, rerank_max_text_chars=2,
+        vector_candidate_limit=5, hybrid_candidate_limit=10,
+    )
+    asyncio.run(hybrid.recall_with_trace("喜欢", scope, limit=5))
+    assert len(reranker.calls) == 1
+    assert len(reranker.calls[0]) == 1
+    assert all(len(document) <= 2 for document in reranker.calls[0])
+
+
+def test_rerank_failure_opens_cooldown_and_skips_following_calls(stack):
+    _, store, index, vector, consent, coordinator, scope = stack
+    reranker = FailingRerank()
+    hybrid = HybridRecallService(
+        store, index, consent, FixedClock(), store, coordinator,
+        vector=vector, provider=_policy(), rerank=reranker, rerank_enabled=True,
+        rerank_cooldown_seconds=60,
+        vector_candidate_limit=5, hybrid_candidate_limit=10,
+    )
+    _, first = asyncio.run(hybrid.recall_with_trace("喜欢", scope, limit=5))
+    _, second = asyncio.run(hybrid.recall_with_trace("喜欢", scope, limit=5))
+    assert first.rerank["degraded"] is True
+    assert second.rerank.get("skipped") == "cooldown"
+    assert reranker.calls == 1
