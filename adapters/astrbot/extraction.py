@@ -230,20 +230,20 @@ class AstrBotExtractionCapture:
         except AuthorizationDenied:
             return
         scope = self._scopes.find(identity)
+        conversation_id = str(getattr(event, "unified_msg_origin", "") or "").strip()
         if scope is None:
+            self._drop_buffers(conversation_id)
             return
         text = str(getattr(event, "message_str", "") or "").strip()
         if not text or text.startswith("/") or text.startswith("织忆"):
             return
         message_obj = getattr(event, "message_obj", None)
         message_id = str(getattr(message_obj, "message_id", "") or "").strip()
-        conversation_id = str(getattr(event, "unified_msg_origin", "") or "").strip()
         key = conversation_id or scope.id
         # Never retain text captured before the layered consent is complete:
         # otherwise messages sent before opt-in could reach the model after it.
         if not self._extraction.gates(scope).can_store:
-            self._buffers.pop(key, None)
-            self._summary_buffers.pop(key, None)
+            self._drop_buffers(key)
             return
         watermark = self._watermarks.get(key, 0) + 1
         self._watermarks[key] = watermark
@@ -263,17 +263,25 @@ class AstrBotExtractionCapture:
         except AuthorizationDenied:
             return
         scope = self._scopes.find(identity)
-        if scope is None:
-            return
         conversation_id = str(getattr(event, "unified_msg_origin", "") or "").strip()
+        if scope is None:
+            self._drop_buffers(conversation_id)
+            return
         key = conversation_id or scope.id
         if not self._buffers.get(key):
             return
         if not self._extraction.gates(scope).can_store:
-            self._buffers.pop(key, None)
-            self._summary_buffers.pop(key, None)
+            self._drop_buffers(key)
             return
         self._schedule(scope, key, self._watermarks.get(key, 0), event)
+
+    def _drop_buffers(self, key: str) -> None:
+        if not key:
+            return
+        self._buffers.pop(key, None)
+        self._watermarks.pop(key, None)
+        self._summary_buffers.pop(key, None)
+        self._last_activity.pop(key, None)
 
     def _candidate_notifier(self, event: Any) -> CandidateNotifier | None:
         notifier = self._notifier

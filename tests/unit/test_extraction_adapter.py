@@ -158,6 +158,27 @@ def test_capture_passes_candidate_notification_to_host():
     assert candidates[0].id == "c1"
 
 
+def test_capture_clears_buffers_when_scope_is_missing():
+    extraction = FakeExtraction()
+    scopes = FakeScopes(None)
+
+    async def run():
+        capture = AstrBotExtractionCapture(scopes, extraction)
+        key = "astrbot:FriendMessage:session-1"
+        capture._buffers[key] = [("old", "旧消息")]
+        capture._watermarks[key] = 1
+        capture._summary_buffers[key] = ["旧消息"]
+        capture._last_activity[key] = 1.0
+        await capture.capture(FakeEvent("新消息"))
+        assert key not in capture._buffers
+        assert key not in capture._watermarks
+        assert key not in capture._summary_buffers
+        assert key not in capture._last_activity
+        await capture.close()
+
+    asyncio.run(run())
+
+
 def test_parse_summary_response_accepts_object_and_rejects_sensitive_or_empty():
     assert parse_summary_response(
         '{"summary":"用户讨论了咖啡偏好","confidence":0.9}',

@@ -26,8 +26,14 @@ _QUESTION_TAIL = re.compile(r"[?？]\s*$|(?:吗|呢)\s*$")
 _VAGUE_REFERENCE = re.compile(
     r"他(?!们)|她(?!们)|它(?!们)|这个|那个|这些|那些|上面|刚才|之前说|上述"
 )
+_THIRD_PARTY = re.compile(
+    r"我(?:朋友|同事|同学|老师|老板|家人|妈妈|爸爸|哥哥|姐姐|弟弟|妹妹|"
+    r"儿子|女儿|老婆|老公|对象|室友|邻居)"
+)
+_NEGATION = re.compile(r"不|没|没有|别|勿|未|非|无")
 _SENTENCE_SPLIT = re.compile(r"[。！？!?；;\n]+")
 _HIGH_RISK_CATEGORIES = frozenset({"credential", "id_number", "bank_card", "address"})
+HIGH_RISK_CATEGORIES = _HIGH_RISK_CATEGORIES
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,19 +50,33 @@ def similarity(left: str, right: str) -> float:
     ).ratio()
 
 
-def is_explicit_first_person(messages: tuple[str, ...]) -> bool:
-    """True when some declarative sentence is an explicit first-person statement."""
+def explicit_first_person_sentences(messages: tuple[str, ...]) -> tuple[str, ...]:
+    """Declarative first-person sentences that may support a personal fact."""
+    found: list[str] = []
     for message in messages:
         for sentence in _SENTENCE_SPLIT.split(message):
             text = sentence.strip()
             if not text or not _FIRST_PERSON.search(text):
                 continue
+            if _THIRD_PARTY.search(text):
+                continue
             if _QUESTION_TAIL.search(text) or _REQUEST.search(text):
                 continue
             if _HYPOTHETICAL.search(text) or _UNCERTAIN.search(text):
                 continue
-            return True
-    return False
+            found.append(text)
+    return tuple(found)
+
+
+def is_explicit_first_person(messages: tuple[str, ...]) -> bool:
+    return bool(explicit_first_person_sentences(messages))
+
+
+def has_polarity_mismatch(left: str, right: str) -> bool:
+    """A negation flip means the two sentences are not the same fact."""
+    left_text = normalize_content(left)
+    right_text = normalize_content(right)
+    return bool(_NEGATION.search(left_text)) != bool(_NEGATION.search(right_text))
 
 
 def has_support(candidate: ExtractionCandidate, messages: tuple[str, ...]) -> bool:
@@ -82,6 +102,8 @@ def has_conflict(
         score = similarity(candidate.content, active.content)
         if score < CONFLICT_SIMILARITY:
             continue
+        if has_polarity_mismatch(candidate.content, active.content):
+            return True
         if consolidation_similarity > 0 and score >= consolidation_similarity:
             continue
         return True
@@ -102,7 +124,7 @@ def should_auto_commit(
         return AutoCommitDecision(
             False, "no_explicit_statement", "no declarative first-person sentence",
         )
-    if not has_support(candidate, messages):
+    if not has_support(candidate, explicit_first_person_sentences(messages)):
         return AutoCommitDecision(False, "insufficient_support", "not grounded")
     if has_vague_reference(candidate):
         return AutoCommitDecision(False, "vague_reference", "unresolved reference")

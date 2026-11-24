@@ -17,7 +17,7 @@ from ..core.model import (
     SourceType,
 )
 from ..core.normalization import normalize_content
-from ..core.policy.auto_commit import similarity
+from ..core.policy.auto_commit import has_polarity_mismatch, similarity
 from ..core.policy.dedup import DedupKey
 from ..core.ports import Clock, IdGenerator, MemoryStore
 from .consent_service import ConsentService, PersonalConsentType
@@ -94,6 +94,8 @@ class MemoryApplicationService:
         )
         for memory in rows:
             if memory.memory_type is not memory_type:
+                continue
+            if has_polarity_mismatch(content, memory.content):
                 continue
             if similarity(content, memory.content) >= self._consolidation_similarity:
                 return memory

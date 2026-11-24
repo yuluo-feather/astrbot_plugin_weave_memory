@@ -33,7 +33,9 @@ from ..core.model import (
 )
 from ..core.normalization import normalize_content
 from ..core.policy.auto_commit import (
+    HIGH_RISK_CATEGORIES,
     AutoCommitDecision,
+    has_polarity_mismatch,
     should_auto_commit,
     similarity,
 )
@@ -382,10 +384,14 @@ class ExtractionService:
             "summary_range": {"from": window.watermark, "to": window.watermark},
             "importance": _SUMMARY_IMPORTANCE,
         }
+        sensitive: set[str] = set(detect_sensitive_categories(candidate.content))
+        for message in window.messages:
+            sensitive |= detect_sensitive_categories(message)
         commit = (
             self._auto_commit_enabled
             and candidate.confidence is not None
             and candidate.confidence >= self._auto_commit_confidence
+            and not (sensitive & HIGH_RISK_CATEGORIES)
         )
         try:
             if commit:
@@ -534,11 +540,18 @@ class ExtractionService:
     def _active_same_type(
         self, scope: Scope, memory_type: MemoryType, now: datetime,
     ) -> tuple[MemoryEntity, ...]:
-        rows, _total = self._store.list_active_page(
-            scope_id=scope.id, subject_id=scope.identity.subject_id,
-            limit=50, offset=0, memory_type=memory_type, at=now,
-        )
-        return rows
+        rows: list[MemoryEntity] = []
+        offset = 0
+        while offset < 1000:
+            page, total = self._store.list_active_page(
+                scope_id=scope.id, subject_id=scope.identity.subject_id,
+                limit=100, offset=offset, memory_type=memory_type, at=now,
+            )
+            rows.extend(page)
+            offset += len(page)
+            if not page or offset >= total:
+                break
+        return tuple(rows)
 
     def _consolidation_target(
         self, candidate: ExtractionCandidate,
@@ -548,6 +561,8 @@ class ExtractionService:
             return None
         for active in active_memories:
             if active.memory_type is not candidate.memory_type:
+                continue
+            if has_polarity_mismatch(candidate.content, active.content):
                 continue
             if similarity(candidate.content, active.content) >= self._consolidation_similarity:
                 return active

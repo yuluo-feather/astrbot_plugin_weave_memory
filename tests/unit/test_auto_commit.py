@@ -14,6 +14,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.normalization import (
 )
 from data.plugins.astrbot_plugin_weave_memory.core.policy.auto_commit import (
     has_conflict,
+    has_polarity_mismatch,
     is_explicit_first_person,
     should_auto_commit,
     similarity,
@@ -93,3 +94,18 @@ def test_conflict_and_near_duplicate_are_distinguished():
     near = (_active("用户喜欢喝黑咖啡"),)
     assert not has_conflict(duplicate, near, consolidation_similarity=0.9)
     assert similarity("用户喜欢黑咖啡", "用户喜欢喝黑咖啡") >= 0.9
+
+
+def test_polarity_flip_is_a_conflict_not_a_duplicate():
+    candidate = _candidate("用户不喜欢猫")
+    existing = (_active("用户喜欢猫"),)
+    assert has_polarity_mismatch("用户喜欢猫", "用户不喜欢猫")
+    assert similarity("用户喜欢猫", "用户不喜欢猫") >= 0.9
+    assert has_conflict(candidate, existing, consolidation_similarity=0.9)
+    assert not _decide(candidate, ("我不喜欢猫",), existing).commit
+
+
+def test_third_party_sentence_cannot_support_personal_fact():
+    messages = ("我喜欢咖啡。我朋友住在杭州。",)
+    assert not is_explicit_first_person(("我朋友住在杭州",))
+    assert not _decide(_candidate("用户住在杭州"), messages).commit

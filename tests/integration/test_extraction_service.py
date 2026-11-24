@@ -157,6 +157,27 @@ def _active(store: SQLiteMemoryStore, scope: Scope, content: str, memory_type=Me
     return memory
 
 
+def _seed_active(store, scope: Scope, content: str, index: int,
+                 memory_type=MemoryType.PREFERENCE) -> MemoryEntity:
+    memory_id = f"seed-{index}"
+    memory = MemoryEntity(
+        id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        memory_type=memory_type, content=content,
+        normalized_content=normalize_content(content), status=MemoryStatus.ACTIVE,
+        source_type=SourceType.EXPLICIT, current_revision=1,
+        created_at=NOW, updated_at=NOW,
+    )
+    revision = MemoryRevision(
+        memory_id + "-r1", memory_id, 1, content, MemoryStatus.ACTIVE, NOW, "seed",
+    )
+    source = MemorySource(
+        memory_id + "-s1", memory_id, SourceType.EXPLICIT,
+        OperatorType.USER, "u1", NOW,
+    )
+    store.create(memory, revision, source)
+    return memory
+
+
 def test_extraction_requires_all_consent_layers(extraction_stack):
     stack = extraction_stack
     assert _submit(stack, "我喜欢黑咖啡") is None
@@ -668,6 +689,44 @@ def test_summary_is_candidate_when_direct_write_disabled(extraction_stack):
     candidates, total = asyncio.run(service.list_candidates(stack["scope"]))
     assert total == 1
     assert candidates[0].metadata["summary"] is True
+
+
+def test_conflict_detection_pages_past_first_fifty_active_memories(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    for index in range(55):
+        _seed_active(stack["store"], stack["scope"], f"用户喜欢饮品{index}", index)
+    _seed_active(stack["store"], stack["scope"], "用户喜欢黑咖啡", 55)
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢绿茶", confidence=0.9),
+    )
+    _submit(stack, "我喜欢绿茶")
+    candidates, total = asyncio.run(
+        stack["service"].list_candidates(stack["scope"]),
+    )
+    assert total == 1
+    assert candidates[0].content == "用户喜欢绿茶"
+
+
+def test_summary_with_high_risk_category_stays_candidate(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["consent"].grant(
+        stack["scope"], ExtractionConsentType.SENSITIVE_CATEGORIES,
+        operator_id="u1", metadata={"categories": ["credential"]},
+    )
+    stack["extractor"].summary_candidate = ExtractionCandidate(
+        MemoryType.EVENT, "用户提到密码是 hunter2", confidence=0.99,
+    )
+    job = asyncio.run(stack["service"].submit_summary(
+        stack["scope"], conversation_id="conv-1",
+        messages=("我的密码是 hunter2",), watermark=1,
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )[1] == 0
+    assert asyncio.run(stack["service"].list_candidates(stack["scope"]))[1] == 1
 
 
 def test_summary_without_content_succeeds_without_memory(extraction_stack):
