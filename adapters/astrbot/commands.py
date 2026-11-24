@@ -130,6 +130,7 @@ class AstrBotMemoryCommands:
             "/织忆 更新 <记忆ID> <当前revision> <新内容> —— 显式修订指定记忆\n"
             "/织忆 列表 —— 查看已保存记忆\n"
             "/织忆 查询 <问题> —— 主动检索记忆\n"
+            "/织忆 检索调试 <问题> —— 查看通道/重排/预算明细\n"
             "/织忆 状态 —— 查看个人空间、授权和索引状态\n"
             "/织忆 统计 —— 查看记忆数量分布\n"
             "/织忆 操作记录 —— 查看不含正文的操作审计\n"
@@ -508,6 +509,73 @@ class AstrBotMemoryCommands:
         await self._recall.record_access(tuple(item.id for item in memories), scope)
         lines = [f"[{item.memory_type.value}] {item.content}（{item.id}）" for item in memories]
         result = "检索到的个人记忆：\n" + "\n".join(lines) + self._take_notice(event)
+        self._recall.record_diagnostics(
+            trace, injected_ids=tuple(item.id for item in memories),
+            estimated_tokens=estimate_tokens(result),
+        )
+        return result
+
+    async def retrieval_debug(self, event: Any) -> str:
+        query = tail_after_command(event, "检索调试")
+        if not query:
+            return "用法：/织忆 检索调试 <问题>"
+        scope = self._scope(event)
+        memories, trace = self._recall.recall_with_trace(query, scope)
+        lines: list[str] = []
+        channels = getattr(trace, "channels", None)
+        if channels is not None:
+            for channel in channels:
+                line = (
+                    f"- {channel.name}: enabled={channel.enabled} ok={channel.ok} "
+                    f"candidates={len(channel.candidates)} ms={channel.latency_ms}"
+                )
+                if channel.degraded:
+                    line += f" degraded=true error={channel.error_code}"
+                lines.append(line)
+            rerank = trace.rerank or {}
+            line = (
+                f"- rerank: enabled={rerank.get('enabled')} "
+                f"provider={rerank.get('provider')} model={rerank.get('model')} "
+                f"candidates={len(rerank.get('candidates') or [])}"
+            )
+            if rerank.get("skipped"):
+                line += f" skipped={rerank['skipped']}"
+            if rerank.get("degraded"):
+                line += " degraded=true"
+            lines.append(line)
+            final = trace.final or {}
+            lines.append(
+                f"- final: selected={len(final.get('selected_ids') or [])} "
+                f"tokens={final.get('estimated_tokens')} "
+                f"latency_total={trace.latency_ms.get('total')}ms",
+            )
+        else:
+            candidates = getattr(trace, "candidates", ()) or ()
+            reasons: dict[str, int] = {}
+            for item in candidates:
+                reason = str(
+                    item.get("filter_reason") or item.get("reason") or "eligible",
+                )
+                reasons[reason] = reasons.get(reason, 0) + 1
+            lines.append(
+                f"- FTS: candidates={len(candidates)} "
+                f"result={len(getattr(trace, 'result_ids', ()) or ())}",
+            )
+            if reasons:
+                lines.append(
+                    "- filters: "
+                    + ", ".join(f"{key}={value}" for key, value in sorted(reasons.items())),
+                )
+            lines.append("- rerank: enabled=false")
+            lines.append("- final: selected=0 tokens=0")
+        lines.append("结果：")
+        lines.extend(
+            f"  [{item.memory_type.value}] {item.content}（{item.id}）"
+            for item in memories
+        )
+        if not memories:
+            lines.append("  （无）")
+        result = "检索调试：\n" + "\n".join(lines)
         self._recall.record_diagnostics(
             trace, injected_ids=tuple(item.id for item in memories),
             estimated_tokens=estimate_tokens(result),
