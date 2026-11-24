@@ -26,26 +26,58 @@ def _is_too_large(exc: BaseException) -> bool:
 
 
 class AstrBotEmbeddingProvider(EmbeddingProvider):
-    """Resolves the host provider per call so plugin load order does not matter."""
+    """Resolves the host provider per call so plugin load order does not matter.
 
-    def __init__(self, context: Any, provider_id: str, model: str = "",
+    An empty id means "use the host's first embedding provider"; a configured
+    id is strict and never falls back to a different model.
+    """
+
+    def __init__(self, context: Any, provider_id: str = "", model: str = "",
                  *, batch_size: int = 50) -> None:
-        self.provider_id = provider_id.strip()
-        if not self.provider_id:
-            raise IndexNotConfigured("embedding_provider_id is empty")
         self._context = context
+        self._provider_id = provider_id.strip()
         self._model_override = model.strip()
         self._batch_size = max(1, int(batch_size))
 
     def resolve(self) -> Any | None:
-        resolver = getattr(self._context, "get_provider_by_id", None)
-        provider = resolver(self.provider_id) if callable(resolver) else None
+        if self._provider_id:
+            resolver = getattr(self._context, "get_provider_by_id", None)
+            provider = resolver(self._provider_id) if callable(resolver) else None
+            return provider if self._is_embedding_provider(provider) else None
+        for getter_name in ("get_all_embedding_providers", "get_all_providers"):
+            getter = getattr(self._context, getter_name, None)
+            if not callable(getter):
+                continue
+            try:
+                values = getter() or []
+            except Exception:  # noqa: BLE001 - host API variance
+                values = []
+            for candidate in values:
+                if self._is_embedding_provider(candidate):
+                    return candidate
+        return None
+
+    @staticmethod
+    def _is_embedding_provider(provider: Any) -> bool:
         if provider is None:
-            return None
-        if not (callable(getattr(provider, "get_embedding", None))
-                or callable(getattr(provider, "get_embeddings", None))):
-            return None
-        return provider
+            return False
+        return callable(getattr(provider, "get_embedding", None)) or callable(
+            getattr(provider, "get_embeddings", None),
+        )
+
+    @property
+    def provider_id(self) -> str:
+        if self._provider_id:
+            return self._provider_id
+        provider = self.resolve()
+        if provider is None:
+            return "<auto>"
+        config = getattr(provider, "provider_config", None)
+        if isinstance(config, dict):
+            value = config.get("id")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return str(getattr(provider, "provider_id", "") or "<auto>")
 
     def _require(self) -> Any:
         provider = self.resolve()

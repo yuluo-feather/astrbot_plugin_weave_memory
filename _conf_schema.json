@@ -199,7 +199,7 @@
     "description": "Embedding Provider ID",
     "type": "string",
     "default": "",
-    "hint": "留空表示 local-only/关闭向量。必须填写 AstrBot 已注册的 embedding provider ID。"
+    "hint": "留空时自动使用宿主第一个已注册的 embedding provider；填写后只认该 ID，不可用则保持 FTS。"
   },
   "embedding_model": {
     "description": "Embedding 模型",

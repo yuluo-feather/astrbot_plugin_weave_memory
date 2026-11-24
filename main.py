@@ -175,10 +175,14 @@ class WeaveMemoryPlugin(Star):
             provider_audit: SQLiteProviderCallAudit | None = None
             if (
                 provider_config.embedding_provider_id
+                or provider_config.vector_index_enabled
                 or provider_config.rerank_enabled
             ):
                 provider_audit = SQLiteProviderCallAudit(self._database)
-            if provider_config.embedding_provider_id:
+            if (
+                provider_config.embedding_provider_id
+                or provider_config.vector_index_enabled
+            ):
                 try:
                     provider = AstrBotEmbeddingProvider(
                         self.context, provider_config.embedding_provider_id,

@@ -171,6 +171,7 @@ Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal S
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
+| `embedding_provider_id` | str | `""` | 主 Embedding Provider；留空时自动使用宿主第一个已注册的 embedding provider。 |
 | `auto_enroll` | bool | `true` | Personal 记忆默认登记。默认 opt-out：新用户首次私聊自动登记并告知，可随时撤销。设为 `false` 回到严格 opt-in，用户需发送 `/织忆 授权`。已有授权/撤销记录不会被改写。 |
 | `agent_write_enabled` | bool | `true` | 控制 Agent 记忆写入工具开关。开启后 `weave_memory_remember/update` 可写入；来源记录插件侧 `evidence_ref`（message/session + 内容哈希）与工具 metadata，不冒充宿主 `tool_call_id`。 |
 | `group_admin_ids` | object | `{}` | 群管理员回退配置。键为 `platform\|tenant_id\|group_id`，值为管理员 ID 数组；仅在平台无法解析群主/管理员角色时使用。键必须精确匹配平台、平台实例与群 ID，避免跨群/跨实例复用。 |
