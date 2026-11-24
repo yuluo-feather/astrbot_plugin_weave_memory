@@ -32,6 +32,11 @@ from ..core.model import (
     SourceType,
 )
 from ..core.normalization import normalize_content
+from ..core.policy.auto_commit import (
+    AutoCommitDecision,
+    should_auto_commit,
+    similarity,
+)
 from ..core.policy.dedup import DedupKey
 from ..core.ports import (
     Clock,
@@ -44,10 +49,13 @@ from ..core.ports import (
 from .consent_service import ConsentService, PersonalConsentType
 from .extraction_gates import ExtractionGates, resolve_gates
 from .lifecycle_service import LifecycleService
-from .sensitive_filter import scan_sensitive
+from .sensitive_filter import detect_sensitive_categories, scan_sensitive
 from .write_coordinator import WriteCoordinator
 
 _ALLOWED_TYPES = (MemoryType.PREFERENCE, MemoryType.FACT, MemoryType.EVENT)
+_DIRECT_IMPORTANCE = 0.7
+_CANDIDATE_IMPORTANCE = 0.5
+_CONFIRMED_IMPORTANCE = 0.8
 CandidateNotifier = Callable[[tuple[MemoryEntity, ...]], Awaitable[None]]
 
 
@@ -110,6 +118,9 @@ class ExtractionService:
         global_enabled: bool = False, max_retries: int = 3,
         timeout_seconds: float = 30.0, queue_size: int = 100,
         candidate_ttl_days: int = 7, rejected_keep_body: bool = False,
+        auto_commit_enabled: bool = True,
+        auto_commit_confidence: float = 0.8,
+        consolidation_similarity: float = 0.9,
     ) -> None:
         self._store = store
         self._jobs = jobs
@@ -126,6 +137,11 @@ class ExtractionService:
         self._queue_size = max(1, queue_size)
         self._candidate_ttl_days = max(1, candidate_ttl_days)
         self._rejected_keep_body = rejected_keep_body
+        self._auto_commit_enabled = auto_commit_enabled
+        self._auto_commit_confidence = min(1.0, max(0.0, auto_commit_confidence))
+        self._consolidation_similarity = min(
+            1.0, max(0.0, consolidation_similarity),
+        )
 
     def gates(self, scope: Scope) -> ExtractionGates:
         return resolve_gates(
@@ -232,6 +248,11 @@ class ExtractionService:
             latest = self._jobs.get(job.id)
             if latest.status is ExtractionJobStatus.CANCELLED:
                 return latest
+            if not self.gates(scope).can_store:
+                return self._finish(
+                    current, ExtractionJobStatus.FAILED,
+                    last_error="consent_revoked",
+                )
             try:
                 async with asyncio.timeout(self._timeout):
                     candidates = await self._extractor.extract(
@@ -241,8 +262,8 @@ class ExtractionService:
                 latest = self._jobs.get(job.id)
                 if latest.status is ExtractionJobStatus.CANCELLED:
                     return latest
-                created_any, skipped_any, created = await self._materialize(
-                    scope, job.id, candidates,
+                created_any, skipped_any, created, committed = await self._materialize(
+                    scope, job.id, candidates, window.messages,
                 )
                 break
             except (AuthorizationDenied, ValidationError) as exc:
@@ -271,7 +292,7 @@ class ExtractionService:
                 await on_candidates(created)
             except Exception:  # Notification failure must not fail the job.
                 pass
-        if created_any:
+        if created_any or committed:
             return self._finish(current, ExtractionJobStatus.SUCCEEDED)
         if skipped_any:
             return self._finish(current, ExtractionJobStatus.SKIPPED_DUPLICATE_ACTIVE)
@@ -292,9 +313,11 @@ class ExtractionService:
 
     async def _materialize(
         self, scope: Scope, job_id: str, candidates: tuple[ExtractionCandidate, ...],
-    ) -> tuple[bool, bool, tuple[MemoryEntity, ...]]:
+        messages: tuple[str, ...],
+    ) -> tuple[bool, bool, tuple[MemoryEntity, ...], int]:
         created_any = False
         skipped_any = False
+        committed = 0
         created: list[MemoryEntity] = []
         now = self._clock.now()
         for candidate in candidates:
@@ -313,14 +336,113 @@ class ExtractionService:
             if self._store.find_candidate_duplicate(key) is not None:
                 skipped_any = True
                 continue
+            active_memories = self._active_same_type(scope, candidate.memory_type, now)
+            target = self._consolidation_target(candidate, active_memories)
+            if target is not None:
+                await self._merge_duplicate(scope, candidate, job_id, now, target)
+                skipped_any = True
+                continue
+            decision = self._auto_commit_decision(
+                candidate, messages, active_memories,
+            )
             try:
+                if decision.commit:
+                    await self._create_active(scope, candidate, job_id, now, decision)
+                    committed += 1
+                    continue
                 memory = await self._create_candidate(scope, candidate, job_id, now)
             except Conflict:
                 skipped_any = True
                 continue
             created.append(memory)
             created_any = True
-        return created_any, skipped_any, tuple(created)
+        return created_any, skipped_any, tuple(created), committed
+
+    def _active_same_type(
+        self, scope: Scope, memory_type: MemoryType, now: datetime,
+    ) -> tuple[MemoryEntity, ...]:
+        rows, _total = self._store.list_active_page(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            limit=50, offset=0, memory_type=memory_type, at=now,
+        )
+        return rows
+
+    def _consolidation_target(
+        self, candidate: ExtractionCandidate,
+        active_memories: tuple[MemoryEntity, ...],
+    ) -> MemoryEntity | None:
+        if self._consolidation_similarity <= 0:
+            return None
+        for active in active_memories:
+            if active.memory_type is not candidate.memory_type:
+                continue
+            if similarity(candidate.content, active.content) >= self._consolidation_similarity:
+                return active
+        return None
+
+    def _auto_commit_decision(
+        self, candidate: ExtractionCandidate, messages: tuple[str, ...],
+        active_memories: tuple[MemoryEntity, ...],
+    ) -> AutoCommitDecision:
+        if not self._auto_commit_enabled:
+            return AutoCommitDecision(False, "auto_commit_disabled", "mode is candidate-only")
+        return should_auto_commit(
+            candidate, messages, active_memories,
+            confidence_threshold=self._auto_commit_confidence,
+            consolidation_similarity=self._consolidation_similarity,
+            sensitive_detected=detect_sensitive_categories(candidate.content),
+        )
+
+    async def _merge_duplicate(
+        self, scope: Scope, candidate: ExtractionCandidate, job_id: str,
+        now: datetime, target: MemoryEntity,
+    ) -> MemoryEntity:
+        """Fold a near-duplicate arrival into the existing ACTIVE memory."""
+        score = similarity(candidate.content, target.content)
+        sources = list(target.metadata.get("merged_sources", []))
+        marker = f"extraction_job:{job_id}"
+        if marker not in sources:
+            sources.append(marker)
+        updated = replace(
+            target,
+            current_revision=target.current_revision + 1,
+            updated_at=now,
+            metadata={
+                **dict(target.metadata),
+                "merged_sources": sources,
+                "last_merged_at": now.isoformat(),
+            },
+        )
+        revision = MemoryRevision(
+            id=self._ids.new_id("revision"), memory_id=target.id,
+            revision=updated.current_revision, content=target.content,
+            status=target.status, changed_at=now,
+            change_reason="near duplicate merge",
+            snapshot={
+                "scope_id": scope.id, "subject_id": scope.identity.subject_id,
+                "memory_type": target.memory_type.value,
+                "source_type": target.source_type.value,
+                "merged_similarity": round(score, 4),
+            },
+        )
+        # A source row must match the survivor's source_type, so the incoming
+        # evidence is kept in metadata/audit instead of a second source row.
+        await self._coordinator.update(
+            updated, expected_revision=target.current_revision,
+            revision=revision, guard=lambda: self._require_store_gate(scope),
+        )
+        self._store.record_operation(
+            operation_id=self._ids.new_id("operation"), scope_id=scope.id,
+            memory_id=target.id, operation_type="MEMORY_MERGE",
+            operator_type=OperatorType.SYSTEM, operator_id="extraction_service",
+            occurred_at=now,
+            metadata={
+                "source_job_id": job_id,
+                "similarity": round(score, 4),
+                "result": "SUCCESS",
+            },
+        )
+        return updated
 
     async def _create_candidate(
         self, scope: Scope, candidate: ExtractionCandidate, job_id: str,
@@ -331,6 +453,9 @@ class ExtractionService:
         metadata = {
             "extraction_job_id": job_id,
             "confidence": candidate.confidence,
+            "auto": True,
+            "direct_write": False,
+            "importance": _CANDIDATE_IMPORTANCE,
         }
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
@@ -364,6 +489,67 @@ class ExtractionService:
         await self._coordinator.create(
             memory, revision, source,
             guard=lambda: self._require_store_gate(scope),
+        )
+        return memory
+
+    async def _create_active(
+        self, scope: Scope, candidate: ExtractionCandidate, job_id: str,
+        now: datetime, decision: AutoCommitDecision,
+    ) -> MemoryEntity:
+        memory_id = self._ids.new_id("memory")
+        normalized = normalize_content(candidate.content)
+        metadata = {
+            "extraction_job_id": job_id,
+            "confidence": candidate.confidence,
+            "auto": True,
+            "direct_write": True,
+            "commit_rule": decision.rule,
+            "importance": _DIRECT_IMPORTANCE,
+        }
+        memory = MemoryEntity(
+            id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+            memory_type=candidate.memory_type, content=candidate.content,
+            normalized_content=normalized, status=MemoryStatus.ACTIVE,
+            source_type=SourceType.INFERRED, current_revision=1,
+            created_at=now, updated_at=now, metadata=metadata,
+        )
+        revision = MemoryRevision(
+            id=self._ids.new_id("revision"), memory_id=memory_id, revision=1,
+            content=candidate.content, status=MemoryStatus.ACTIVE,
+            changed_at=now, change_reason=f"auto commit: {decision.rule}",
+            snapshot={
+                "scope_id": scope.id, "subject_id": scope.identity.subject_id,
+                "memory_type": candidate.memory_type.value,
+                "source_type": SourceType.INFERRED.value,
+                "commit_rule": decision.rule,
+            },
+        )
+        source = MemorySource(
+            id=self._ids.new_id("source"), memory_id=memory_id,
+            source_type=SourceType.INFERRED, operator_type=OperatorType.SYSTEM,
+            operator_id="extraction_service", captured_at=now,
+            evidence_ref=f"extraction_job:{job_id}",
+            metadata={
+                "source_message_ids": list(candidate.source_message_ids),
+                "confidence": candidate.confidence,
+                "commit_rule": decision.rule,
+            },
+        )
+        await self._coordinator.create(
+            memory, revision, source,
+            guard=lambda: self._require_store_gate(scope),
+        )
+        self._store.record_operation(
+            operation_id=self._ids.new_id("operation"), scope_id=scope.id,
+            memory_id=memory_id, operation_type="AUTO_COMMIT",
+            operator_type=OperatorType.SYSTEM, operator_id="extraction_service",
+            occurred_at=now,
+            metadata={
+                "commit_rule": decision.rule,
+                "confidence": candidate.confidence,
+                "importance": _DIRECT_IMPORTANCE,
+                "result": "SUCCESS",
+            },
         )
         return memory
 
@@ -424,6 +610,10 @@ class ExtractionService:
             raise Conflict("only CANDIDATE memories can be confirmed")
         if memory.current_revision != expected_revision:
             raise Conflict("revision conflict")
+        memory = replace(
+            memory,
+            metadata={**dict(memory.metadata), "importance": _CONFIRMED_IMPORTANCE},
+        )
         now = self._clock.now()
         operation = MemoryOperation(
             id=self._ids.new_id("operation"), scope_id=scope.id,

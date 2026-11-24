@@ -11,11 +11,47 @@
     "default": true,
     "hint": "控制 Agent 写入入口；来源记录 message/session + 内容哈希与工具 metadata，不冒充宿主 tool_call_id。requested_persistence=false 时不写库；命令入口始终可用。"
   },
-  "extraction_enabled": {
-    "description": "V1.5 私聊自动提取总开关（默认关闭）",
+  "auto_memory_enabled": {
+    "description": "V1.9 自动沉淀总开关（默认开启）",
     "type": "bool",
-    "default": false,
-    "hint": "总开关关闭时不捕获、不调用模型。即使开启，仍需用户逐项授权 capture / auto_extract / external_model / store_candidate；群聊永不捕获。"
+    "default": true,
+    "hint": "开启后无需命令即可捕获、提取并沉淀个人记忆；关闭后停止捕获/提取/候选，且不再注入自动沉淀的记忆。用户显式保存、Agent 工具与导入的记忆仍会注入；完整停用仍用 /织忆 关闭。群聊永不捕获。"
+  },
+  "auto_commit_enabled": {
+    "description": "高置信度直写 ACTIVE（关闭即“仅候选”）",
+    "type": "bool",
+    "default": true,
+    "hint": "开启时，满足确定性规则的高置信度事实/偏好直接写入 ACTIVE；关闭后所有提取结果都进入候选，需用户确认。"
+  },
+  "auto_commit_confidence": {
+    "description": "直写最低模型置信度",
+    "type": "float",
+    "default": 0.8,
+    "hint": "只是必要条件：还需通过第一人称陈述、稳定属性、无冲突、词面支撑与敏感过滤。低于该值一律进入候选。"
+  },
+  "importance_half_life_days": {
+    "description": "重要性排序半衰期（天）；0 表示关闭衰减",
+    "type": "int",
+    "default": 90,
+    "hint": "只影响检索排序，不删除、不过滤记忆；关闭时排序与上一版一致。"
+  },
+  "consolidation_similarity": {
+    "description": "近重复合并阈值（0 表示关闭）",
+    "type": "float",
+    "default": 0.9,
+    "hint": "同作用域、同类型且正文相似度达到该值的 ACTIVE 记忆会把新来源折叠进现有记忆，保留来源与审计；不物理删除。"
+  },
+  "summary_interval_rounds": {
+    "description": "阶段总结的轮次阈值",
+    "type": "int",
+    "default": 10,
+    "hint": "同一会话累计达到该条数的用户消息后生成一次阶段总结；总结作为 EVENT + INFERRED 记忆或候选。"
+  },
+  "summary_idle_minutes": {
+    "description": "阶段总结的空闲阈值（分钟）；0 表示关闭空闲触发",
+    "type": "int",
+    "default": 30,
+    "hint": "距上次活动超过该时长后的下一次活动触发总结；惰性判断，不引入常驻定时器。"
   },
   "extraction_max_retries": {
     "description": "提取任务失败重试上限",

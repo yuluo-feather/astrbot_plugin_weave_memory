@@ -952,3 +952,22 @@ def test_prune_operations_removes_only_rows_older_than_cutoff(app_stack):
     )
     assert total == 1
     assert [item["id"] for item in operations] == ["op-new"]
+
+
+def test_importance_decay_keeps_recall_set(app_stack):
+    _, store, index, scopes, consent, memories, _, coordinator = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(
+        scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1",
+    )
+    asyncio.run(memories.save_explicit(scope, "我喜欢黑咖啡", operator_id="u1"))
+    asyncio.run(memories.save_explicit(scope, "我喜欢绿茶", operator_id="u1"))
+    baseline = RecallService(store, index, consent, FixedClock(), coordinator, store)
+    decayed = RecallService(
+        store, index, consent, FixedClock(), coordinator, store,
+        importance_half_life_days=90,
+    )
+    baseline_ids = [memory.id for memory in baseline.recall("喜欢", scope)]
+    decayed_ids = [memory.id for memory in decayed.recall("喜欢", scope)]
+    assert len(baseline_ids) == 2
+    assert set(decayed_ids) == set(baseline_ids)

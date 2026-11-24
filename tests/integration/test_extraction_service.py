@@ -171,6 +171,7 @@ def test_missing_external_model_blocks_extract_without_rewriting_consent(extract
         ExtractionConsentType.STORE_CANDIDATE,
     ):
         consent.grant(scope, consent_type, operator_id="u1")
+    consent.revoke(scope, ExtractionConsentType.EXTERNAL_MODEL, operator_id="u1")
     assert _submit(stack, "我喜欢黑咖啡") is None
     assert stack["extractor"].calls == []
     assert consent.is_granted(scope, ExtractionConsentType.AUTO_EXTRACT) is True
@@ -208,7 +209,7 @@ def test_candidate_is_inferred_not_searchable_until_confirmed(extraction_stack):
     stack = extraction_stack
     _grant_all(stack["consent"], stack["scope"])
     stack["extractor"].candidates = (
-        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡", confidence=0.8),
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡", confidence=0.5),
     )
     job = _submit(stack, "我喜欢黑咖啡")
     assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
@@ -423,6 +424,34 @@ def test_explicit_save_rejects_same_content_candidate_with_friendly_message(extr
         ))
 
 
+def test_revoked_consent_before_model_call_marks_job_failed(extraction_stack):
+    stack = extraction_stack
+    scope = stack["scope"]
+    _grant_all(stack["consent"], scope)
+    now = stack["clock"].now()
+    job = ExtractionJob(
+        id="job-revoked", platform="astrbot", tenant_id="default",
+        scope_id=scope.id, subject_id="u1", conversation_id="conv-1",
+        watermark=1, content_hash="hash-1",
+        status=ExtractionJobStatus.PENDING, attempts=0,
+        created_at=now, updated_at=now,
+    )
+    stack["jobs"].create_or_get(job)
+    stack["consent"].revoke(
+        scope, ExtractionConsentType.CAPTURE, operator_id="u1",
+    )
+    window = ExtractionWindow(
+        scope_id=scope.id, subject_id="u1", conversation_id="conv-1",
+        watermark=1, content_hash="hash-1", messages=("我喜欢黑咖啡",),
+    )
+    result = asyncio.run(stack["service"]._run(
+        scope, job, window, stack["service"].gates(scope), None,
+    ))
+    assert result.status is ExtractionJobStatus.FAILED
+    assert result.last_error == "consent_revoked"
+    assert stack["extractor"].calls == []
+
+
 def test_cancel_job_stops_further_model_calls(extraction_stack):
     stack = extraction_stack
     scope = stack["scope"]
@@ -452,3 +481,138 @@ def test_cancel_job_stops_further_model_calls(extraction_stack):
 
     with pytest.raises(Conflict):
         stack["service"].cancel_job(scope, "job-cancel", operator_id="u1")
+
+
+def _service_with(stack, **overrides) -> ExtractionService:
+    options = {
+        "store": stack["store"], "jobs": stack["jobs"],
+        "coordinator": stack["coordinator"], "consent": stack["consent"],
+        "scopes": stack["store"], "lifecycle": stack["service"]._lifecycle,
+        "extractor": stack["extractor"], "clock": stack["clock"],
+        "ids": stack["ids"], "global_enabled": True,
+    }
+    options.update(overrides)
+    return ExtractionService(**options)
+
+
+def test_default_grants_enable_extraction_without_explicit_consents(extraction_stack):
+    stack = extraction_stack
+    stack["consent"].grant(
+        stack["scope"], PersonalConsentType.PERSONAL_MEMORY, operator_id="u1",
+    )
+    job = _submit(stack, "我喜欢黑咖啡")
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert len(stack["extractor"].calls) == 1
+    gates = stack["service"].gates(stack["scope"])
+    assert gates.capture_consent and gates.auto_extract_consent
+    assert gates.store_candidate_consent and gates.external_model_consent
+
+
+def test_explicit_revoke_beats_default_grant(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["consent"].revoke(
+        stack["scope"], ExtractionConsentType.CAPTURE, operator_id="u1",
+    )
+    assert _submit(stack, "我喜欢黑咖啡") is None
+    assert stack["extractor"].calls == []
+
+
+def test_direct_write_creates_active_memory_and_audit(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.FACT, "用户住在杭州", confidence=0.9),
+    )
+    job = _submit(stack, "我住在杭州")
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    rows, total = stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )
+    assert total == 1
+    memory = rows[0]
+    assert memory.status is MemoryStatus.ACTIVE
+    assert memory.source_type is SourceType.INFERRED
+    assert memory.metadata["auto"] is True
+    assert memory.metadata["direct_write"] is True
+    assert memory.metadata["commit_rule"] == "explicit_first_person_stable_attribute"
+    assert stack["index"].search(
+        "杭州", scope_id=stack["scope"].id, subject_id="u1",
+    ) == (memory.id,)
+    operations = stack["store"].db.connection.execute(
+        "SELECT operation_type, metadata_json FROM memory_operations "
+        "WHERE memory_id=? ORDER BY rowid", (memory.id,),
+    ).fetchall()
+    assert [row["operation_type"] for row in operations] == ["AUTO_COMMIT"]
+    assert "杭州" not in operations[0]["metadata_json"]
+
+
+def test_event_and_low_confidence_stay_candidates(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.EVENT, "用户今天去了杭州", confidence=0.9),
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡", confidence=0.5),
+    )
+    _submit(stack, "我今天去了杭州，也喜欢黑咖啡")
+    candidates, total = asyncio.run(
+        stack["service"].list_candidates(stack["scope"]),
+    )
+    assert total == 2
+    assert all(item.status is MemoryStatus.CANDIDATE for item in candidates)
+
+
+def test_conflicting_active_memory_forces_candidate(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    _active(stack["store"], stack["scope"], "用户喜欢黑咖啡")
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢绿茶", confidence=0.9),
+    )
+    _submit(stack, "我喜欢绿茶")
+    candidates, total = asyncio.run(
+        stack["service"].list_candidates(stack["scope"]),
+    )
+    assert total == 1
+    assert candidates[0].metadata["direct_write"] is False
+
+
+def test_near_duplicate_active_memory_is_skipped(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    _active(stack["store"], stack["scope"], "用户喜欢喝黑咖啡")
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡", confidence=0.9),
+    )
+    job = _submit(stack, "我喜欢黑咖啡")
+    assert job is not None
+    assert job.status is ExtractionJobStatus.SKIPPED_DUPLICATE_ACTIVE
+    rows, total = stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )
+    assert total == 1
+    survivor = rows[0]
+    assert survivor.content == "用户喜欢喝黑咖啡"
+    assert survivor.current_revision == 2
+    assert survivor.metadata["merged_sources"] == [f"extraction_job:{job.id}"]
+    operations = stack["store"].db.connection.execute(
+        "SELECT operation_type, metadata_json FROM memory_operations "
+        "WHERE memory_id=? ORDER BY rowid", (survivor.id,),
+    ).fetchall()
+    assert [row["operation_type"] for row in operations] == ["MEMORY_MERGE"]
+    assert "黑咖啡" not in operations[0]["metadata_json"]
+
+
+def test_auto_commit_disabled_is_candidate_only(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.FACT, "用户住在杭州", confidence=0.99),
+    )
+    service = _service_with(stack, auto_commit_enabled=False)
+    job = asyncio.run(service.submit(
+        stack["scope"], conversation_id="conv-1", message_id="msg-1",
+        content="我住在杭州",
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert asyncio.run(service.list_candidates(stack["scope"]))[1] == 1

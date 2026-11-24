@@ -393,12 +393,16 @@ class WeaveMemoryPlugin(Star):
                     include_query=self._config_bool("recall_diagnostics_include_query", False),
                 )
                 diagnostics.cleanup()
+            importance_half_life_days = self._config_non_negative_int(
+                "importance_half_life_days", 90,
+            )
             recall = RecallService(
                 store, index, consent, clock, coordinator, store,
                 diagnostics.write if diagnostics is not None else None,
                 include_query_in_diagnostics=self._config_bool(
                     "recall_diagnostics_include_query", False,
                 ),
+                importance_half_life_days=importance_half_life_days,
             )
             trace_recorder = RetrievalTraceRecorder(
                 diagnostics.write if diagnostics is not None else None,
@@ -463,8 +467,10 @@ class WeaveMemoryPlugin(Star):
                     include_query_text=self._config_bool(
                         "recall_diagnostics_include_query", False,
                     ),
+                    importance_half_life_days=importance_half_life_days,
                 )
                 self._hybrid = hybrid
+            auto_memory_enabled = self._config_bool("auto_memory_enabled", True)
             composer = MemoryContextComposer(
                 hybrid or recall,
                 max_tokens=self._config_int("personal_max_tokens", 384),
@@ -472,6 +478,7 @@ class WeaveMemoryPlugin(Star):
                     "personal_max_memories", 4,
                 ),
                 candidate_limit=self._config_int("personal_candidate_limit", 12),
+                auto_memory_enabled=auto_memory_enabled,
                 maintenance=lambda: coordinator.in_maintenance,
             )
             group_admins = AstrBotGroupAdminResolver(
@@ -546,7 +553,6 @@ class WeaveMemoryPlugin(Star):
                     maintenance=lambda: coordinator.in_maintenance,
                 )
 
-            extraction_enabled = self._config_bool("extraction_enabled", False)
             extraction = ExtractionService(
                 store=store,
                 jobs=SQLiteExtractionJobStore(self._database),
@@ -557,14 +563,21 @@ class WeaveMemoryPlugin(Star):
                 extractor=AstrBotLlmExtractor(self.context),
                 clock=clock,
                 ids=ids,
-                global_enabled=extraction_enabled,
+                global_enabled=auto_memory_enabled,
                 max_retries=self._config_int("extraction_max_retries", 3),
                 timeout_seconds=self._config_int("extraction_timeout_seconds", 30),
                 queue_size=self._config_int("extraction_queue_size", 100),
                 candidate_ttl_days=self._config_int("candidate_ttl_days", 7),
                 rejected_keep_body=self._config_bool("rejected_keep_body", False),
+                auto_commit_enabled=self._config_bool("auto_commit_enabled", True),
+                auto_commit_confidence=self._config_float(
+                    "auto_commit_confidence", 0.8,
+                ),
+                consolidation_similarity=self._config_float(
+                    "consolidation_similarity", 0.9,
+                ),
             )
-            if extraction_enabled:
+            if auto_memory_enabled:
                 recovered = extraction.recover_interrupted()
                 if recovered:
                     logger.warning(f"织忆提取任务恢复：{recovered} 个中断任务已标记失败。")
@@ -588,7 +601,7 @@ class WeaveMemoryPlugin(Star):
                 backup, admin_ids=self._config_list("command_admin_ids"),
             )
             self._extraction_capture = AstrBotExtractionCapture(
-                scopes, extraction, enabled=extraction_enabled,
+                scopes, extraction, enabled=auto_memory_enabled,
                 min_messages=self._config_int("extraction_min_messages", 5),
                 notifier=self._notify_extraction_candidates,
             )
@@ -609,7 +622,25 @@ class WeaveMemoryPlugin(Star):
                 settings={
                     "auto_enroll": auto_enroll,
                     "agent_write_enabled": self._config_bool("agent_write_enabled", True),
-                    "extraction_enabled": extraction_enabled,
+                    "auto_memory_enabled": auto_memory_enabled,
+                    "auto_commit_enabled": self._config_bool(
+                        "auto_commit_enabled", True,
+                    ),
+                    "auto_commit_confidence": self._config_float(
+                        "auto_commit_confidence", 0.8,
+                    ),
+                    "importance_half_life_days": self._config_non_negative_int(
+                        "importance_half_life_days", 90,
+                    ),
+                    "consolidation_similarity": self._config_float(
+                        "consolidation_similarity", 0.9,
+                    ),
+                    "summary_interval_rounds": self._config_int(
+                        "summary_interval_rounds", 10,
+                    ),
+                    "summary_idle_minutes": self._config_non_negative_int(
+                        "summary_idle_minutes", 30,
+                    ),
                     "extraction_min_messages": self._config_int(
                         "extraction_min_messages", 5,
                     ),
@@ -787,6 +818,15 @@ class WeaveMemoryPlugin(Star):
         except (TypeError, ValueError):
             return default
         return value if value > 0 else default
+
+    def _config_float(self, key: str, default: float) -> float:
+        if not hasattr(self._config, "get"):
+            return default
+        try:
+            value = float(self._config.get(key, default))  # type: ignore[union-attr]
+        except (TypeError, ValueError):
+            return default
+        return value
 
     def _config_bool(self, key: str, default: bool) -> bool:
         if not hasattr(self._config, "get"):

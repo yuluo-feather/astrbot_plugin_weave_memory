@@ -114,7 +114,15 @@ class AstrBotExtractionCommands:
         self._ensure_enabled(scope)
         if ability == "全部":
             if action == "关闭":
-                return "关闭全部提取授权请逐项使用 /织忆 提取 关闭 <能力>。"
+                revoked: list[str] = []
+                for consent_type in _ALL_ABILITIES:
+                    try:
+                        self._consent.revoke(scope, consent_type, operator_id=operator_id)
+                        revoked.append(_ABILITY_LABEL[consent_type])
+                    except AuthorizationDenied:
+                        continue
+                text = f"已关闭自动沉淀能力：{'、'.join(revoked) if revoked else '无'}。"
+                return text + "\n显式保存、Agent 工具与导入的记忆不受影响；重新开启请用 /织忆 提取 开启 全部。"
             granted: list[str] = []
             failed: list[str] = []
             for consent_type in _ALL_ABILITIES:
@@ -168,7 +176,7 @@ class AstrBotExtractionCommands:
         def state(value: bool) -> str:
             return "开" if value else "关"
         lines = [
-            f"提取总开关：{state(gates.global_enabled)}",
+            f"自动沉淀总开关：{state(gates.global_enabled)}",
             f"捕获：{state(gates.capture_consent)}；自动提取：{state(gates.auto_extract_consent)}；"
             f"外部模型：{state(gates.external_model_consent)}；保存候选：{state(gates.store_candidate_consent)}",
             f"敏感白名单：{'、'.join(gates.sensitive_categories) if gates.sensitive_categories else '无'}",

@@ -10,7 +10,8 @@ from math import ceil
 from typing import Any, Callable
 
 from ..core.errors import AuthorizationDenied, NotFound
-from ..core.model import MemoryEntity, MemoryStatus, Scope
+from ..core.model import MemoryEntity, MemoryStatus, Scope, SourceType
+from ..core.policy.importance import rank_by_importance
 from ..core.ports import Clock, MemoryStore, ScopeStore, SearchIndex
 from .consent_service import ConsentService, PersonalConsentType
 from .write_coordinator import WriteCoordinator
@@ -155,7 +156,8 @@ class RecallService:
                  consent: ConsentService, clock: Clock,
                  coordinator: WriteCoordinator, scopes: ScopeStore,
                  diagnostics_writer: Callable[[dict[str, Any]], None] | None = None,
-                 *, include_query_in_diagnostics: bool = False) -> None:
+                 *, include_query_in_diagnostics: bool = False,
+                 importance_half_life_days: int = 0) -> None:
         self._store = store
         self._index = index
         self._consent = consent
@@ -164,6 +166,7 @@ class RecallService:
         self._scopes = scopes
         self._diagnostics_writer = diagnostics_writer
         self._include_query_in_diagnostics = include_query_in_diagnostics
+        self._importance_half_life_days = max(0, importance_half_life_days)
 
     def index_status(self, scope: Scope) -> dict[str, int | bool]:
         return {
@@ -223,6 +226,14 @@ class RecallService:
                 memories.append(memory)
             else:
                 fetch_filtered.append({"id": memory_id, "filter_reason": "status_not_active_after_search"})
+        if self._importance_half_life_days > 0 and len(memories) > 1:
+            rank_by_id = {
+                memory_id: rank for rank, memory_id in enumerate(memory_ids)
+            }
+            memories = rank_by_importance(
+                memories, rank_by_id=rank_by_id, now=now,
+                half_life_days=self._importance_half_life_days,
+            )
         trace = RecallTrace(
             trace_id=uuid.uuid4().hex,
             occurred_at=now.astimezone(UTC).isoformat(),
@@ -278,11 +289,13 @@ class MemoryContextComposer:
 
     def __init__(self, recall: Any, *, max_tokens: int = 384,
                  max_memories: int = 4, candidate_limit: int = 12,
+                 auto_memory_enabled: bool = True,
                  maintenance: Callable[[], bool] | None = None) -> None:
         self._recall = recall
         self._max_tokens = max_tokens
         self._max_memories = max_memories
         self._candidate_limit = candidate_limit
+        self._auto_memory_enabled = auto_memory_enabled
         self._maintenance = maintenance
 
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
@@ -294,6 +307,14 @@ class MemoryContextComposer:
         if inspect.isawaitable(result):
             result = await result
         candidates, trace = result
+        if not self._auto_memory_enabled:
+            candidates = tuple(
+                memory for memory in candidates
+                if not (
+                    memory.source_type is SourceType.INFERRED
+                    and bool(memory.metadata.get("auto"))
+                )
+            )
         if not candidates:
             self._recall.record_diagnostics(trace)
             return None
