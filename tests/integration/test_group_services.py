@@ -26,6 +26,7 @@ from data.plugins.astrbot_plugin_weave_memory.adapters.system import (
 )
 from data.plugins.astrbot_plugin_weave_memory.app.consent_service import (
     ConsentService,
+    GroupConsentType,
     PersonalConsentType,
 )
 from data.plugins.astrbot_plugin_weave_memory.app.group_lifecycle_service import (
@@ -119,6 +120,31 @@ def make_scope(stack, identity):
     decision = stack["scopes"].admin_decision(identity, "admin-1")
     scope = stack["scopes"].ensure_scope(identity, decision)
     return scope, decision
+
+
+def test_group_disable_system_retains_data(group_stack):
+    identity = group_identity()
+    scope, decision = make_scope(group_stack, identity)
+    lifecycle = group_stack["lifecycle"]
+    asyncio.run(lifecycle.enable(scope, decision, operator_id="admin-1"))
+    memories = group_stack["memories"]
+    asyncio.run(memories.save_group(
+        scope, "周五复盘", group_label="agreement",
+        operator_id="admin-1", decision=decision,
+    ))
+
+    asyncio.run(lifecycle.disable_system(
+        scope, operator_id="weave_group_lifecycle",
+    ))
+
+    assert group_stack["scopes"].status(identity).enabled is False
+    assert group_stack["consent"].is_granted(
+        scope, GroupConsentType.GROUP_MEMORY,
+    ) is False
+    remaining = group_stack["db"].connection.execute(
+        "SELECT count(*) FROM memories WHERE scope_id=?", (scope.id,),
+    ).fetchone()[0]
+    assert remaining == 1
 
 
 def test_group_enable_save_recall_disable_clear_destroy(group_stack):

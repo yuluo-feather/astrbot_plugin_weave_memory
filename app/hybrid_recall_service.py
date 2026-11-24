@@ -67,7 +67,6 @@ class HybridRecallService:
                  rerank_max_docs: int = 16,
                  rerank_max_text_chars: int = 1200,
                  rerank_cooldown_seconds: int = 60,
-                 tag_candidate_limit: int = 10,
                  time_candidate_limit: int = 10,
                  relevance_threshold: float = 0.35,
                  fts_relevance_ratio: float = 0.5,
@@ -96,7 +95,6 @@ class HybridRecallService:
         self._rerank_max_text_chars = max(1, rerank_max_text_chars)
         self._rerank_cooldown = max(0, rerank_cooldown_seconds)
         self._rerank_cooldown_until = 0.0
-        self._tag_limit = max(1, tag_candidate_limit)
         self._time_limit = max(1, time_candidate_limit)
         self._relevance_threshold = max(0.0, min(1.0, relevance_threshold))
         self._fts_ratio = max(0.0, min(1.0, fts_relevance_ratio))
@@ -131,18 +129,22 @@ class HybridRecallService:
             item.memory_id for item in fts_items if item.filter_reason == "eligible"
         ]
         if self._fts_ratio > 0.0 and len(fts_items) > 1:
-            max_score = max(item.raw_score for item in fts_items)
-            cutoff = max_score * self._fts_ratio
-            if max_score < 0:
-                fts_ids = [
-                    item.memory_id for item in fts_items
-                    if item.filter_reason == "eligible" and item.raw_score <= cutoff
-                ]
-            else:
-                fts_ids = [
-                    item.memory_id for item in fts_items
-                    if item.filter_reason == "eligible" and item.raw_score >= cutoff
-                ]
+            eligible = [
+                item for item in fts_items if item.filter_reason == "eligible"
+            ]
+            if len(eligible) > 1:
+                best = min(item.raw_score for item in eligible)
+                cutoff = best * self._fts_ratio
+                if best < 0:
+                    fts_ids = [
+                        item.memory_id for item in eligible
+                        if item.raw_score <= cutoff
+                    ]
+                else:
+                    fts_ids = [
+                        item.memory_id for item in eligible
+                        if item.raw_score >= cutoff
+                    ]
 
         vector_items: list[ChannelCandidate] = []
         vector_ids: list[str] = []
@@ -204,12 +206,6 @@ class HybridRecallService:
                 if item.filter_reason == "eligible"
             ]
 
-        tag_memories = self._store.list_active_by_tag_text(
-            query, scope_id=scope.id,
-            subject_id=scope.identity.subject_id, limit=self._tag_limit,
-        )
-        tag_items = self._entity_items(tag_memories)
-        tag_ids = [memory.id for memory in tag_memories]
         time_memories: tuple[MemoryEntity, ...] = ()
         time_items: list[ChannelCandidate] = []
         time_ids: list[str] = []
@@ -228,8 +224,6 @@ class HybridRecallService:
         channels: dict[str, list[str]] = {"FTS": fts_ids}
         if vector_ids:
             channels["VECTOR"] = vector_ids
-        if tag_ids:
-            channels["TAGS"] = tag_ids
         if time_ids:
             channels["TIME"] = time_ids
         if self._fusion_method in {"none", "union"}:
@@ -368,10 +362,6 @@ class HybridRecallService:
                     error_code=vector_error,
                 ),
                 ChannelTrace(
-                    name="TAGS", enabled=bool(tag_ids), limit=self._tag_limit,
-                    ok=True, latency_ms=0, candidates=tuple(tag_items),
-                ),
-                ChannelTrace(
                     name="TIME", enabled=bool(time_ids), limit=self._time_limit,
                     ok=True, latency_ms=0, candidates=tuple(time_items),
                 ),
@@ -451,10 +441,13 @@ class HybridRecallService:
             if not self._scopes.is_scope_enabled(scope.id):
                 raise AuthorizationDenied("memory scope is disabled")
 
+        surface = (
+            "group" if scope.identity.scope_type is ScopeType.GROUP else "personal"
+        )
         await self._coordinator.record_access(
             memory_ids, scope_id=scope.id,
             subject_id=scope.identity.subject_id, at=self._clock.now(),
-            guard=require_access,
+            guard=require_access, surface=surface,
         )
         require_access()
 

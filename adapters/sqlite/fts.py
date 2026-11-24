@@ -72,8 +72,10 @@ def _fts_query(value: str) -> str:
 
 
 class SQLiteFTSIndex:
-    def __init__(self, database: SQLiteDatabase) -> None:
+    def __init__(self, database: SQLiteDatabase, *,
+                 relevance_ratio: float = 0.0) -> None:
         self.db = database
+        self._relevance_ratio = max(0.0, min(1.0, relevance_ratio))
 
     def is_healthy(self) -> bool:
         try:
@@ -220,7 +222,7 @@ class SQLiteFTSIndex:
             return ()
         try:
             rows = self.db.connection.execute(
-                """SELECT m.id FROM memory_fts f
+                """SELECT m.id, bm25(memory_fts) AS score FROM memory_fts f
                 JOIN memories m ON m.id=f.memory_id
                 JOIN memory_scopes s ON s.id=m.scope_id
                 WHERE memory_fts MATCH ? AND m.scope_id=? AND m.subject_id=?
@@ -234,7 +236,17 @@ class SQLiteFTSIndex:
                 LIMIT ?""",
                 (fts_query, scope_id, subject_id, scope_type, at_key, at_key, limit),
             ).fetchall()
-            return tuple(row["id"] for row in rows)
+            scored = [(row["id"], float(row["score"])) for row in rows]
+            # bm25 is negative: the smallest score is the strongest hit. Keep
+            # candidates at least `ratio` as relevant as the best one.
+            if self._relevance_ratio > 0.0 and len(scored) > 1:
+                best = min(score for _, score in scored)
+                if best < 0:
+                    cutoff = best * self._relevance_ratio
+                    return tuple(
+                        memory_id for memory_id, score in scored if score <= cutoff
+                    )
+            return tuple(memory_id for memory_id, _ in scored)
         except sqlite3.Error as exc:
             raise IndexUnavailable("FTS query failed") from exc
 

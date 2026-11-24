@@ -322,6 +322,27 @@ class SQLiteDatabase:
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (10, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("hybrid_retrieval",),
                     )
+                # Auxiliary operational table: read-side access audit. It is not
+                # part of the user-data schema and is excluded from backups.
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS memory_access_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        scope_id TEXT NOT NULL,
+                        subject_id TEXT NOT NULL,
+                        memory_id TEXT NOT NULL,
+                        actor_id TEXT,
+                        surface TEXT NOT NULL DEFAULT '',
+                        accessed_at TEXT NOT NULL
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_access_events_scope_time "
+                    "ON memory_access_events(scope_id, accessed_at)",
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_access_events_memory_time "
+                    "ON memory_access_events(memory_id, accessed_at)",
+                )
         except sqlite3.Error as exc:
             raise StorageError(f"SQLite schema migration failed: {exc}") from exc
         finally:

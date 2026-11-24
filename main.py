@@ -22,6 +22,8 @@ from .adapters.astrbot.extraction_commands import AstrBotExtractionCommands
 from .adapters.astrbot.group_admin import AstrBotGroupAdminResolver
 from .adapters.astrbot.group_commands import AstrBotGroupCommands
 from .adapters.astrbot.group_injection import AstrBotGroupMemoryInjector
+from .adapters.astrbot.group_lifecycle_events import parse_group_lifecycle_event
+from .adapters.astrbot.identity import AstrBotIdentityAdapter
 from .adapters.astrbot.injection import AstrBotMemoryInjector
 from .adapters.astrbot.recall_diagnostics import JsonlRecallDiagnostics
 from .adapters.astrbot.rerank import AstrBotRerankProvider
@@ -129,6 +131,8 @@ class WeaveMemoryPlugin(Star):
         self._provider_policy: ProviderPolicy | None = None
         self._injector: AstrBotMemoryInjector | None = None
         self._group_injector: AstrBotGroupMemoryInjector | None = None
+        self._group_scopes: GroupScopeService | None = None
+        self._group_lifecycle: GroupLifecycleService | None = None
         self._tool_call_binding = AstrBotToolCallBinding(
             plugin_module=type(self).__module__,
             plugin_name="astrbot_plugin_weave_memory",
@@ -147,7 +151,10 @@ class WeaveMemoryPlugin(Star):
             provider_config = ProviderConfig.from_mapping(
                 self._config if hasattr(self._config, "get") else {},
             )
-            index = SQLiteFTSIndex(self._database)
+            index = SQLiteFTSIndex(
+                self._database,
+                relevance_ratio=provider_config.fts_relevance_ratio,
+            )
             provider: AstrBotEmbeddingProvider | None = None
             provider_policy: ProviderPolicy | None = None
             provider_audit: SQLiteProviderCallAudit | None = None
@@ -273,6 +280,14 @@ class WeaveMemoryPlugin(Star):
                 retention.start()
             except RuntimeError:
                 logger.warning("织忆到期清理未启动：当前没有运行中的事件循环。")
+            prune_access = getattr(store, "prune_access_events", None)
+            if callable(prune_access):
+                try:
+                    prune_access(before=clock.now() - timedelta(days=90))
+                except Exception as exc:  # noqa: BLE001 - audit is best-effort
+                    logger.warning(
+                        "织忆访问审计清理失败：%s", type(exc).__name__,
+                    )
             if provider_audit is not None:
                 try:
                     provider_audit.prune_before(
@@ -335,7 +350,6 @@ class WeaveMemoryPlugin(Star):
                     rerank_cooldown_seconds=(
                         provider_config.provider_failure_cooldown_seconds
                     ),
-                    tag_candidate_limit=provider_config.tag_candidate_limit,
                     time_candidate_limit=provider_config.time_candidate_limit,
                     relevance_threshold=provider_config.vector_relevance_threshold,
                     fts_relevance_ratio=provider_config.fts_relevance_ratio,
@@ -354,6 +368,8 @@ class WeaveMemoryPlugin(Star):
                 store, coordinator, consent, index, clock, ids,
                 data_dir / "group_backups", ledger=ledger,
             )
+            self._group_scopes = group_scopes
+            self._group_lifecycle = group_lifecycle
             destroy_backup_retention = self._config_int(
                 "group_destroy_backup_retention_days", 30,
             )
@@ -387,7 +403,6 @@ class WeaveMemoryPlugin(Star):
                     vector_candidate_limit=provider_config.vector_candidate_limit,
                     hybrid_candidate_limit=provider_config.hybrid_candidate_limit,
                     classifier_mode=provider_config.query_classifier_mode,
-                    tag_candidate_limit=provider_config.tag_candidate_limit,
                     time_candidate_limit=provider_config.time_candidate_limit,
                     relevance_threshold=provider_config.vector_relevance_threshold,
                     fts_relevance_ratio=provider_config.fts_relevance_ratio,
@@ -484,7 +499,6 @@ class WeaveMemoryPlugin(Star):
                     "vector_index_enabled": provider_config.vector_index_enabled,
                     "rerank_enabled": provider_config.rerank_enabled,
                     "query_classifier_mode": provider_config.query_classifier_mode,
-                    "tag_candidate_limit": provider_config.tag_candidate_limit,
                     "time_candidate_limit": provider_config.time_candidate_limit,
                     "vector_relevance_threshold": (
                         provider_config.vector_relevance_threshold
@@ -1167,6 +1181,48 @@ class WeaveMemoryPlugin(Star):
         except Exception as exc:  # noqa: BLE001 - injection must never break host chat
             # Any memory-layer or host-API failure is isolated from the chat request.
             logger.warning(f"织忆本轮未注入记忆：{type(exc).__name__}")
+
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def on_group_lifecycle_notice(self, event: AstrMessageEvent):
+        """Disable group memory when the bot is removed or the group dissolves."""
+        if (
+            not self._ready
+            or self._group_scopes is None
+            or self._group_lifecycle is None
+        ):
+            return
+        message_obj = getattr(event, "message_obj", None)
+        raw_message = getattr(message_obj, "raw_message", None)
+        self_id = None
+        get_self_id = getattr(event, "get_self_id", None)
+        if callable(get_self_id):
+            try:
+                self_id = get_self_id()
+            except Exception:  # noqa: BLE001 - host API variance
+                self_id = None
+        if self_id is None:
+            self_id = getattr(message_obj, "self_id", None)
+        if parse_group_lifecycle_event(raw_message, self_id) is None:
+            return
+        try:
+            identity = AstrBotIdentityAdapter().resolve_group_identity(event)
+        except AuthorizationDenied:
+            return
+        scope = self._group_scopes.find(identity)
+        if scope is None:
+            return
+        try:
+            await self._group_lifecycle.disable_system(
+                scope, operator_id="weave_group_lifecycle",
+            )
+            logger.info("织忆群记忆已因退群/解散自动关闭：%s", scope.id)
+        except Exception as exc:  # noqa: BLE001 - lifecycle must not break host
+            logger.warning(
+                "织忆群生命周期自动关闭失败：%s", type(exc).__name__,
+            )
+        stop_event = getattr(event, "stop_event", None)
+        if callable(stop_event):
+            stop_event()
 
     async def terminate(self):
         if self._index_worker is not None:

@@ -3,7 +3,7 @@
     "description": "Personal 记忆默认登记（opt-out 模式）",
     "type": "bool",
     "default": true,
-    "hint": "开启后，新用户或没有授权记录的私聊用户首次对话会自动登记个人记忆，并收到一次告知；用户可用 /织忆 关闭 停止。关闭后回到逐用户 /织忆 授权。"
+    "hint": "开启后，新用户首次私聊会自动登记个人记忆并收到一次告知；用户可随时 /织忆 撤销授权 停止。关闭后回到严格 opt-in，用户需发送 /织忆 授权。"
   },
   "agent_write_enabled": {
     "description": "控制 Agent 记忆写入工具开关（默认开启）；开启后 remember/update 可写入，来源记录插件侧 evidence_ref。",
@@ -101,12 +101,6 @@
     "default": 24,
     "hint": "RRF 后进入 Admission 的候选上限；范围 1–100。"
   },
-  "tag_candidate_limit": {
-    "description": "标签候选数",
-    "type": "int",
-    "default": 10,
-    "hint": "Admission 标签通道最多加入多少条 ACTIVE 记忆；范围 1–100。"
-  },
   "time_candidate_limit": {
     "description": "时间候选数",
     "type": "int",
@@ -123,7 +117,7 @@
     "description": "FTS 相对相关性阈值",
     "type": "float",
     "default": 0.5,
-    "hint": "仅保留本 query FTS 最高分 × 该比例的候选；0 表示关闭。范围 0–1。"
+    "hint": "仅保留本 query FTS 最高分 × 该比例的候选；默认单路 FTS 与 hybrid 都生效，0 表示关闭。范围 0–1。"
   },
   "vector_snapshot_cache_mb": {
     "description": "向量快照缓存（MB）",
