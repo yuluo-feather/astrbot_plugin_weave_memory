@@ -101,6 +101,12 @@
     "default": 24,
     "hint": "RRF 后进入 Admission 的候选上限；范围 1–100。"
   },
+  "tag_candidate_limit": {
+    "description": "标签候选数",
+    "type": "int",
+    "default": 10,
+    "hint": "Admission 标签通道最多加入多少条 ACTIVE 记忆；范围 1–100。"
+  },
   "time_candidate_limit": {
     "description": "时间候选数",
     "type": "int",

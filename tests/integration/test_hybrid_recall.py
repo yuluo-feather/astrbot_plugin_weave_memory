@@ -169,8 +169,7 @@ def test_hybrid_rrf_ranks_fts_and_vector_and_trace_has_no_body(stack):
     )
     assert memories[0].id == "m1"
     assert [channel.name for channel in trace.channels][:2] == ["FTS", "VECTOR"]
-    assert {channel.name for channel in trace.channels} >= {"FTS", "VECTOR", "TIME"}
-    assert "TAGS" not in {channel.name for channel in trace.channels}
+    assert {channel.name for channel in trace.channels} >= {"FTS", "VECTOR", "TAGS", "TIME"}
     assert trace.fusion["method"] == "RRF"
     payload = trace.to_dict()
     encoded = json.dumps(payload, ensure_ascii=False)
@@ -201,8 +200,12 @@ def test_hybrid_degrades_to_fts_when_provider_missing(stack):
     assert trace.fusion["method"] == "NONE"
 
 
-def test_time_candidates_join_the_fusion(stack):
-    _, store, index, vector, consent, coordinator, scope = stack
+def test_tag_and_time_candidates_join_the_fusion(stack):
+    db, store, index, vector, consent, coordinator, scope = stack
+    db.connection.execute(
+        "INSERT INTO memory_tags(memory_id, tag, created_at) VALUES ('m1', '咖啡', ?)",
+        (NOW.isoformat(),),
+    )
     hybrid = HybridRecallService(
         store, index, consent, FixedClock(), store, coordinator,
         vector=vector, provider=None,
@@ -211,9 +214,10 @@ def test_time_candidates_join_the_fusion(stack):
         hybrid.recall_with_trace("今天 咖啡", scope, limit=5),
     )
     channels = {channel.name: channel for channel in trace.channels}
+    assert channels["TAGS"].enabled is True
+    assert "m1" in {item.memory_id for item in channels["TAGS"].candidates}
     assert channels["TIME"].enabled is True
     assert channels["TIME"].candidates
-    assert "TAGS" not in channels
     assert trace.fusion["method"] == "RRF"
 
 

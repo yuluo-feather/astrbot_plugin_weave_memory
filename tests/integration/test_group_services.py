@@ -171,6 +171,12 @@ def test_group_enable_save_recall_disable_clear_destroy(group_stack):
     assert memory.metadata["group_label"] == "agreement"
     assert receipt.index_state.value == "HEALTHY"
     assert [item.id for item in memories.list_group(scope)] == [memory.id]
+    tags = {
+        row["tag"] for row in group_stack["db"].connection.execute(
+            "SELECT tag FROM memory_tags WHERE memory_id=?", (memory.id,),
+        ).fetchall()
+    }
+    assert {"agreement", "约定"} <= tags
 
     composer = group_stack["composer"]
     context = asyncio.run(composer.compose("周五复盘", scope))

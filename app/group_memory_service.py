@@ -45,6 +45,13 @@ _GROUP_LABEL_ALIASES: dict[str, str] = {
     "体验": "experience",
 }
 
+_GROUP_LABEL_TAGS: dict[str, tuple[str, ...]] = {
+    "topic": ("topic", "话题", "主题", "事实"),
+    "agreement": ("agreement", "约定", "共识", "偏好", "喜好"),
+    "atmosphere": ("atmosphere", "氛围", "气氛"),
+    "experience": ("experience", "经历", "事件", "体验"),
+}
+
 
 class GroupMemoryService:
     def __init__(self, store: MemoryStore, scopes: ScopeStore,
@@ -94,6 +101,7 @@ class GroupMemoryService:
             "group_label": label,
             "group_id": scope.identity.subject_id,
             "admin_source": decision.source.value,
+            "tags": list(_GROUP_LABEL_TAGS.get(label, (label,))),
         }
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,

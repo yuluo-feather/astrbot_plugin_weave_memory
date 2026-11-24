@@ -86,6 +86,7 @@ class ProviderConfig:
     vector_candidate_limit: int
     hybrid_candidate_limit: int
     query_classifier_mode: str
+    tag_candidate_limit: int
     time_candidate_limit: int
     vector_relevance_threshold: float
     fts_relevance_ratio: float
@@ -148,6 +149,9 @@ class ProviderConfig:
             query_classifier_mode=_str(
                 config, "query_classifier_mode", "rules",
             ) or "rules",
+            tag_candidate_limit=_int(
+                config, "tag_candidate_limit", 10, 1, 100,
+            ),
             time_candidate_limit=_int(
                 config, "time_candidate_limit", 10, 1, 100,
             ),

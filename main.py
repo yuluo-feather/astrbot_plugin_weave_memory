@@ -365,6 +365,7 @@ class WeaveMemoryPlugin(Star):
                     rerank_cooldown_seconds=(
                         provider_config.provider_failure_cooldown_seconds
                     ),
+                    tag_candidate_limit=provider_config.tag_candidate_limit,
                     time_candidate_limit=provider_config.time_candidate_limit,
                     relevance_threshold=provider_config.vector_relevance_threshold,
                     fts_relevance_ratio=provider_config.fts_relevance_ratio,
@@ -425,6 +426,7 @@ class WeaveMemoryPlugin(Star):
                     vector_candidate_limit=provider_config.vector_candidate_limit,
                     hybrid_candidate_limit=provider_config.hybrid_candidate_limit,
                     classifier_mode=provider_config.query_classifier_mode,
+                    tag_candidate_limit=provider_config.tag_candidate_limit,
                     time_candidate_limit=provider_config.time_candidate_limit,
                     relevance_threshold=provider_config.vector_relevance_threshold,
                     fts_relevance_ratio=provider_config.fts_relevance_ratio,
@@ -521,6 +523,7 @@ class WeaveMemoryPlugin(Star):
                     "vector_index_enabled": provider_config.vector_index_enabled,
                     "rerank_enabled": provider_config.rerank_enabled,
                     "query_classifier_mode": provider_config.query_classifier_mode,
+                    "tag_candidate_limit": provider_config.tag_candidate_limit,
                     "time_candidate_limit": provider_config.time_candidate_limit,
                     "vector_relevance_threshold": (
                         provider_config.vector_relevance_threshold
