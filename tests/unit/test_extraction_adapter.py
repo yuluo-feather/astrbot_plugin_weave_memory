@@ -7,6 +7,7 @@ import pytest
 from data.plugins.astrbot_plugin_weave_memory.adapters.astrbot.extraction import (
     AstrBotExtractionCapture,
     parse_extraction_response,
+    parse_summary_response,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     MemoryType,
@@ -56,6 +57,7 @@ class FakeScopes:
 class FakeExtraction:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
+        self.summary_calls: list[tuple] = []
         self.notify = ()
 
     def gates(self, scope):
@@ -66,6 +68,11 @@ class FakeExtraction:
         self.calls.append((scope, conversation_id, messages, watermark))
         if on_candidates is not None and self.notify:
             await on_candidates(self.notify)
+        return None
+
+    async def submit_summary(self, scope, *, conversation_id, messages, watermark=0,
+                             on_candidates=None):
+        self.summary_calls.append((scope, conversation_id, messages, watermark))
         return None
 
 
@@ -149,6 +156,42 @@ def test_capture_passes_candidate_notification_to_host():
     assert len(notifications) == 1
     _, candidates = notifications[0]
     assert candidates[0].id == "c1"
+
+
+def test_parse_summary_response_accepts_object_and_rejects_sensitive_or_empty():
+    assert parse_summary_response(
+        '{"summary":"用户讨论了咖啡偏好","confidence":0.9}',
+        sensitive_categories=(),
+    ).content == "用户讨论了咖啡偏好"
+    assert parse_summary_response("{}", sensitive_categories=()) is None
+    assert parse_summary_response(
+        '{"summary":"用户密码是 hunter2","confidence":0.9}',
+        sensitive_categories=(),
+    ) is None
+    assert parse_summary_response("not json", sensitive_categories=()) is None
+
+
+def test_capture_triggers_summary_after_interval_rounds():
+    scope = SimpleNamespace(id="scope")
+    extraction = FakeExtraction()
+    scopes = FakeScopes(scope)
+
+    async def run():
+        capture = AstrBotExtractionCapture(
+            scopes, extraction, min_messages=99, summary_interval_rounds=2,
+        )
+        await capture.capture(FakeEvent("第一句"))
+        assert extraction.summary_calls == []
+        await capture.capture(FakeEvent("第二句"))
+        await asyncio.sleep(0.05)
+        await capture.close()
+
+    asyncio.run(run())
+    assert len(extraction.summary_calls) == 1
+    _, conversation_id, messages, watermark = extraction.summary_calls[0]
+    assert conversation_id == "astrbot:FriendMessage:session-1"
+    assert messages == ("第一句", "第二句")
+    assert watermark == 2
 
 
 def test_flush_submits_buffer_on_turn_end_and_clears_gate_failure():

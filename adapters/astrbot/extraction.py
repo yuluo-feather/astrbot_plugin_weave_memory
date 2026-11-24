@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
+from time import monotonic
 from typing import Any
 
 from ...app.extraction_service import CandidateNotifier, ExtractionService
@@ -28,6 +29,12 @@ _SYSTEM_PROMPT = (
     "只提取用户明确陈述、长期有用的信息；不要提取玩笑、临时信息、凭据或敏感个人信息、"
     "助手陈述或工具输出。没有可提取内容时输出 []。"
 )
+_SUMMARY_SYSTEM_PROMPT = (
+    "你是织忆的会话摘要器。只输出 JSON 对象，不要解释或 Markdown。"
+    '格式：{"summary":"...","confidence":0.0}。'
+    "只总结用户消息中值得长期记住的话题、偏好、计划或决定；"
+    "不要复述完整聊天、不要编造、不要包含凭据或敏感个人信息。没有可总结内容时输出 {}。"
+)
 
 
 def build_extraction_prompt(window: ExtractionWindow) -> str:
@@ -35,6 +42,51 @@ def build_extraction_prompt(window: ExtractionWindow) -> str:
     if len(joined) > 4000:
         joined = joined[-4000:]
     return f"对话窗口（仅用户消息）：\n{joined}\n\n请输出候选记忆 JSON 数组。"
+
+
+def build_summary_prompt(window: ExtractionWindow) -> str:
+    joined = "\n".join(window.messages)
+    if len(joined) > 4000:
+        joined = joined[-4000:]
+    return f"对话窗口（仅用户消息）：\n{joined}\n\n请输出会话摘要 JSON 对象。"
+
+
+def parse_summary_response(
+    text: str, *, sensitive_categories: tuple[str, ...], max_chars: int = 200,
+) -> ExtractionCandidate | None:
+    raw = text.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.lstrip().startswith("json"):
+            raw = raw.lstrip()[4:]
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        payload = json.loads(raw[start:end + 1])
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    summary = str(payload.get("summary", "")).strip()
+    if not summary:
+        return None
+    summary = summary[:max_chars]
+    if scan_sensitive(summary, sensitive_categories).is_blocked:
+        return None
+    raw_confidence = payload.get("confidence")
+    confidence: float | None = None
+    if raw_confidence is not None:
+        try:
+            parsed = float(raw_confidence)
+        except (TypeError, ValueError):
+            parsed = -1.0
+        if 0.0 <= parsed <= 1.0:
+            confidence = parsed
+    return ExtractionCandidate(
+        memory_type=MemoryType.EVENT, content=summary, confidence=confidence,
+    )
 
 
 def parse_extraction_response(
@@ -124,6 +176,25 @@ class AstrBotLlmExtractor:
             sensitive_categories=sensitive_categories,
         )
 
+    async def summarize(
+        self, window: ExtractionWindow, *,
+        sensitive_categories: tuple[str, ...],
+    ) -> ExtractionCandidate | None:
+        getter = getattr(self._context, "get_using_provider_async", None)
+        if getter is None:
+            raise RuntimeError("host provider API is unavailable")
+        provider = await getter()
+        if provider is None:
+            raise RuntimeError("no LLM provider is configured")
+        response = await provider.text_chat(
+            prompt=build_summary_prompt(window),
+            system_prompt=_SUMMARY_SYSTEM_PROMPT,
+        )
+        text = getattr(response, "completion_text", "") or ""
+        return parse_summary_response(
+            text, sensitive_categories=sensitive_categories,
+        )
+
 
 class AstrBotExtractionCapture:
     """Private-message capture; group events and commands are ignored."""
@@ -132,6 +203,8 @@ class AstrBotExtractionCapture:
         self, scopes: Any, extraction: ExtractionService, *,
         enabled: bool = True, min_messages: int = 1,
         max_buffer_messages: int = 50,
+        summary_interval_rounds: int = 10,
+        summary_idle_minutes: int = 30,
         notifier: EventNotifier | None = None,
     ) -> None:
         self._scopes = scopes
@@ -139,11 +212,15 @@ class AstrBotExtractionCapture:
         self._enabled = enabled
         self._min_messages = max(1, min_messages)
         self._max_buffer = max(self._min_messages, max_buffer_messages)
+        self._summary_interval = max(1, summary_interval_rounds)
+        self._summary_idle_seconds = max(0, summary_idle_minutes) * 60
         self._notifier = notifier
         self._identity = AstrBotIdentityAdapter()
         self._tasks: set[asyncio.Task[None]] = set()
         self._buffers: dict[str, list[tuple[str, str]]] = {}
         self._watermarks: dict[str, int] = {}
+        self._summary_buffers: dict[str, list[str]] = {}
+        self._last_activity: dict[str, float] = {}
 
     async def capture(self, event: Any) -> None:
         if not self._enabled:
@@ -166,9 +243,11 @@ class AstrBotExtractionCapture:
         # otherwise messages sent before opt-in could reach the model after it.
         if not self._extraction.gates(scope).can_store:
             self._buffers.pop(key, None)
+            self._summary_buffers.pop(key, None)
             return
         watermark = self._watermarks.get(key, 0) + 1
         self._watermarks[key] = watermark
+        self._track_summary(scope, key, text, watermark, event)
         buffer = self._buffers.setdefault(key, [])
         buffer.append((message_id, text))
         del buffer[:max(0, len(buffer) - self._max_buffer)]
@@ -192,6 +271,7 @@ class AstrBotExtractionCapture:
             return
         if not self._extraction.gates(scope).can_store:
             self._buffers.pop(key, None)
+            self._summary_buffers.pop(key, None)
             return
         self._schedule(scope, key, self._watermarks.get(key, 0), event)
 
@@ -204,6 +284,35 @@ class AstrBotExtractionCapture:
             await notifier(event, candidates)
 
         return notify
+
+    def _track_summary(self, scope: Any, key: str, text: str, watermark: int,
+                       event: Any) -> None:
+        now = monotonic()
+        buffer = self._summary_buffers.setdefault(key, [])
+        last = self._last_activity.get(key)
+        idle_due = (
+            self._summary_idle_seconds > 0
+            and last is not None
+            and now - last >= self._summary_idle_seconds
+            and bool(buffer)
+        )
+        buffer.append(text)
+        del buffer[:max(0, len(buffer) - 200)]
+        self._last_activity[key] = now
+        if idle_due or len(buffer) >= self._summary_interval:
+            self._schedule_summary(scope, key, watermark, event)
+
+    def _schedule_summary(self, scope: Any, key: str, watermark: int,
+                          event: Any) -> None:
+        messages = tuple(self._summary_buffers.pop(key, ()))
+        if not messages:
+            return
+        task = asyncio.create_task(self._extraction.submit_summary(
+            scope, conversation_id=key, messages=messages, watermark=watermark,
+            on_candidates=self._candidate_notifier(event),
+        ))
+        self._tasks.add(task)
+        task.add_done_callback(self._reap)
 
     def _schedule(self, scope: Any, key: str, watermark: int, event: Any) -> None:
         messages = tuple(self._buffers.pop(key, ()))
@@ -232,3 +341,5 @@ class AstrBotExtractionCapture:
         self._tasks.clear()
         self._buffers.clear()
         self._watermarks.clear()
+        self._summary_buffers.clear()
+        self._last_activity.clear()

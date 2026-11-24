@@ -77,6 +77,8 @@ class FakeExtractor:
         self.error = error
         self.fail_times = fail_times
         self.calls: list[ExtractionWindow] = []
+        self.summary_candidate: ExtractionCandidate | None = None
+        self.summary_calls: list[ExtractionWindow] = []
 
     async def extract(self, window, *, allowed_types, sensitive_categories):
         self.calls.append(window)
@@ -86,6 +88,10 @@ class FakeExtractor:
         if self.error is not None:
             raise self.error
         return self.candidates
+
+    async def summarize(self, window, *, sensitive_categories):
+        self.summary_calls.append(window)
+        return self.summary_candidate
 
 
 def _grant_all(consent: ConsentService, scope: Scope) -> None:
@@ -616,3 +622,61 @@ def test_auto_commit_disabled_is_candidate_only(extraction_stack):
     ))
     assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
     assert asyncio.run(service.list_candidates(stack["scope"]))[1] == 1
+
+
+def test_summary_creates_active_event_memory(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].summary_candidate = ExtractionCandidate(
+        MemoryType.EVENT, "用户讨论了咖啡偏好和周末去杭州的计划", confidence=0.9,
+    )
+    job = asyncio.run(stack["service"].submit_summary(
+        stack["scope"], conversation_id="conv-1",
+        messages=("我喜欢黑咖啡", "周末想去杭州"), watermark=2,
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    rows, total = stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )
+    assert total == 1
+    memory = rows[0]
+    assert memory.memory_type is MemoryType.EVENT
+    assert memory.metadata["summary"] is True
+    assert len(memory.metadata["summary_session"]) == 16
+    assert memory.metadata["summary_range"] == {"from": 2, "to": 2}
+    operations = stack["store"].db.connection.execute(
+        "SELECT operation_type FROM memory_operations WHERE memory_id=?",
+        (memory.id,),
+    ).fetchall()
+    assert [row["operation_type"] for row in operations] == ["AUTO_SUMMARY"]
+
+
+def test_summary_is_candidate_when_direct_write_disabled(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].summary_candidate = ExtractionCandidate(
+        MemoryType.EVENT, "用户讨论了咖啡偏好", confidence=0.9,
+    )
+    service = _service_with(stack, auto_commit_enabled=False)
+    job = asyncio.run(service.submit_summary(
+        stack["scope"], conversation_id="conv-1",
+        messages=("我喜欢黑咖啡",), watermark=1,
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    candidates, total = asyncio.run(service.list_candidates(stack["scope"]))
+    assert total == 1
+    assert candidates[0].metadata["summary"] is True
+
+
+def test_summary_without_content_succeeds_without_memory(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].summary_candidate = None
+    job = asyncio.run(stack["service"].submit_summary(
+        stack["scope"], conversation_id="conv-1",
+        messages=("今天天气不错",), watermark=1,
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )[1] == 0

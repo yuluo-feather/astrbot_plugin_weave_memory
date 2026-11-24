@@ -273,7 +273,12 @@ class WeaveMemoryPlugin(Star):
                 coordinator, store, consent,
                 archive_retention_days=archive_retention_days,
             )
-            memories = MemoryApplicationService(store, coordinator, consent, lifecycle, clock, ids)
+            memories = MemoryApplicationService(
+                store, coordinator, consent, lifecycle, clock, ids,
+                consolidation_similarity=self._config_float(
+                    "consolidation_similarity", 0.9,
+                ),
+            )
             imports = ImportService(
                 store, SQLiteImportJobStore(self._database), coordinator,
                 lifecycle, clock, ids,
@@ -603,6 +608,12 @@ class WeaveMemoryPlugin(Star):
             self._extraction_capture = AstrBotExtractionCapture(
                 scopes, extraction, enabled=auto_memory_enabled,
                 min_messages=self._config_int("extraction_min_messages", 5),
+                summary_interval_rounds=self._config_int(
+                    "summary_interval_rounds", 10,
+                ),
+                summary_idle_minutes=self._config_non_negative_int(
+                    "summary_idle_minutes", 30,
+                ),
                 notifier=self._notify_extraction_candidates,
             )
             self._injector = AstrBotMemoryInjector(

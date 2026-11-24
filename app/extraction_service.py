@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
 from datetime import datetime, timedelta
 from hashlib import sha256
@@ -56,6 +56,7 @@ _ALLOWED_TYPES = (MemoryType.PREFERENCE, MemoryType.FACT, MemoryType.EVENT)
 _DIRECT_IMPORTANCE = 0.7
 _CANDIDATE_IMPORTANCE = 0.5
 _CONFIRMED_IMPORTANCE = 0.8
+_SUMMARY_IMPORTANCE = 0.6
 CandidateNotifier = Callable[[tuple[MemoryEntity, ...]], Awaitable[None]]
 
 
@@ -229,6 +230,178 @@ class ExtractionService:
             scope_id=scope.id, subject_id=scope.identity.subject_id,
         )
         return counts.get(ExtractionJobStatus.PENDING.value, 0)
+
+    async def submit_summary(
+        self, scope: Scope, *, conversation_id: str,
+        messages: tuple[str, ...], watermark: int = 0,
+        on_candidates: CandidateNotifier | None = None,
+    ) -> ExtractionJob | None:
+        """Capture a session window and ask the model for one summary memory."""
+        if scope.identity.scope_type is not ScopeType.PERSONAL:
+            return None
+        gates = self.gates(scope)
+        if not gates.can_store:
+            return None
+        allowed: list[str] = []
+        for content in messages:
+            normalized = normalize_content(content)
+            if not normalized:
+                continue
+            if scan_sensitive(content, gates.sensitive_categories).is_blocked:
+                continue
+            allowed.append(content)
+        if not allowed:
+            return None
+        now = self._clock.now()
+        content_hash = sha256(
+            "\n".join(normalize_content(message) for message in allowed).encode("utf-8")
+        ).hexdigest()
+        job = ExtractionJob(
+            id=self._ids.new_id("extraction_job"),
+            platform=scope.identity.platform, tenant_id=scope.identity.tenant_id,
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            conversation_id=conversation_id, watermark=watermark,
+            content_hash=content_hash,
+            status=ExtractionJobStatus.PENDING, attempts=0,
+            created_at=now, updated_at=now,
+            metadata={"summary": True, "message_count": len(allowed)},
+        )
+        if self._pending_count(scope) >= self._queue_size:
+            full = replace(job, status=ExtractionJobStatus.FAILED,
+                           last_error="queue_full")
+            stored, _created = self._jobs.create_or_get(full)
+            return stored
+        stored, created = self._jobs.create_or_get(job)
+        if not created and stored.status is not ExtractionJobStatus.PENDING:
+            return stored
+        window = ExtractionWindow(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            conversation_id=conversation_id, watermark=watermark,
+            content_hash=job.content_hash, messages=tuple(allowed),
+        )
+        return await self._run_summary(scope, stored, window, gates, on_candidates)
+
+    async def _run_summary(
+        self, scope: Scope, job: ExtractionJob, window: ExtractionWindow,
+        gates: ExtractionGates, on_candidates: CandidateNotifier | None,
+    ) -> ExtractionJob:
+        running = replace(
+            job, status=ExtractionJobStatus.RUNNING, attempts=job.attempts + 1,
+            updated_at=self._clock.now(),
+        )
+        try:
+            self._jobs.update(running, expected_status=ExtractionJobStatus.PENDING)
+        except Conflict:
+            return self._jobs.get(job.id)
+        summarize = getattr(self._extractor, "summarize", None)
+        if summarize is None:
+            return self._finish(
+                running, ExtractionJobStatus.FAILED,
+                last_error="summary_not_supported",
+            )
+        current = running
+        while True:
+            latest = self._jobs.get(job.id)
+            if latest.status is ExtractionJobStatus.CANCELLED:
+                return latest
+            if not self.gates(scope).can_store:
+                return self._finish(
+                    current, ExtractionJobStatus.FAILED,
+                    last_error="consent_revoked",
+                )
+            try:
+                async with asyncio.timeout(self._timeout):
+                    candidate = await summarize(
+                        window,
+                        sensitive_categories=gates.sensitive_categories,
+                    )
+                latest = self._jobs.get(job.id)
+                if latest.status is ExtractionJobStatus.CANCELLED:
+                    return latest
+                if candidate is None:
+                    return self._finish(current, ExtractionJobStatus.SUCCEEDED)
+                created_any, skipped_any, created = await self._materialize_summary(
+                    scope, job.id, candidate, window,
+                )
+                break
+            except (AuthorizationDenied, ValidationError):
+                return self._finish(
+                    current, ExtractionJobStatus.FAILED,
+                    last_error="summary_rejected",
+                )
+            except Exception:  # Boundary: summary failure must not block chat.
+                if current.attempts >= self._max_retries:
+                    return self._finish(
+                        current, ExtractionJobStatus.FAILED,
+                        last_error="summary_failed",
+                    )
+                current = replace(
+                    current, attempts=current.attempts + 1,
+                    updated_at=self._clock.now(),
+                )
+                try:
+                    self._jobs.update(
+                        current, expected_status=ExtractionJobStatus.RUNNING,
+                    )
+                except Conflict:
+                    return self._jobs.get(job.id)
+        if created and on_candidates is not None:
+            try:
+                await on_candidates(created)
+            except Exception:  # Notification failure must not fail the job.
+                pass
+        if created_any:
+            return self._finish(current, ExtractionJobStatus.SUCCEEDED)
+        if skipped_any:
+            return self._finish(current, ExtractionJobStatus.SKIPPED_DUPLICATE_ACTIVE)
+        return self._finish(current, ExtractionJobStatus.SUCCEEDED)
+
+    async def _materialize_summary(
+        self, scope: Scope, job_id: str, candidate: ExtractionCandidate,
+        window: ExtractionWindow,
+    ) -> tuple[bool, bool, tuple[MemoryEntity, ...]]:
+        normalized = normalize_content(candidate.content)
+        if not normalized:
+            return False, False, ()
+        key = DedupKey(scope.id, scope.identity.subject_id, candidate.memory_type.value, normalized)
+        now = self._clock.now()
+        if self._store.find_active_duplicate(key) is not None:
+            return False, True, ()
+        if self._store.find_candidate_duplicate(key) is not None:
+            return False, True, ()
+        active_memories = self._active_same_type(scope, candidate.memory_type, now)
+        target = self._consolidation_target(candidate, active_memories)
+        if target is not None:
+            await self._merge_duplicate(scope, candidate, job_id, now, target)
+            return False, True, ()
+        summary_metadata = {
+            "summary": True,
+            "summary_session": sha256(
+                window.conversation_id.encode("utf-8"),
+            ).hexdigest()[:16],
+            "summary_range": {"from": window.watermark, "to": window.watermark},
+            "importance": _SUMMARY_IMPORTANCE,
+        }
+        commit = (
+            self._auto_commit_enabled
+            and candidate.confidence is not None
+            and candidate.confidence >= self._auto_commit_confidence
+        )
+        try:
+            if commit:
+                await self._create_active(
+                    scope, candidate, job_id, now,
+                    AutoCommitDecision(True, "window_summary", "summary"),
+                    extra_metadata=summary_metadata,
+                    operation_type="AUTO_SUMMARY",
+                )
+                return True, False, ()
+            memory = await self._create_candidate(
+                scope, candidate, job_id, now, extra_metadata=summary_metadata,
+            )
+        except Conflict:
+            return False, True, ()
+        return True, False, (memory,)
 
     async def _run(
         self, scope: Scope, job: ExtractionJob, window: ExtractionWindow,
@@ -446,17 +619,19 @@ class ExtractionService:
 
     async def _create_candidate(
         self, scope: Scope, candidate: ExtractionCandidate, job_id: str,
-        now: datetime,
+        now: datetime, *, extra_metadata: Mapping[str, object] | None = None,
     ) -> MemoryEntity:
         memory_id = self._ids.new_id("memory")
         normalized = normalize_content(candidate.content)
-        metadata = {
+        metadata: dict[str, object] = {
             "extraction_job_id": job_id,
             "confidence": candidate.confidence,
             "auto": True,
             "direct_write": False,
             "importance": _CANDIDATE_IMPORTANCE,
         }
+        if extra_metadata:
+            metadata.update(extra_metadata)
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
             memory_type=candidate.memory_type, content=candidate.content,
@@ -494,11 +669,13 @@ class ExtractionService:
 
     async def _create_active(
         self, scope: Scope, candidate: ExtractionCandidate, job_id: str,
-        now: datetime, decision: AutoCommitDecision,
+        now: datetime, decision: AutoCommitDecision, *,
+        extra_metadata: Mapping[str, object] | None = None,
+        operation_type: str = "AUTO_COMMIT",
     ) -> MemoryEntity:
         memory_id = self._ids.new_id("memory")
         normalized = normalize_content(candidate.content)
-        metadata = {
+        metadata: dict[str, object] = {
             "extraction_job_id": job_id,
             "confidence": candidate.confidence,
             "auto": True,
@@ -506,6 +683,8 @@ class ExtractionService:
             "commit_rule": decision.rule,
             "importance": _DIRECT_IMPORTANCE,
         }
+        if extra_metadata:
+            metadata.update(extra_metadata)
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
             memory_type=candidate.memory_type, content=candidate.content,
@@ -516,7 +695,11 @@ class ExtractionService:
         revision = MemoryRevision(
             id=self._ids.new_id("revision"), memory_id=memory_id, revision=1,
             content=candidate.content, status=MemoryStatus.ACTIVE,
-            changed_at=now, change_reason=f"auto commit: {decision.rule}",
+            changed_at=now,
+            change_reason=(
+                f"auto commit: {decision.rule}"
+                if operation_type == "AUTO_COMMIT" else "auto summary"
+            ),
             snapshot={
                 "scope_id": scope.id, "subject_id": scope.identity.subject_id,
                 "memory_type": candidate.memory_type.value,
@@ -541,7 +724,7 @@ class ExtractionService:
         )
         self._store.record_operation(
             operation_id=self._ids.new_id("operation"), scope_id=scope.id,
-            memory_id=memory_id, operation_type="AUTO_COMMIT",
+            memory_id=memory_id, operation_type=operation_type,
             operator_type=OperatorType.SYSTEM, operator_id="extraction_service",
             occurred_at=now,
             metadata={
