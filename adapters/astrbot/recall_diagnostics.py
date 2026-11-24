@@ -54,10 +54,18 @@ class JsonlRecallDiagnostics:
 
     def write(self, record: dict[str, Any]) -> None:
         payload = dict(record)
-        if self._include_query and isinstance(payload.get("query"), str):
-            payload["query"] = _redact_query(payload["query"])
-        else:
-            payload.pop("query", None)
+        query = payload.get("query")
+        if isinstance(query, str):
+            if self._include_query:
+                payload["query"] = _redact_query(query)
+            else:
+                payload.pop("query", None)
+        elif isinstance(query, dict) and not self._include_query:
+            # Hybrid traces carry a privacy-safe query block (hash/length);
+            # keep it and drop only the optional redacted text.
+            payload["query"] = {
+                key: value for key, value in query.items() if key != "text"
+            }
         today = datetime.now(UTC).date()
         path = self._directory / f"recall-{today.isoformat()}.jsonl"
         try:

@@ -19,9 +19,9 @@ def test_config_schema_uses_astrbot_supported_types():
 def test_v2_defaults_are_safe_and_frozen():
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     expected = {
-        "hybrid_retrieval_enabled": False,
-        "vector_index_enabled": False,
-        "rerank_enabled": False,
+        "hybrid_retrieval_enabled": True,
+        "vector_index_enabled": True,
+        "rerank_enabled": True,
         "auto_enroll": True,
         "personal_max_tokens": 384,
         "personal_max_memories": 4,

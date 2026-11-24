@@ -66,22 +66,22 @@
     "hint": "启动后先清理一次，之后按该间隔在后台清理；范围 60–86400。"
   },
   "hybrid_retrieval_enabled": {
-    "description": "混合检索总开关（默认关闭）",
+    "description": "混合检索总开关（默认开启）",
     "type": "bool",
-    "default": false,
-    "hint": "关闭时行为与 V1.8 FTS 完全一致；开启后才启用分类器、向量通道与 RRF。"
+    "default": true,
+    "hint": "默认启用分类器、标签/时间通道与 RRF；未配置 embedding provider 时自动仅走 FTS/标签/时间，不劣于 V1.8。"
   },
   "vector_index_enabled": {
-    "description": "向量派生索引（默认关闭）",
+    "description": "向量派生索引（默认开启）",
     "type": "bool",
-    "default": false,
-    "hint": "需要配置 embedding_provider_id 且显式 opt-in；向量表可随时重建，不进入权威备份。"
+    "default": true,
+    "hint": "默认尝试向量通道；未配置 embedding provider、维度漂移或索引不可用时自动回退 FTS。向量表可随时重建，不进入权威备份。"
   },
   "rerank_enabled": {
-    "description": "可选重排（默认关闭）",
+    "description": "可选重排（默认开启）",
     "type": "bool",
-    "default": false,
-    "hint": "需要 rerank_provider_id 与外部 provider opt-in；失败时保持 RRF 顺序。"
+    "default": true,
+    "hint": "默认启用；需要 rerank_provider_id，未配置或失败时保持 RRF 顺序。外部托管 rerank 仍需 provider opt-in。"
   },
   "query_classifier_mode": {
     "description": "查询分类模式",
@@ -245,6 +245,13 @@
     "type": "bool",
     "default": false,
     "hint": "默认关闭：拒绝后正文、版本与来源在同一事务中物理清理，只保留不含正文的审计记录；开启后保留 REJECTED 行与正文。"
+  },
+  "command_admin_ids": {
+    "description": "备份/恢复命令管理员 ID 列表",
+    "type": "list",
+    "items": { "type": "string" },
+    "default": [],
+    "hint": "备份与备份恢复命令只允许宿主的 is_admin 用户或名单内用户 ID 执行；名单为空时仅宿主管理员可用。"
   },
   "api_admin_usernames": {
     "description": "管理 API 用户名白名单",

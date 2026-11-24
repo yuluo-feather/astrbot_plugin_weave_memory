@@ -5,14 +5,39 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...core.errors import ValidationError
+from ...core.errors import AuthorizationDenied, ValidationError
 from ...core.ports import RESTORE_MODES, BackupPort
 from .command_text import tail_after_command
+from .identity import AstrBotIdentityAdapter
 
 
 class AstrBotBackupCommands:
-    def __init__(self, service: BackupPort) -> None:
+    def __init__(self, service: BackupPort, *,
+                 admin_ids: tuple[str, ...] = ()) -> None:
         self._service = service
+        self._admin_ids = {
+            str(item).strip() for item in admin_ids if str(item).strip()
+        }
+        self._identity = AstrBotIdentityAdapter()
+
+    def _authorize(self, event: Any) -> None:
+        is_admin = getattr(event, "is_admin", None)
+        if callable(is_admin):
+            try:
+                if is_admin():
+                    return
+            except Exception:  # noqa: BLE001 - host API variance
+                pass
+        operator = ""
+        try:
+            operator = self._identity.resolve_operator_id(event)
+        except Exception:  # noqa: BLE001 - identity may be incomplete
+            operator = ""
+        if operator and operator in self._admin_ids:
+            return
+        raise AuthorizationDenied(
+            "备份/恢复仅限管理员：请由宿主管理员执行，或把用户 ID 加入 command_admin_ids",
+        )
 
     def help(self) -> str:
         return (
@@ -26,6 +51,7 @@ class AstrBotBackupCommands:
         )
 
     def backup(self, event: Any) -> str:
+        self._authorize(event)
         tail = tail_after_command(event, "备份")
         if tail in {"列表", "list"}:
             return json.dumps(
@@ -38,6 +64,7 @@ class AstrBotBackupCommands:
         return json.dumps(manifest, ensure_ascii=False, indent=2)
 
     def restore(self, event: Any) -> str:
+        self._authorize(event)
         tail = tail_after_command(event, "备份恢复")
         if not tail:
             return "用法：/织忆 备份恢复 <备份ID> [merge|revert|disaster-rebuild] 确认"

@@ -129,10 +129,10 @@ class ProviderConfig:
             rerank_max_text_chars=_int(
                 config, "rerank_max_text_chars", 1200, 100, 8000,
             ),
-            rerank_enabled=_bool(config, "rerank_enabled", False),
-            vector_index_enabled=_bool(config, "vector_index_enabled", False),
+            rerank_enabled=_bool(config, "rerank_enabled", True),
+            vector_index_enabled=_bool(config, "vector_index_enabled", True),
             hybrid_retrieval_enabled=_bool(
-                config, "hybrid_retrieval_enabled", False,
+                config, "hybrid_retrieval_enabled", True,
             ),
             index_job_max_attempts=_int(
                 config, "index_job_max_attempts", 5, 1, 100,

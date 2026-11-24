@@ -203,7 +203,7 @@ class WeaveMemoryPlugin(Star):
             index_jobs: SQLiteIndexJobStore | None = None
             index_worker: IndexWorker | None = None
             index_rebuild: IndexRebuildService | None = None
-            if provider is not None:
+            if provider is not None and provider_config.vector_index_enabled:
                 config_hash = sha256(
                     (
                         f"{provider.provider_id}|{provider.model}|{provider.dimension}|"
@@ -481,7 +481,9 @@ class WeaveMemoryPlugin(Star):
             self._extraction_commands = AstrBotExtractionCommands(
                 scopes, consent, extraction,
             )
-            self._backup_commands = AstrBotBackupCommands(backup)
+            self._backup_commands = AstrBotBackupCommands(
+                backup, admin_ids=self._config_list("command_admin_ids"),
+            )
             self._extraction_capture = AstrBotExtractionCapture(
                 scopes, extraction, enabled=extraction_enabled,
                 min_messages=self._config_int("extraction_min_messages", 5),
