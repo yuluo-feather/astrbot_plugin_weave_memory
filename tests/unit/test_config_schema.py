@@ -28,7 +28,7 @@ def test_v2_defaults_are_safe_and_frozen():
         "hybrid_candidate_limit": 24,
         "time_candidate_limit": 10,
         "vector_relevance_threshold": 0.35,
-        "fts_relevance_ratio": 0.5,
+        "fts_relevance_ratio": 0.3,
         "vector_snapshot_cache_mb": 64,
         "embedding_provider_id": "",
         "embedding_model": "",

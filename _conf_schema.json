@@ -116,7 +116,7 @@
   "fts_relevance_ratio": {
     "description": "FTS 相对相关性阈值",
     "type": "float",
-    "default": 0.5,
+    "default": 0.3,
     "hint": "仅保留本 query FTS 最高分 × 该比例的候选；默认单路 FTS 与 hybrid 都生效，0 表示关闭。范围 0–1。"
   },
   "vector_snapshot_cache_mb": {

@@ -155,7 +155,7 @@ class ProviderConfig:
                 config, "vector_relevance_threshold", 0.35, 0.0, 1.0,
             ),
             fts_relevance_ratio=_float(
-                config, "fts_relevance_ratio", 0.5, 0.0, 1.0,
+                config, "fts_relevance_ratio", 0.3, 0.0, 1.0,
             ),
             vector_snapshot_cache_mb=_int(
                 config, "vector_snapshot_cache_mb", 64, 0, 1024,
