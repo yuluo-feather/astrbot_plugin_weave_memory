@@ -11,7 +11,7 @@ from ...app.consent_service import (
 from ...app.extraction_service import ExtractionService
 from ...app.scope_service import PersonalScopeService
 from ...app.sensitive_filter import KNOWN_CATEGORIES
-from ...core.errors import AuthorizationDenied, NotFound, ValidationError
+from ...core.errors import AuthorizationDenied, Conflict, NotFound, ValidationError
 from .command_text import tail_after_command
 from .identity import AstrBotIdentityAdapter
 
@@ -99,9 +99,14 @@ class AstrBotExtractionCommands:
         if subcommand == "取消":
             if len(parts) != 2:
                 return "用法：/织忆 提取 取消 <任务ID>"
-            job = self._extraction.cancel_job(
-                scope, parts[1], operator_id=operator_id,
-            )
+            try:
+                job = self._extraction.cancel_job(
+                    scope, parts[1], operator_id=operator_id,
+                )
+            except NotFound:
+                return "取消失败：没有找到该提取任务。"
+            except Conflict:
+                return "取消失败：只有排队中或运行中的任务可以取消。"
             return f"已取消提取任务 {job.id}，后续不会再调用模型。"
         return _USAGE
 

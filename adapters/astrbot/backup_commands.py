@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...core.errors import AuthorizationDenied, ValidationError
+from ...core.errors import AuthorizationDenied, NotFound, ValidationError
 from ...core.ports import RESTORE_MODES, BackupPort
 from .command_text import tail_after_command
 from .identity import AstrBotIdentityAdapter
@@ -53,7 +53,10 @@ class AstrBotBackupCommands:
         )
 
     def backup(self, event: Any) -> str:
-        self._authorize(event)
+        try:
+            self._authorize(event)
+        except AuthorizationDenied as exc:
+            return str(exc)
         tail = tail_after_command(event, "备份")
         if tail in {"列表", "list"}:
             return json.dumps(
@@ -66,7 +69,10 @@ class AstrBotBackupCommands:
         return json.dumps(manifest, ensure_ascii=False, indent=2)
 
     def restore(self, event: Any) -> str:
-        self._authorize(event)
+        try:
+            self._authorize(event)
+        except AuthorizationDenied as exc:
+            return str(exc)
         tail = tail_after_command(event, "备份恢复")
         if not tail:
             return "用法：/织忆 备份恢复 <备份ID> [merge|revert|disaster-rebuild] 确认"
@@ -82,9 +88,12 @@ class AstrBotBackupCommands:
             confirm = parts[2] in {"确认", "confirm"}
             if len(parts) != 3 or not confirm:
                 raise ValidationError("快照回滚必须显式附带「确认」")
-            result = self._service.rollback_to_snapshot(
-                parts[1], confirm=True,
-            )
+            try:
+                result = self._service.rollback_to_snapshot(
+                    parts[1], confirm=True,
+                )
+            except NotFound:
+                return "备份恢复失败：没有找到该恢复前快照。"
             return json.dumps(result, ensure_ascii=False, indent=2)
         backup_id = parts[0]
         mode = "merge"
@@ -97,7 +106,10 @@ class AstrBotBackupCommands:
                 mode = lowered
             else:
                 raise ValidationError("恢复模式只能是 merge、revert 或 disaster-rebuild")
-        result = self._service.restore(
-            backup_id, mode=mode, confirm=confirm, dry_run=not confirm,
-        )
+        try:
+            result = self._service.restore(
+                backup_id, mode=mode, confirm=confirm, dry_run=not confirm,
+            )
+        except NotFound:
+            return "备份恢复失败：没有找到对应的备份。"
         return json.dumps(result, ensure_ascii=False, indent=2)
