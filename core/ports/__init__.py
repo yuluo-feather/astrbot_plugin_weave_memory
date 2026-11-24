@@ -395,6 +395,11 @@ class LlmExtractor(Protocol):
         sensitive_categories: tuple[str, ...],
     ) -> tuple[ExtractionCandidate, ...]: ...
 
+    async def summarize(
+        self, window: ExtractionWindow, *,
+        sensitive_categories: tuple[str, ...],
+    ) -> ExtractionCandidate | None: ...
+
 
 class ExtractionJobStore(Protocol):
     """Durable, idempotent extraction job state (schema v6)."""

@@ -77,6 +77,8 @@ class FakeExtractor:
         self.error = error
         self.fail_times = fail_times
         self.calls: list[ExtractionWindow] = []
+        self.summary_candidate: ExtractionCandidate | None = None
+        self.summary_calls: list[ExtractionWindow] = []
 
     async def extract(self, window, *, allowed_types, sensitive_categories):
         self.calls.append(window)
@@ -86,6 +88,10 @@ class FakeExtractor:
         if self.error is not None:
             raise self.error
         return self.candidates
+
+    async def summarize(self, window, *, sensitive_categories):
+        self.summary_calls.append(window)
+        return self.summary_candidate
 
 
 def _grant_all(consent: ConsentService, scope: Scope) -> None:
@@ -151,6 +157,27 @@ def _active(store: SQLiteMemoryStore, scope: Scope, content: str, memory_type=Me
     return memory
 
 
+def _seed_active(store, scope: Scope, content: str, index: int,
+                 memory_type=MemoryType.PREFERENCE) -> MemoryEntity:
+    memory_id = f"seed-{index}"
+    memory = MemoryEntity(
+        id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        memory_type=memory_type, content=content,
+        normalized_content=normalize_content(content), status=MemoryStatus.ACTIVE,
+        source_type=SourceType.EXPLICIT, current_revision=1,
+        created_at=NOW, updated_at=NOW,
+    )
+    revision = MemoryRevision(
+        memory_id + "-r1", memory_id, 1, content, MemoryStatus.ACTIVE, NOW, "seed",
+    )
+    source = MemorySource(
+        memory_id + "-s1", memory_id, SourceType.EXPLICIT,
+        OperatorType.USER, "u1", NOW,
+    )
+    store.create(memory, revision, source)
+    return memory
+
+
 def test_extraction_requires_all_consent_layers(extraction_stack):
     stack = extraction_stack
     assert _submit(stack, "我喜欢黑咖啡") is None
@@ -171,6 +198,7 @@ def test_missing_external_model_blocks_extract_without_rewriting_consent(extract
         ExtractionConsentType.STORE_CANDIDATE,
     ):
         consent.grant(scope, consent_type, operator_id="u1")
+    consent.revoke(scope, ExtractionConsentType.EXTERNAL_MODEL, operator_id="u1")
     assert _submit(stack, "我喜欢黑咖啡") is None
     assert stack["extractor"].calls == []
     assert consent.is_granted(scope, ExtractionConsentType.AUTO_EXTRACT) is True
@@ -208,7 +236,7 @@ def test_candidate_is_inferred_not_searchable_until_confirmed(extraction_stack):
     stack = extraction_stack
     _grant_all(stack["consent"], stack["scope"])
     stack["extractor"].candidates = (
-        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡", confidence=0.8),
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡", confidence=0.5),
     )
     job = _submit(stack, "我喜欢黑咖啡")
     assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
@@ -223,6 +251,8 @@ def test_candidate_is_inferred_not_searchable_until_confirmed(extraction_stack):
         stack["scope"], candidate.id, expected_revision=candidate.current_revision,
     ))
     assert confirmed.status is MemoryStatus.ACTIVE
+    assert confirmed.metadata["auto"] is False
+    assert confirmed.metadata["user_confirmed"] is True
     assert stack["index"].search("黑咖啡", scope_id=stack["scope"].id, subject_id="u1") == (candidate.id,)
 
 
@@ -423,6 +453,34 @@ def test_explicit_save_rejects_same_content_candidate_with_friendly_message(extr
         ))
 
 
+def test_revoked_consent_before_model_call_marks_job_failed(extraction_stack):
+    stack = extraction_stack
+    scope = stack["scope"]
+    _grant_all(stack["consent"], scope)
+    now = stack["clock"].now()
+    job = ExtractionJob(
+        id="job-revoked", platform="astrbot", tenant_id="default",
+        scope_id=scope.id, subject_id="u1", conversation_id="conv-1",
+        watermark=1, content_hash="hash-1",
+        status=ExtractionJobStatus.PENDING, attempts=0,
+        created_at=now, updated_at=now,
+    )
+    stack["jobs"].create_or_get(job)
+    stack["consent"].revoke(
+        scope, ExtractionConsentType.CAPTURE, operator_id="u1",
+    )
+    window = ExtractionWindow(
+        scope_id=scope.id, subject_id="u1", conversation_id="conv-1",
+        watermark=1, content_hash="hash-1", messages=("我喜欢黑咖啡",),
+    )
+    result = asyncio.run(stack["service"]._run(
+        scope, job, window, stack["service"].gates(scope), None,
+    ))
+    assert result.status is ExtractionJobStatus.FAILED
+    assert result.last_error == "consent_revoked"
+    assert stack["extractor"].calls == []
+
+
 def test_cancel_job_stops_further_model_calls(extraction_stack):
     stack = extraction_stack
     scope = stack["scope"]
@@ -452,3 +510,234 @@ def test_cancel_job_stops_further_model_calls(extraction_stack):
 
     with pytest.raises(Conflict):
         stack["service"].cancel_job(scope, "job-cancel", operator_id="u1")
+
+
+def _service_with(stack, **overrides) -> ExtractionService:
+    options = {
+        "store": stack["store"], "jobs": stack["jobs"],
+        "coordinator": stack["coordinator"], "consent": stack["consent"],
+        "scopes": stack["store"], "lifecycle": stack["service"]._lifecycle,
+        "extractor": stack["extractor"], "clock": stack["clock"],
+        "ids": stack["ids"], "global_enabled": True,
+    }
+    options.update(overrides)
+    return ExtractionService(**options)
+
+
+def test_default_grants_enable_extraction_without_explicit_consents(extraction_stack):
+    stack = extraction_stack
+    stack["consent"].grant(
+        stack["scope"], PersonalConsentType.PERSONAL_MEMORY, operator_id="u1",
+    )
+    job = _submit(stack, "我喜欢黑咖啡")
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert len(stack["extractor"].calls) == 1
+    gates = stack["service"].gates(stack["scope"])
+    assert gates.capture_consent and gates.auto_extract_consent
+    assert gates.store_candidate_consent and gates.external_model_consent
+
+
+def test_explicit_revoke_beats_default_grant(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["consent"].revoke(
+        stack["scope"], ExtractionConsentType.CAPTURE, operator_id="u1",
+    )
+    assert _submit(stack, "我喜欢黑咖啡") is None
+    assert stack["extractor"].calls == []
+
+
+def test_direct_write_creates_active_memory_and_audit(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.FACT, "用户住在杭州", confidence=0.9),
+    )
+    job = _submit(stack, "我住在杭州")
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    rows, total = stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )
+    assert total == 1
+    memory = rows[0]
+    assert memory.status is MemoryStatus.ACTIVE
+    assert memory.source_type is SourceType.INFERRED
+    assert memory.metadata["auto"] is True
+    assert memory.metadata["direct_write"] is True
+    assert memory.metadata["commit_rule"] == "explicit_first_person_stable_attribute"
+    assert stack["index"].search(
+        "杭州", scope_id=stack["scope"].id, subject_id="u1",
+    ) == (memory.id,)
+    operations = stack["store"].db.connection.execute(
+        "SELECT operation_type, metadata_json FROM memory_operations "
+        "WHERE memory_id=? ORDER BY rowid", (memory.id,),
+    ).fetchall()
+    assert [row["operation_type"] for row in operations] == ["AUTO_COMMIT"]
+    assert "杭州" not in operations[0]["metadata_json"]
+
+
+def test_event_and_low_confidence_stay_candidates(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.EVENT, "用户今天去了杭州", confidence=0.9),
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡", confidence=0.5),
+    )
+    _submit(stack, "我今天去了杭州，也喜欢黑咖啡")
+    candidates, total = asyncio.run(
+        stack["service"].list_candidates(stack["scope"]),
+    )
+    assert total == 2
+    assert all(item.status is MemoryStatus.CANDIDATE for item in candidates)
+
+
+def test_conflicting_active_memory_forces_candidate(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    _active(stack["store"], stack["scope"], "用户喜欢黑咖啡")
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢绿茶", confidence=0.9),
+    )
+    _submit(stack, "我喜欢绿茶")
+    candidates, total = asyncio.run(
+        stack["service"].list_candidates(stack["scope"]),
+    )
+    assert total == 1
+    assert candidates[0].metadata["direct_write"] is False
+
+
+def test_near_duplicate_active_memory_is_skipped(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    _active(stack["store"], stack["scope"], "用户喜欢喝黑咖啡")
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢黑咖啡", confidence=0.9),
+    )
+    job = _submit(stack, "我喜欢黑咖啡")
+    assert job is not None
+    assert job.status is ExtractionJobStatus.SKIPPED_DUPLICATE_ACTIVE
+    rows, total = stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )
+    assert total == 1
+    survivor = rows[0]
+    assert survivor.content == "用户喜欢喝黑咖啡"
+    assert survivor.current_revision == 2
+    assert survivor.metadata["merged_sources"] == [f"extraction_job:{job.id}"]
+    operations = stack["store"].db.connection.execute(
+        "SELECT operation_type, metadata_json FROM memory_operations "
+        "WHERE memory_id=? ORDER BY rowid", (survivor.id,),
+    ).fetchall()
+    assert [row["operation_type"] for row in operations] == ["MEMORY_MERGE"]
+    assert "黑咖啡" not in operations[0]["metadata_json"]
+
+
+def test_auto_commit_disabled_is_candidate_only(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.FACT, "用户住在杭州", confidence=0.99),
+    )
+    service = _service_with(stack, auto_commit_enabled=False)
+    job = asyncio.run(service.submit(
+        stack["scope"], conversation_id="conv-1", message_id="msg-1",
+        content="我住在杭州",
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert asyncio.run(service.list_candidates(stack["scope"]))[1] == 1
+
+
+def test_summary_creates_active_event_memory(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].summary_candidate = ExtractionCandidate(
+        MemoryType.EVENT, "用户讨论了咖啡偏好和周末去杭州的计划", confidence=0.9,
+    )
+    job = asyncio.run(stack["service"].submit_summary(
+        stack["scope"], conversation_id="conv-1",
+        messages=("我喜欢黑咖啡", "周末想去杭州"), watermark=2,
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    rows, total = stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )
+    assert total == 1
+    memory = rows[0]
+    assert memory.memory_type is MemoryType.EVENT
+    assert memory.metadata["summary"] is True
+    assert len(memory.metadata["summary_session"]) == 16
+    assert memory.metadata["summary_range"] == {"from": 2, "to": 2}
+    operations = stack["store"].db.connection.execute(
+        "SELECT operation_type FROM memory_operations WHERE memory_id=?",
+        (memory.id,),
+    ).fetchall()
+    assert [row["operation_type"] for row in operations] == ["AUTO_SUMMARY"]
+
+
+def test_summary_is_candidate_when_direct_write_disabled(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].summary_candidate = ExtractionCandidate(
+        MemoryType.EVENT, "用户讨论了咖啡偏好", confidence=0.9,
+    )
+    service = _service_with(stack, auto_commit_enabled=False)
+    job = asyncio.run(service.submit_summary(
+        stack["scope"], conversation_id="conv-1",
+        messages=("我喜欢黑咖啡",), watermark=1,
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    candidates, total = asyncio.run(service.list_candidates(stack["scope"]))
+    assert total == 1
+    assert candidates[0].metadata["summary"] is True
+
+
+def test_conflict_detection_pages_past_first_fifty_active_memories(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    for index in range(55):
+        _seed_active(stack["store"], stack["scope"], f"用户喜欢饮品{index}", index)
+    _seed_active(stack["store"], stack["scope"], "用户喜欢黑咖啡", 55)
+    stack["extractor"].candidates = (
+        ExtractionCandidate(MemoryType.PREFERENCE, "用户喜欢绿茶", confidence=0.9),
+    )
+    _submit(stack, "我喜欢绿茶")
+    candidates, total = asyncio.run(
+        stack["service"].list_candidates(stack["scope"]),
+    )
+    assert total == 1
+    assert candidates[0].content == "用户喜欢绿茶"
+
+
+def test_summary_with_high_risk_category_stays_candidate(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["consent"].grant(
+        stack["scope"], ExtractionConsentType.SENSITIVE_CATEGORIES,
+        operator_id="u1", metadata={"categories": ["credential"]},
+    )
+    stack["extractor"].summary_candidate = ExtractionCandidate(
+        MemoryType.EVENT, "用户提到密码是 hunter2", confidence=0.99,
+    )
+    job = asyncio.run(stack["service"].submit_summary(
+        stack["scope"], conversation_id="conv-1",
+        messages=("我的密码是 hunter2",), watermark=1,
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )[1] == 0
+    assert asyncio.run(stack["service"].list_candidates(stack["scope"]))[1] == 1
+
+
+def test_summary_without_content_succeeds_without_memory(extraction_stack):
+    stack = extraction_stack
+    _grant_all(stack["consent"], stack["scope"])
+    stack["extractor"].summary_candidate = None
+    job = asyncio.run(stack["service"].submit_summary(
+        stack["scope"], conversation_id="conv-1",
+        messages=("今天天气不错",), watermark=1,
+    ))
+    assert job is not None and job.status is ExtractionJobStatus.SUCCEEDED
+    assert stack["store"].list_active_page(
+        scope_id=stack["scope"].id, subject_id="u1", limit=10, offset=0,
+    )[1] == 0

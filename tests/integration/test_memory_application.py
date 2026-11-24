@@ -43,6 +43,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.errors import (
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     ArchiveReason,
     Identity,
+    MemoryEntity,
     MemoryRevision,
     MemorySource,
     MemoryStatus,
@@ -51,6 +52,9 @@ from data.plugins.astrbot_plugin_weave_memory.core.model import (
     ScopeType,
     SourceType,
     SubjectType,
+)
+from data.plugins.astrbot_plugin_weave_memory.core.normalization import (
+    normalize_content,
 )
 
 NOW = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
@@ -952,3 +956,70 @@ def test_prune_operations_removes_only_rows_older_than_cutoff(app_stack):
     )
     assert total == 1
     assert [item["id"] for item in operations] == ["op-new"]
+
+
+def test_importance_decay_keeps_recall_set(app_stack):
+    _, store, index, scopes, consent, memories, _, coordinator = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(
+        scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1",
+    )
+    asyncio.run(memories.save_explicit(scope, "我喜欢黑咖啡", operator_id="u1"))
+    asyncio.run(memories.save_explicit(scope, "我喜欢绿茶", operator_id="u1"))
+    baseline = RecallService(store, index, consent, FixedClock(), coordinator, store)
+    decayed = RecallService(
+        store, index, consent, FixedClock(), coordinator, store,
+        importance_half_life_days=90,
+    )
+    baseline_ids = [memory.id for memory in baseline.recall("喜欢", scope)]
+    decayed_ids = [memory.id for memory in decayed.recall("喜欢", scope)]
+    assert len(baseline_ids) == 2
+    assert set(decayed_ids) == set(baseline_ids)
+
+
+def test_explicit_save_merges_near_duplicate_inferred_memory(app_stack):
+    _, store, _, scopes, consent, memories, _, coordinator = app_stack
+    scope = scopes.resolve(identity())
+    consent.grant(
+        scope, PersonalConsentType.PERSONAL_MEMORY, operator_id="u1",
+    )
+    content = "用户喜欢喝黑咖啡"
+    inferred = MemoryEntity(
+        id="auto-near", scope_id=scope.id, subject_id="u1",
+        memory_type=MemoryType.PREFERENCE, content=content,
+        normalized_content=normalize_content(content), status=MemoryStatus.ACTIVE,
+        source_type=SourceType.INFERRED, current_revision=1,
+        created_at=NOW, updated_at=NOW,
+        metadata={"auto": True, "importance": 0.7},
+    )
+    asyncio.run(coordinator.create(
+        inferred,
+        MemoryRevision(
+            "auto-near-r1", inferred.id, 1, content, MemoryStatus.ACTIVE,
+            NOW, "seed",
+        ),
+        MemorySource(
+            "auto-near-s1", inferred.id, SourceType.INFERRED,
+            OperatorType.SYSTEM, "extraction_service", NOW,
+        ),
+    ))
+    saved, receipt = asyncio.run(memories.save_explicit(
+        scope, "用户喜欢黑咖啡", operator_id="u1",
+        memory_type=MemoryType.PREFERENCE,
+    ))
+    assert saved.id == inferred.id
+    assert saved.source_type is SourceType.EXPLICIT
+    assert saved.current_revision == 2
+    assert saved.metadata["auto"] is False
+    assert saved.metadata["user_confirmed"] is True
+    assert receipt.entity_id == inferred.id
+    rows, total = store.list_active_page(
+        scope_id=scope.id, subject_id="u1", limit=10, offset=0,
+    )
+    assert total == 1
+    operations = store.db.connection.execute(
+        "SELECT operation_type, metadata_json FROM memory_operations "
+        "WHERE memory_id=? ORDER BY rowid", (inferred.id,),
+    ).fetchall()
+    assert [row["operation_type"] for row in operations] == ["MEMORY_MERGE"]
+    assert "黑咖啡" not in operations[0]["metadata_json"]

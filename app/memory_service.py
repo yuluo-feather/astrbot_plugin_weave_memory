@@ -17,6 +17,7 @@ from ..core.model import (
     SourceType,
 )
 from ..core.normalization import normalize_content
+from ..core.policy.auto_commit import has_polarity_mismatch, similarity
 from ..core.policy.dedup import DedupKey
 from ..core.ports import Clock, IdGenerator, MemoryStore
 from .consent_service import ConsentService, PersonalConsentType
@@ -24,17 +25,30 @@ from .export import EXPORTED_STATUSES, build_export
 from .lifecycle_service import LifecycleService
 from .write_coordinator import OperationReceipt, WriteCoordinator, WriteReceipt
 
+_SOURCE_PRIORITY = {
+    SourceType.INFERRED: 1,
+    SourceType.OBSERVED: 2,
+    SourceType.IMPORTED: 2,
+    SourceType.MANUAL: 3,
+    SourceType.EXPLICIT: 4,
+    SourceType.AGENT: 4,
+}
+
 
 class MemoryApplicationService:
     def __init__(self, store: MemoryStore, coordinator: WriteCoordinator,
                  consent: ConsentService, lifecycle: LifecycleService,
-                 clock: Clock, ids: IdGenerator) -> None:
+                 clock: Clock, ids: IdGenerator, *,
+                 consolidation_similarity: float = 0.9) -> None:
         self._store = store
         self._coordinator = coordinator
         self._consent = consent
         self._lifecycle = lifecycle
         self._clock = clock
         self._ids = ids
+        self._consolidation_similarity = min(
+            1.0, max(0.0, consolidation_similarity),
+        )
 
     async def _expire_overdue_duplicate(self, scope: Scope, memory_type: MemoryType,
                                         normalized: str, now: datetime) -> None:
@@ -69,6 +83,99 @@ class MemoryApplicationService:
                 f"请先 /织忆 候选 确认 {candidate.id} 或 /织忆 候选 拒绝 {candidate.id}"
             )
 
+    def _near_duplicate_active(
+        self, scope: Scope, memory_type: MemoryType, content: str,
+        now: datetime,
+    ) -> MemoryEntity | None:
+        if self._consolidation_similarity <= 0:
+            return None
+        rows = self._store.list_active(
+            scope_id=scope.id, subject_id=scope.identity.subject_id, at=now,
+        )
+        for memory in rows:
+            if memory.memory_type is not memory_type:
+                continue
+            if has_polarity_mismatch(content, memory.content):
+                continue
+            if similarity(content, memory.content) >= self._consolidation_similarity:
+                return memory
+        return None
+
+    async def _merge_into_active(
+        self, scope: Scope, current: MemoryEntity, content: str, *,
+        source_type: SourceType, operator_type: OperatorType,
+        operator_id: str, reason: str, tags: Sequence[str],
+        source_metadata: Mapping[str, object] | None, now: datetime,
+    ) -> tuple[MemoryEntity, WriteReceipt]:
+        """V1.9 M4b: upgrade one near-duplicate ACTIVE row instead of duplicating it."""
+        normalized = normalize_content(content)
+        existing_tags = list(current.metadata.get("tags", []))
+        merged_tags = list(dict.fromkeys((*existing_tags, *tags)))
+        metadata: dict[str, object] = {
+            **dict(current.metadata),
+            "merged_sources": [
+                *list(current.metadata.get("merged_sources", [])),
+                f"{source_type.value.lower()}_save",
+            ],
+            "last_merged_at": now.isoformat(),
+        }
+        if merged_tags:
+            metadata["tags"] = merged_tags
+        new_source_type = (
+            source_type
+            if _SOURCE_PRIORITY[source_type] >= _SOURCE_PRIORITY[current.source_type]
+            else current.source_type
+        )
+        if new_source_type in {SourceType.EXPLICIT, SourceType.AGENT}:
+            metadata["auto"] = False
+            metadata["user_confirmed"] = True
+        updated = replace(
+            current, content=content, normalized_content=normalized,
+            source_type=new_source_type,
+            current_revision=current.current_revision + 1, updated_at=now,
+            metadata=metadata,
+        )
+        revision = MemoryRevision(
+            id=self._ids.new_id("revision"), memory_id=current.id,
+            revision=updated.current_revision, content=content,
+            status=updated.status, changed_at=now, change_reason=reason,
+            snapshot={
+                "scope_id": scope.id, "subject_id": scope.identity.subject_id,
+                "memory_type": updated.memory_type.value,
+                "source_type": updated.source_type.value,
+                "merged_similarity": round(
+                    similarity(content, current.content), 4,
+                ),
+            },
+        )
+        source = MemorySource(
+            id=self._ids.new_id("source"), memory_id=current.id,
+            source_type=new_source_type, operator_type=operator_type,
+            operator_id=operator_id, captured_at=now,
+            metadata={
+                **dict(source_metadata or {}),
+                "merged_similarity": round(similarity(content, current.content), 4),
+            },
+        )
+        receipt = await self._coordinator.update(
+            updated, expected_revision=current.current_revision,
+            revision=revision, source=source,
+            guard=lambda: self._consent.require(
+                scope, PersonalConsentType.PERSONAL_MEMORY,
+            ),
+        )
+        self._store.record_operation(
+            operation_id=self._ids.new_id("operation"), scope_id=scope.id,
+            memory_id=current.id, operation_type="MEMORY_MERGE",
+            operator_type=operator_type, operator_id=operator_id,
+            occurred_at=now,
+            metadata={
+                "similarity": round(similarity(content, current.content), 4),
+                "result": "SUCCESS",
+            },
+        )
+        return updated, receipt
+
     async def save_explicit(self, scope: Scope, content: str, *,
                             operator_id: str,
                             memory_type: MemoryType = MemoryType.FACT,
@@ -79,6 +186,14 @@ class MemoryApplicationService:
         now = self._clock.now()
         await self._expire_overdue_duplicate(scope, memory_type, normalized, now)
         self._reject_candidate_collision(scope, memory_type, normalized)
+        near = self._near_duplicate_active(scope, memory_type, content, now)
+        if near is not None and near.normalized_content != normalized:
+            return await self._merge_into_active(
+                scope, near, content, source_type=SourceType.EXPLICIT,
+                operator_type=OperatorType.USER, operator_id=operator_id,
+                reason="explicit save merged near duplicate", tags=tags,
+                source_metadata=None, now=now,
+            )
         memory_id = self._ids.new_id("memory")
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
@@ -125,6 +240,14 @@ class MemoryApplicationService:
         now = self._clock.now()
         await self._expire_overdue_duplicate(scope, memory_type, normalized, now)
         self._reject_candidate_collision(scope, memory_type, normalized)
+        near = self._near_duplicate_active(scope, memory_type, content, now)
+        if near is not None and near.normalized_content != normalized:
+            return await self._merge_into_active(
+                scope, near, content, source_type=SourceType.AGENT,
+                operator_type=OperatorType.AGENT, operator_id=operator_id,
+                reason="agent memory tool merged near duplicate", tags=tags,
+                source_metadata=source_metadata, now=now,
+            )
         memory_id = self._ids.new_id("memory")
         memory = MemoryEntity(
             id=memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,

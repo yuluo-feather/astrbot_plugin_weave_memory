@@ -46,7 +46,7 @@ class ExtractionGates:
     def missing(self) -> tuple[str, ...]:
         missing: list[str] = []
         if not self.global_enabled:
-            missing.append("extraction_enabled")
+            missing.append("auto_memory_enabled")
         if not self.scope_enabled:
             missing.append("scope_enabled")
         if not self.personal_memory:
@@ -62,6 +62,15 @@ class ExtractionGates:
         return tuple(missing)
 
 
+def _default_granted(scope: Scope, consent: ConsentService,
+                     consent_type: "ExtractionConsentType") -> bool:
+    """V1.9: absence of a record means granted; an explicit REVOKED always wins."""
+    current = consent.current(scope, consent_type)
+    if current is None:
+        return True
+    return consent.is_granted(scope, consent_type)
+
+
 def resolve_gates(
     scope: Scope, consent: ConsentService, scopes: ScopeStore, *,
     global_enabled: bool,
@@ -70,9 +79,17 @@ def resolve_gates(
         global_enabled=global_enabled,
         scope_enabled=scopes.is_scope_enabled(scope.id),
         personal_memory=consent.is_granted(scope, PersonalConsentType.PERSONAL_MEMORY),
-        capture_consent=consent.is_granted(scope, ExtractionConsentType.CAPTURE),
-        auto_extract_consent=consent.is_granted(scope, ExtractionConsentType.AUTO_EXTRACT),
-        external_model_consent=consent.is_granted(scope, ExtractionConsentType.EXTERNAL_MODEL),
-        store_candidate_consent=consent.is_granted(scope, ExtractionConsentType.STORE_CANDIDATE),
+        capture_consent=_default_granted(
+            scope, consent, ExtractionConsentType.CAPTURE,
+        ),
+        auto_extract_consent=_default_granted(
+            scope, consent, ExtractionConsentType.AUTO_EXTRACT,
+        ),
+        external_model_consent=_default_granted(
+            scope, consent, ExtractionConsentType.EXTERNAL_MODEL,
+        ),
+        store_candidate_consent=_default_granted(
+            scope, consent, ExtractionConsentType.STORE_CANDIDATE,
+        ),
         sensitive_categories=consent.sensitive_categories(scope),
     )

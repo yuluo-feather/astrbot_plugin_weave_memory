@@ -17,6 +17,7 @@ from ..core.model.retrieval_trace import (
     ChannelTrace,
     RetrievalTrace,
 )
+from ..core.policy.importance import rank_by_importance
 from ..core.policy.query_classifier import classify
 from ..core.policy.time_intent import parse_time_intent
 from ..core.ports import (
@@ -77,7 +78,8 @@ class HybridRecallService:
                  ),
                  require_scope_type: ScopeType | None = None,
                  recorder: object | None = None,
-                 include_query_text: bool = False) -> None:
+                 include_query_text: bool = False,
+                 importance_half_life_days: int = 0) -> None:
         self._store = store
         self._index = index
         self._consent = consent
@@ -106,6 +108,7 @@ class HybridRecallService:
         self._last_omitted: dict[str, int] = {}
         self._recorder = recorder
         self._include_query_text = include_query_text
+        self._importance_half_life_days = max(0, importance_half_life_days)
 
     async def recall_with_trace(self, query: str, scope: Scope, *,
                                 limit: int = 12,
@@ -292,6 +295,16 @@ class HybridRecallService:
                 "memory_id": "*", "reason": "budget",
                 "count": len(fused_candidates) - self._hybrid_limit,
             })
+
+        if self._importance_half_life_days > 0 and len(selected) > 1:
+            rank_by_id = {
+                candidate.memory_id: candidate.rank
+                for candidate in fused_candidates
+            }
+            selected = rank_by_importance(
+                selected, rank_by_id=rank_by_id, now=now,
+                half_life_days=self._importance_half_life_days,
+            )
 
         rerank_ms = 0
         rerank_info: dict[str, object] = {
