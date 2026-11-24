@@ -49,10 +49,15 @@ _LEDGER_SCHEMA = (
 
 
 def _row_to_event(row: sqlite3.Row) -> LedgerEvent:
+    raw_type = str(row["event_type"])
+    try:
+        event_type = LedgerEventType(raw_type)
+    except ValueError:
+        event_type = LedgerEventType.UNKNOWN
     return LedgerEvent(
         event_id=row["event_id"],
         seq=int(row["seq"]),
-        event_type=LedgerEventType(row["event_type"]),
+        event_type=event_type,
         state=LedgerState(row["state"]),
         source=row["source"],
         occurred_at=_time_load_required(row["occurred_at"], "ledger.occurred_at"),
@@ -60,6 +65,7 @@ def _row_to_event(row: sqlite3.Row) -> LedgerEvent:
         scope_id=row["scope_id"],
         subject_id=row["subject_id"],
         memory_id=row["memory_id"],
+        raw_event_type=None if event_type is not LedgerEventType.UNKNOWN else raw_type,
     )
 
 
@@ -136,6 +142,8 @@ class SQLiteLedger:
                     "earliest_retained_seq": "1",
                     "base_seq": "1",
                     "end_seq": "0",
+                    "ledger_format_version": "2",
+                    "min_reader_version": "2",
                 }
                 with self._lock:
                     self._conn().execute("BEGIN IMMEDIATE")
@@ -146,7 +154,30 @@ class SQLiteLedger:
                         if self._conn().in_transaction:
                             self._conn().execute("ROLLBACK")
                         raise StorageError("could not initialize ledger metadata") from exc
+            elif "ledger_format_version" not in meta:
+                # V1.8 ledgers become format 2 on first V2 open. Existing event
+                # semantics are unchanged; only the registry version advances.
+                with self._lock:
+                    self._conn().execute("BEGIN IMMEDIATE")
+                    try:
+                        self._write_meta(
+                            self._conn(),
+                            ledger_format_version="2",
+                            min_reader_version="2",
+                        )
+                        self._conn().execute("COMMIT")
+                    except sqlite3.Error as exc:
+                        if self._conn().in_transaction:
+                            self._conn().execute("ROLLBACK")
+                        raise StorageError("could not upgrade ledger metadata") from exc
+                meta = self._read_meta(self._conn())
             return meta
+
+    def format_version(self) -> int:
+        return int(self._meta().get("ledger_format_version", "1"))
+
+    def min_reader_version(self) -> int:
+        return int(self._meta().get("min_reader_version", "1"))
 
     def ledger_id(self) -> str:
         return self._meta()["ledger_id"]

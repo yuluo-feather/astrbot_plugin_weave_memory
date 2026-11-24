@@ -279,5 +279,8 @@ class AstrBotManagementApi:
             body = await self._body()
             if not self._flag(body.get("confirm", self._query("confirm"))):
                 raise ValidationError("reindex requires confirm=true")
+            async_reindex = getattr(self._service, "reindex_async", None)
+            if callable(async_reindex):
+                return await async_reindex()
             return self._service.reindex()
         return await self._run_admin(operation)

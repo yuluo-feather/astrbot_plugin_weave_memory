@@ -7,6 +7,7 @@ from datetime import datetime
 from ..core.errors import Conflict, NotFound, ValidationError
 from ..core.model import (
     MemoryEntity,
+    MemoryOperation,
     MemoryRevision,
     MemorySource,
     MemoryStatus,
@@ -21,7 +22,7 @@ from ..core.ports import Clock, IdGenerator, MemoryStore
 from .consent_service import ConsentService, PersonalConsentType
 from .export import EXPORTED_STATUSES, build_export
 from .lifecycle_service import LifecycleService
-from .write_coordinator import WriteCoordinator, WriteReceipt
+from .write_coordinator import OperationReceipt, WriteCoordinator, WriteReceipt
 
 
 class MemoryApplicationService:
@@ -258,6 +259,77 @@ class MemoryApplicationService:
             # through this tool, and must not reveal their lifecycle state.
             raise NotFound("memory not found")
         return memory
+
+    async def archive_memory(self, scope: Scope, memory_id: str, *,
+                             operator_id: str) -> WriteReceipt:
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        if memory.status is not MemoryStatus.ACTIVE:
+            raise Conflict("only ACTIVE memory can be archived")
+        now = self._clock.now()
+        operation = MemoryOperation(
+            id=self._ids.new_id("operation"), scope_id=scope.id, memory_id=memory_id,
+            operation_type="ARCHIVE_MEMORY", operator_type=OperatorType.USER,
+            operator_id=operator_id, occurred_at=now,
+            metadata={"archive_reason": "USER_ARCHIVE"},
+        )
+        return await self._lifecycle.archive_memory(
+            memory, revision_id=self._ids.new_id("revision"), at=now,
+            reason="user archived memory", operator_type=OperatorType.USER,
+            operation=operation,
+        )
+
+    async def restore_memory(self, scope: Scope, memory_id: str, *,
+                             operator_id: str) -> WriteReceipt:
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        now = self._clock.now()
+        operation = MemoryOperation(
+            id=self._ids.new_id("operation"), scope_id=scope.id, memory_id=memory_id,
+            operation_type="RESTORE_MEMORY", operator_type=OperatorType.USER,
+            operator_id=operator_id, occurred_at=now,
+            metadata={"archive_reason": memory.archive_reason.value if memory.archive_reason else None},
+        )
+        return await self._lifecycle.restore_memory(
+            memory, revision_id=self._ids.new_id("revision"), at=now,
+            reason="user restored memory", operator_type=OperatorType.USER,
+            operation=operation,
+        )
+
+    async def purge_memory(self, scope: Scope, memory_id: str, *,
+                           operator_id: str) -> OperationReceipt:
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        if memory.status is MemoryStatus.ACTIVE:
+            now = self._clock.now()
+            archive_operation = MemoryOperation(
+                id=self._ids.new_id("operation"), scope_id=scope.id, memory_id=memory_id,
+                operation_type="ARCHIVE_MEMORY", operator_type=OperatorType.USER,
+                operator_id=operator_id, occurred_at=now,
+                metadata={"archive_reason": "USER_ARCHIVE", "reason": "purge_requested"},
+            )
+            await self._lifecycle.archive_memory(
+                memory, revision_id=self._ids.new_id("revision"), at=now,
+                reason="archive before explicit purge", operator_type=OperatorType.USER,
+                operation=archive_operation,
+            )
+            memory = self._store.get(
+                memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+            )
+        if memory.status is not MemoryStatus.ARCHIVED:
+            raise Conflict("only ACTIVE or ARCHIVED memory can be purged")
+        now = self._clock.now()
+        return await self._lifecycle.purge_memory(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+            operation_id=self._ids.new_id("operation"),
+            operator_type=OperatorType.USER, operator_id=operator_id, at=now,
+        )
 
     def list_active_page(
         self, scope: Scope, *, limit: int = 20, offset: int = 0,

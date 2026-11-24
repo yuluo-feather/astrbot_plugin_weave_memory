@@ -50,6 +50,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     Conflict,
     IndexUnavailable,
     StorageError,
+    ValidationError,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
     AdminDecision,
@@ -638,3 +639,56 @@ def test_memory_type_status_preserved_on_restore(stack):
     ).fetchone()
     assert row["status"] == "ARCHIVED"
     assert memory.status is MemoryStatus.ACTIVE
+
+
+def _sidecar(stack, backup_id: str) -> tuple[dict, object]:
+    path = stack.backup._backup_dir(backup_id) / "sidecar.json"
+    return json.loads(path.read_text(encoding="utf-8")), path
+
+
+def test_manifest_v2_has_core_and_archive_sections(stack):
+    memory = save(stack, "清单归档")
+    asyncio.run(stack.lifecycle.archive_memory(
+        memory, revision_id=stack.ids.new_id("revision"),
+        at=stack.clock.now(), reason="manifest test",
+        operator_type=OperatorType.USER,
+    ))
+    backup_id = make_backup(stack)
+    payload, _ = _sidecar(stack, backup_id)
+    assert payload["manifest_schema"] == 2
+    assert payload["min_reader_version"] == 2
+    assert set(payload["sections"]) == {"core", "archive"}
+    assert payload["sections"]["core"]["sha256"] == payload["sha256"]
+    assert payload["sections"]["archive"]["archived_count"] == 1
+    assert payload["sections"]["archive"]["archive_reason_counts"] == {
+        "USER_ARCHIVE": 1,
+    }
+
+
+def test_manifest_unknown_section_fails_closed(stack):
+    backup_id = make_backup(stack)
+    payload, path = _sidecar(stack, backup_id)
+    payload["sections"]["future"] = {}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValidationError):
+        stack.backup.restore(backup_id, dry_run=True)
+
+
+def test_manifest_unknown_version_fails_closed(stack):
+    backup_id = make_backup(stack)
+    payload, path = _sidecar(stack, backup_id)
+    payload["manifest_schema"] = 3
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValidationError):
+        stack.backup.restore(backup_id, dry_run=True)
+
+
+def test_manifest_v1_is_still_readable(stack):
+    backup_id = make_backup(stack)
+    payload, path = _sidecar(stack, backup_id)
+    payload["manifest_schema"] = 1
+    payload.pop("min_reader_version", None)
+    payload.pop("sections", None)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    result = stack.backup.restore(backup_id, dry_run=True)
+    assert result["backup_id"] == backup_id

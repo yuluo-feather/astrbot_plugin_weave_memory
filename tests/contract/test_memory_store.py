@@ -12,6 +12,7 @@ from data.plugins.astrbot_plugin_weave_memory.adapters.sqlite.store import (
 )
 from data.plugins.astrbot_plugin_weave_memory.core.errors import Conflict, NotFound
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
+    ArchiveReason,
     Identity,
     MemoryRevision,
     MemorySource,
@@ -83,7 +84,11 @@ def test_duplicate_active_memory_conflicts(memory_factory, store):
 def test_optimistic_update_conflict(memory_factory, store):
     m = memory_factory()
     store.create(m, revision(m), source(m.id))
-    updated = transition(m, MemoryStatus.ARCHIVED, at=NOW + timedelta(seconds=1))
+    updated = transition(
+        m, MemoryStatus.ARCHIVED, at=NOW + timedelta(seconds=1),
+        archive_reason=ArchiveReason.USER_ARCHIVE,
+        purge_after=NOW + timedelta(days=30),
+    )
     store.update(updated, expected_revision=1, revision=revision(updated, "archived"))
     with pytest.raises(Conflict):
         store.update(updated, expected_revision=1, revision=revision(updated, "stale"))
@@ -94,7 +99,11 @@ def test_only_active_memories_are_listed(memory_factory, store):
     m = memory_factory()
     store.create(m, revision(m), source(m.id))
     assert len(store.list_active(scope_id=m.scope_id, subject_id=m.subject_id)) == 1
-    archived = transition(m, MemoryStatus.ARCHIVED, at=NOW + timedelta(seconds=1))
+    archived = transition(
+        m, MemoryStatus.ARCHIVED, at=NOW + timedelta(seconds=1),
+        archive_reason=ArchiveReason.USER_ARCHIVE,
+        purge_after=NOW + timedelta(days=30),
+    )
     store.update(archived, expected_revision=1, revision=revision(archived, "archived"))
     assert store.list_active(scope_id=m.scope_id, subject_id=m.subject_id) == ()
 

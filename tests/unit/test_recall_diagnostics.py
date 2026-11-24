@@ -22,7 +22,7 @@ def test_jsonl_diagnostics_writes_one_redacted_record_and_prunes_old_files(tmp_p
         "query_hash": "abc123",
         "query": "联系 me@example.com 或 13800138000，记住咖啡偏好",
     })
-    path = directory / "recall-2026-11-23.jsonl"
+    path = next(directory.glob("recall-*.jsonl"))
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     record = json.loads(lines[0])

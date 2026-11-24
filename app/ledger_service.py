@@ -8,11 +8,19 @@ between the two stores cannot lose the deletion.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from ..core.errors import DomainError, NotFound, StorageError, ValidationError
+from ..core.errors import (
+    DomainError,
+    LedgerUnknownDestructive,
+    NotFound,
+    StorageError,
+    ValidationError,
+)
 from ..core.model import (
+    ArchiveReason,
     ConsentState,
     LedgerEvent,
     LedgerEventType,
@@ -27,6 +35,8 @@ from ..core.ports import (
     LedgerReplayStore,
     LedgerStore,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def time_from_payload(value: object, name: str) -> datetime:
@@ -218,6 +228,77 @@ class LedgerService:
                 occurred_at=time_from_payload(payload.get("occurred_at"), "occurred_at"),
             )
             return
+        if intent.event_type is LedgerEventType.ARCHIVE_MEMORY:
+            lineage, creation_seq = lineage_fields_from_payload(payload)
+            memory_id = intent.memory_id or payload.get("memory_id")
+            if not isinstance(memory_id, str) or not intent.scope_id or not intent.subject_id:
+                raise ValidationError("archive_memory intent is missing identity")
+            try:
+                reason = ArchiveReason(str(payload.get("archive_reason")))
+            except ValueError as exc:
+                raise ValidationError("archive_memory reason is invalid") from exc
+            try:
+                stored = store.get_lineage(
+                    memory_id, scope_id=intent.scope_id,
+                    subject_id=intent.subject_id,
+                )
+            except NotFound:
+                return
+            if stored != (lineage, creation_seq):
+                raise ValidationError("archive_memory lineage does not match")
+            store.replay_archive(
+                memory_id, scope_id=intent.scope_id,
+                archived_at=time_from_payload(payload.get("archived_at"), "archived_at"),
+                purge_after=time_from_payload(payload.get("purge_after"), "purge_after"),
+                archive_reason=reason,
+                occurred_at=time_from_payload(payload.get("occurred_at"), "occurred_at"),
+            )
+            return
+        if intent.event_type is LedgerEventType.RESTORE_MEMORY:
+            lineage, creation_seq = lineage_fields_from_payload(payload)
+            memory_id = intent.memory_id or payload.get("memory_id")
+            if not isinstance(memory_id, str) or not intent.scope_id or not intent.subject_id:
+                raise ValidationError("restore_memory intent is missing identity")
+            try:
+                stored = store.get_lineage(
+                    memory_id, scope_id=intent.scope_id,
+                    subject_id=intent.subject_id,
+                )
+            except NotFound:
+                return
+            if stored != (lineage, creation_seq):
+                raise ValidationError("restore_memory lineage does not match")
+            store.replay_restore(
+                memory_id, scope_id=intent.scope_id,
+                occurred_at=time_from_payload(payload.get("occurred_at"), "occurred_at"),
+            )
+            return
+        if intent.event_type is LedgerEventType.PURGE_MEMORY:
+            lineage, creation_seq = lineage_fields_from_payload(payload)
+            memory_id = intent.memory_id or payload.get("memory_id")
+            if not isinstance(memory_id, str) or not intent.scope_id or not intent.subject_id:
+                raise ValidationError("purge_memory intent is missing identity")
+            store.purge_archived(
+                memory_id, scope_id=intent.scope_id, subject_id=intent.subject_id,
+                operation_id=str(payload.get("operation_id", "")),
+                operator_type=self._operator(payload.get("operator_type")),
+                operator_id=str(payload.get("operator_id", "")),
+                occurred_at=time_from_payload(payload.get("occurred_at"), "occurred_at"),
+                expected_lineage=lineage, expected_creation_seq=creation_seq,
+                idempotent=True,
+            )
+            return
+        if intent.event_type is LedgerEventType.UNKNOWN:
+            category = str(intent.payload.get("category", "")).lower()
+            if category == "informational":
+                logger.warning(
+                    "unknown informational ledger event skipped: %s",
+                    intent.raw_event_type,
+                )
+                return
+            raise LedgerUnknownDestructive(
+                f"unknown ledger event {intent.raw_event_type!r}",
+            )
         raise ValidationError("unknown ledger event type")
 
     @staticmethod

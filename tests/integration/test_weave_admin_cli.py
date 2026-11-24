@@ -203,6 +203,6 @@ def test_cli_maintenance_status_reports_schema_and_index(admin_env):
     result = _run("maintenance-status", "--data-dir", str(admin_env["data_dir"]))
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["schema_version"] == 9
+    assert payload["schema_version"] == 10
     assert payload["index"]["healthy"] is True
     assert payload["secure_purge_pending"] is False

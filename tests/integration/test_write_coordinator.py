@@ -32,6 +32,7 @@ from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     ServiceClosed,
 )
 from data.plugins.astrbot_plugin_weave_memory.core.model import (
+    ArchiveReason,
     Identity,
     MemoryEntity,
     MemoryRevision,
@@ -587,7 +588,11 @@ def test_status_changes_must_use_lifecycle_service_and_deleted_uses_purge_path(s
 
     async def run():
         await coordinator.create(memory, revision, source)
-        archived = transition(memory, MemoryStatus.ARCHIVED, at=NOW + timedelta(seconds=1))
+        archived = transition(
+            memory, MemoryStatus.ARCHIVED, at=NOW + timedelta(seconds=1),
+            archive_reason=ArchiveReason.USER_ARCHIVE,
+            purge_after=NOW + timedelta(days=30),
+        )
         archived_revision = MemoryRevision("r-archive", memory.id, 2, archived.content,
                                            archived.status, archived.updated_at, "archive")
         with pytest.raises(InvalidTransition):

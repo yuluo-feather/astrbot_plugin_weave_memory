@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
+from hashlib import sha256
 from pathlib import Path
 
 from astrbot.api import logger
@@ -11,6 +13,7 @@ from astrbot.core.agent.message import TextPart
 
 from .adapters.astrbot.backup_commands import AstrBotBackupCommands
 from .adapters.astrbot.commands import AstrBotMemoryCommands
+from .adapters.astrbot.embedding import AstrBotEmbeddingProvider
 from .adapters.astrbot.extraction import (
     AstrBotExtractionCapture,
     AstrBotLlmExtractor,
@@ -21,6 +24,8 @@ from .adapters.astrbot.group_commands import AstrBotGroupCommands
 from .adapters.astrbot.group_injection import AstrBotGroupMemoryInjector
 from .adapters.astrbot.injection import AstrBotMemoryInjector
 from .adapters.astrbot.recall_diagnostics import JsonlRecallDiagnostics
+from .adapters.astrbot.rerank import AstrBotRerankProvider
+from .adapters.astrbot.retrieval_trace import RetrievalTraceRecorder
 from .adapters.astrbot.tool_call_binding import AstrBotToolCallBinding
 from .adapters.astrbot.web_api import AstrBotManagementApi
 from .adapters.sqlite.backup import BackupService
@@ -29,20 +34,35 @@ from .adapters.sqlite.database import SQLiteDatabase
 from .adapters.sqlite.extraction_jobs import SQLiteExtractionJobStore
 from .adapters.sqlite.fts import SQLiteFTSIndex
 from .adapters.sqlite.import_jobs import SQLiteImportJobStore
+from .adapters.sqlite.index_jobs import (
+    SQLiteIndexJobStore,
+    SQLiteIndexStateStore,
+    SQLiteVectorOutbox,
+)
 from .adapters.sqlite.ledger import SQLiteLedger
+from .adapters.sqlite.provider_audit import SQLiteProviderCallAudit
 from .adapters.sqlite.store import SQLiteMemoryStore
+from .adapters.sqlite.vector import SQLiteVectorIndex
 from .adapters.system import SystemClock, UUID4IdGenerator
 from .app.consent_service import ConsentService
+from .app.embedding_cache import EmbeddingLRUCache
 from .app.extraction_service import ExtractionService
 from .app.group_lifecycle_service import GroupLifecycleService
 from .app.group_memory_service import GroupMemoryService
 from .app.group_recall_service import GroupContextComposer, GroupRecallService
+from .app.hybrid_recall_service import HybridGroupRecallService, HybridRecallService
 from .app.import_service import ImportService
+from .app.index_job_service import IndexJobService
+from .app.index_rebuild_service import IndexRebuildService
+from .app.index_worker import IndexWorker
 from .app.ledger_service import LedgerService
 from .app.lifecycle_service import LifecycleService
 from .app.management_service import ManagementService
 from .app.memory_service import MemoryApplicationService
+from .app.provider_config import ProviderConfig
+from .app.provider_policy import ProviderPolicy
 from .app.recall_service import MemoryContextComposer, RecallService
+from .app.retention_service import RetentionService
 from .app.scope_service import GroupScopeService, PersonalScopeService
 from .app.startup_recovery import StartupRecoveryService
 from .app.write_coordinator import WriteCoordinator
@@ -58,6 +78,7 @@ from .core.errors import (
     ValidationError,
 )
 from .core.model import MemoryEntity
+from .core.normalization import NORMALIZATION_VERSION
 
 _COMMAND_ERRORS = (
     AuthorizationDenied, Conflict, IndexUnavailable, InvalidTransition, NotFound,
@@ -103,6 +124,9 @@ class WeaveMemoryPlugin(Star):
         self._extraction_commands: AstrBotExtractionCommands | None = None
         self._backup_commands: AstrBotBackupCommands | None = None
         self._extraction_capture: AstrBotExtractionCapture | None = None
+        self._retention: RetentionService | None = None
+        self._index_worker: IndexWorker | None = None
+        self._provider_policy: ProviderPolicy | None = None
         self._injector: AstrBotMemoryInjector | None = None
         self._group_injector: AstrBotGroupMemoryInjector | None = None
         self._tool_call_binding = AstrBotToolCallBinding(
@@ -118,11 +142,44 @@ class WeaveMemoryPlugin(Star):
             backup_path = self._database.migrate()
             if backup_path is not None:
                 logger.info(f"织忆数据库迁移前备份：{backup_path}")
-            store = SQLiteMemoryStore(self._database)
-            index = SQLiteFTSIndex(self._database)
-
             clock = SystemClock()
             ids = UUID4IdGenerator()
+            provider_config = ProviderConfig.from_mapping(
+                self._config if hasattr(self._config, "get") else {},
+            )
+            index = SQLiteFTSIndex(self._database)
+            provider: AstrBotEmbeddingProvider | None = None
+            provider_policy: ProviderPolicy | None = None
+            provider_audit: SQLiteProviderCallAudit | None = None
+            if provider_config.embedding_provider_id:
+                provider_audit = SQLiteProviderCallAudit(self._database)
+                try:
+                    provider = AstrBotEmbeddingProvider(
+                        self.context, provider_config.embedding_provider_id,
+                        provider_config.embedding_model,
+                        batch_size=provider_config.embedding_batch_size,
+                    )
+                except Exception as exc:  # noqa: BLE001 - provider is optional
+                    logger.warning(
+                        "织忆 embedding provider 不可用：%s", type(exc).__name__,
+                    )
+                    provider = None
+                if provider is not None:
+                    provider_policy = ProviderPolicy(
+                        provider, provider_config, provider_audit,
+                        EmbeddingLRUCache(
+                            max_mb=provider_config.embedding_cache_mb,
+                            ttl_seconds=provider_config.embedding_cache_ttl_minutes * 60,
+                        ),
+                        clock,
+                    )
+            vector_outbox = (
+                SQLiteVectorOutbox()
+                if provider_config.vector_index_enabled else None
+            )
+            store = SQLiteMemoryStore(
+                self._database, vector_outbox=vector_outbox,
+            )
             consent_repository = SQLiteConsentStore(self._database)
             ledger_enabled = self._config_bool("ledger_first_enabled", True)
             ledger_store = SQLiteLedger(data_dir / "memory_ledger.sqlite3")
@@ -134,9 +191,49 @@ class WeaveMemoryPlugin(Star):
                 ),
             )
             coordinator = WriteCoordinator(store, index, ledger)
+            vector_index: SQLiteVectorIndex | None = None
+            index_jobs: SQLiteIndexJobStore | None = None
+            index_worker: IndexWorker | None = None
+            index_rebuild: IndexRebuildService | None = None
+            if provider is not None:
+                config_hash = sha256(
+                    (
+                        f"{provider.provider_id}|{provider.model}|{provider.dimension}|"
+                        f"{NORMALIZATION_VERSION}|"
+                        f"{provider_config.embedding_max_text_chars}"
+                    ).encode("utf-8"),
+                ).hexdigest()[:16]
+                vector_index = SQLiteVectorIndex(
+                    self._database, provider_id=provider.provider_id,
+                    model=provider.model, dim=provider.dimension,
+                    config_hash=config_hash,
+                    states=SQLiteIndexStateStore(self._database),
+                    snapshot_cache_mb=provider_config.vector_snapshot_cache_mb,
+                )
+                index_jobs = SQLiteIndexJobStore(self._database)
+                index_service = IndexJobService(
+                    store, index_jobs, vector_index, provider_policy,
+                    coordinator, clock,
+                    max_attempts=provider_config.index_job_max_attempts,
+                    enabled=provider_config.vector_index_enabled,
+                )
+                index_rebuild = IndexRebuildService(
+                    store, vector_index, provider_policy, coordinator, clock,
+                )
+                index_worker = IndexWorker(
+                    index_service, index_jobs, index_rebuild, clock,
+                    interval_seconds=provider_config.index_worker_interval_seconds,
+                    enabled=provider_config.vector_index_enabled,
+                )
+            self._index_worker = index_worker
+            self._provider_policy = provider_policy
             scopes = PersonalScopeService(store, coordinator, clock)
             consent = ConsentService(consent_repository, coordinator, clock, ids)
-            lifecycle = LifecycleService(coordinator, store, consent)
+            archive_retention_days = self._config_int("archive_retention_days", 30)
+            lifecycle = LifecycleService(
+                coordinator, store, consent,
+                archive_retention_days=archive_retention_days,
+            )
             memories = MemoryApplicationService(store, coordinator, consent, lifecycle, clock, ids)
             imports = ImportService(
                 store, SQLiteImportJobStore(self._database), coordinator,
@@ -166,6 +263,32 @@ class WeaveMemoryPlugin(Star):
                 self._database.secure_purge_if_pending()
             except StorageError as exc:
                 logger.warning(f"织忆启动时的物理擦除未完成：{type(exc).__name__}")
+            retention = RetentionService(
+                store, lifecycle, clock, ids,
+                batch_size=self._config_int("purge_batch_size", 100),
+                interval_seconds=self._config_int("purge_interval_seconds", 3600),
+            )
+            self._retention = retention
+            try:
+                retention.start()
+            except RuntimeError:
+                logger.warning("织忆到期清理未启动：当前没有运行中的事件循环。")
+            if provider_audit is not None:
+                try:
+                    provider_audit.prune_before(
+                        clock.now() - timedelta(
+                            days=provider_config.provider_call_audit_retention_days,
+                        ),
+                    )
+                except StorageError as exc:
+                    logger.warning(
+                        "织忆 Provider 审计清理失败：%s", type(exc).__name__,
+                    )
+            if index_worker is not None:
+                try:
+                    index_worker.start()
+                except RuntimeError:
+                    logger.warning("织忆向量索引 worker 未启动：没有运行中的事件循环。")
 
             diagnostics_enabled = self._config_bool("recall_diagnostics_enabled", True)
             diagnostics = None
@@ -183,7 +306,41 @@ class WeaveMemoryPlugin(Star):
                     "recall_diagnostics_include_query", False,
                 ),
             )
-            composer = MemoryContextComposer(recall)
+            trace_recorder = RetrievalTraceRecorder(
+                diagnostics.write if diagnostics is not None else None,
+            )
+            hybrid: HybridRecallService | None = None
+            if provider_config.hybrid_retrieval_enabled:
+                rerank_provider = None
+                if provider_config.rerank_enabled and provider_config.rerank_provider_id:
+                    try:
+                        rerank_provider = AstrBotRerankProvider(
+                            self.context, provider_config.rerank_provider_id,
+                        )
+                    except Exception as exc:  # noqa: BLE001 - optional provider
+                        logger.warning(
+                            "织忆 rerank provider 不可用：%s", type(exc).__name__,
+                        )
+                hybrid = HybridRecallService(
+                    store, index, consent, clock, store, coordinator,
+                    vector=vector_index, provider=provider_policy,
+                    rerank=rerank_provider,
+                    vector_candidate_limit=provider_config.vector_candidate_limit,
+                    hybrid_candidate_limit=provider_config.hybrid_candidate_limit,
+                    classifier_mode=provider_config.query_classifier_mode,
+                    rerank_enabled=provider_config.rerank_enabled,
+                    rerank_timeout_seconds=provider_config.rerank_timeout_seconds,
+                    tag_candidate_limit=provider_config.tag_candidate_limit,
+                    time_candidate_limit=provider_config.time_candidate_limit,
+                    relevance_threshold=provider_config.vector_relevance_threshold,
+                    fts_relevance_ratio=provider_config.fts_relevance_ratio,
+                    fusion_method="rrf",
+                    recorder=trace_recorder,
+                    include_query_text=self._config_bool(
+                        "recall_diagnostics_include_query", False,
+                    ),
+                )
+            composer = MemoryContextComposer(hybrid or recall)
             group_admins = AstrBotGroupAdminResolver(
                 self._explicit_group_admins(self._config),
             )
@@ -217,6 +374,31 @@ class WeaveMemoryPlugin(Star):
                 max_memories=self._config_non_negative_int("group_max_memories", 2),
                 candidate_limit=self._config_int("group_candidate_limit", 8),
             )
+            if hybrid is not None:
+                hybrid_group = HybridGroupRecallService(
+                    store, index, consent, clock, store, coordinator,
+                    vector=vector_index, provider=provider_policy,
+                    rerank=None,
+                    vector_candidate_limit=provider_config.vector_candidate_limit,
+                    hybrid_candidate_limit=provider_config.hybrid_candidate_limit,
+                    classifier_mode=provider_config.query_classifier_mode,
+                    tag_candidate_limit=provider_config.tag_candidate_limit,
+                    time_candidate_limit=provider_config.time_candidate_limit,
+                    relevance_threshold=provider_config.vector_relevance_threshold,
+                    fts_relevance_ratio=provider_config.fts_relevance_ratio,
+                    recorder=trace_recorder,
+                    include_query_text=self._config_bool(
+                        "recall_diagnostics_include_query", False,
+                    ),
+                )
+                group_composer = GroupContextComposer(
+                    hybrid_group,
+                    max_tokens=self._config_int("group_max_tokens", 192),
+                    max_memories=self._config_non_negative_int(
+                        "group_max_memories", 2,
+                    ),
+                    candidate_limit=self._config_int("group_candidate_limit", 8),
+                )
 
             extraction_enabled = self._config_bool("extraction_enabled", False)
             extraction = ExtractionService(
@@ -273,6 +455,8 @@ class WeaveMemoryPlugin(Star):
                 group_recall=group_recall, consent=consent,
                 imports=imports, group_memories=group_memories,
                 backup=backup,
+                vector_rebuild=index_rebuild,
+                vector_enabled=provider_config.vector_index_enabled,
                 settings={
                     "auto_enroll": auto_enroll,
                     "agent_write_enabled": self._config_bool("agent_write_enabled", True),
@@ -286,6 +470,44 @@ class WeaveMemoryPlugin(Star):
                     ),
                     "extraction_queue_size": self._config_int("extraction_queue_size", 100),
                     "candidate_ttl_days": self._config_int("candidate_ttl_days", 7),
+                    "archive_retention_days": archive_retention_days,
+                    "purge_batch_size": self._config_int("purge_batch_size", 100),
+                    "purge_interval_seconds": self._config_int(
+                        "purge_interval_seconds", 3600,
+                    ),
+                    "hybrid_retrieval_enabled": provider_config.hybrid_retrieval_enabled,
+                    "vector_index_enabled": provider_config.vector_index_enabled,
+                    "rerank_enabled": provider_config.rerank_enabled,
+                    "query_classifier_mode": provider_config.query_classifier_mode,
+                    "tag_candidate_limit": provider_config.tag_candidate_limit,
+                    "time_candidate_limit": provider_config.time_candidate_limit,
+                    "vector_relevance_threshold": (
+                        provider_config.vector_relevance_threshold
+                    ),
+                    "fts_relevance_ratio": provider_config.fts_relevance_ratio,
+                    "vector_snapshot_cache_mb": (
+                        provider_config.vector_snapshot_cache_mb
+                    ),
+                    "embedding_provider_id": provider_config.embedding_provider_id,
+                    "embedding_model": provider_config.embedding_model,
+                    "external_provider_opt_in": provider_config.external_provider_opt_in,
+                    "provider_status": (
+                        provider_policy.status() if provider_policy is not None
+                        else {"available": False}
+                    ),
+                    "vector_index_status": (
+                        {
+                            "target": vector_index.status().target.value,
+                            "status": vector_index.status().status.value,
+                            "dim": vector_index.status().dim,
+                            "cache": vector_index.snapshot_cache_stats(),
+                        }
+                        if vector_index is not None and vector_index.status() is not None
+                        else None
+                    ),
+                    "index_jobs": (
+                        index_jobs.count_by_status() if index_jobs is not None else {}
+                    ),
                     "rejected_keep_body": self._config_bool("rejected_keep_body", False),
                     "group_max_tokens": self._config_int("group_max_tokens", 192),
                     "group_max_memories": self._config_non_negative_int(
@@ -570,13 +792,37 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("备份", exc))
 
+    @memory.command("备份恢复")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_backup_restore(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(self._backup_command_service().restore(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("备份恢复", exc))
+
     @memory.command("恢复")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def memory_restore(self, event: AstrMessageEvent):
         try:
-            yield event.plain_result(self._backup_command_service().restore(event))
+            yield event.plain_result(await self._command_service().restore_memory(event))
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(self._error_text("恢复", exc))
+
+    @memory.command("归档")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_archive(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(await self._command_service().archive(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("归档", exc))
+
+    @memory.command("彻底删除")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_purge(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result(await self._command_service().purge(event))
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(self._error_text("彻底删除", exc))
 
     @memory.command("导出")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
@@ -918,6 +1164,22 @@ class WeaveMemoryPlugin(Star):
             logger.warning(f"织忆本轮未注入记忆：{type(exc).__name__}")
 
     async def terminate(self):
+        if self._index_worker is not None:
+            try:
+                await asyncio.wait_for(
+                    self._index_worker.stop(), timeout=_TERMINATE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("织忆热重载收尾超时：向量索引 worker 未在限定时间内停止。")
+            self._index_worker = None
+        if self._retention is not None:
+            try:
+                await asyncio.wait_for(
+                    self._retention.stop(), timeout=_TERMINATE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("织忆热重载收尾超时：到期清理任务未在限定时间内停止。")
+            self._retention = None
         if self._extraction_capture is not None:
             try:
                 await asyncio.wait_for(

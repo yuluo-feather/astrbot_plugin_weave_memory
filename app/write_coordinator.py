@@ -92,6 +92,13 @@ class WriteCoordinator:
             self._ensure_open()
             return operation()
 
+    async def run_serialized(self, operation: Callable[[], T]) -> T:
+        """Run a short synchronous DB operation under the same write lease."""
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                return operation()
+
     def run_metadata_serialized(self, operation: Callable[[], T], *,
                                 ledger_event_type: LedgerEventType | None = None,
                                 payload: dict[str, object] | None = None,
@@ -116,13 +123,6 @@ class WriteCoordinator:
             if intent is not None and ledger is not None:
                 ledger.record_committed(intent)
             return result
-
-    async def run_serialized(self, operation: Callable[[], T]) -> T:
-        """Run a synchronous multi-step write under the coordinator locks."""
-        async with self._lock:
-            with self._write_lock:
-                self._ensure_open()
-                return operation()
 
     def run_write_locked(self, operation: Callable[[], T]) -> T:
         """Synchronous maintenance write (backup/restore) under the write lease."""
@@ -340,6 +340,129 @@ class WriteCoordinator:
                 # behind. The durable marker lets startup retry either way.
                 purged = self._secure_purge() if state is IndexState.HEALTHY else False
                 return OperationReceipt(operation_id, 1 if deleted else 0, state, purged)
+
+    async def archive(self, memory: MemoryEntity, *, expected_revision: int,
+                      revision: MemoryRevision,
+                      operation: MemoryOperation | None = None) -> WriteReceipt:
+        """Ledger-first ACTIVE/other -> ARCHIVED transition."""
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                ledger = self._ledger
+                lineage: str | None = None
+                creation_seq: int | None = None
+                intent = None
+                if ledger is not None and ledger.enabled:
+                    lineage, creation_seq = self._store.get_lineage(
+                        memory.id, scope_id=memory.scope_id, subject_id=memory.subject_id,
+                    )
+                    intent = ledger.record_intent(
+                        LedgerEventType.ARCHIVE_MEMORY,
+                        payload={
+                            "db_lineage_id": lineage,
+                            "creation_seq": creation_seq,
+                            "memory_id": memory.id,
+                            "archive_reason": memory.archive_reason.value if memory.archive_reason else None,
+                            "archived_at": memory.archived_at.isoformat() if memory.archived_at else None,
+                            "purge_after": memory.purge_after.isoformat() if memory.purge_after else None,
+                            "revision_id": revision.id,
+                            "operation_id": operation.id if operation else None,
+                            "occurred_at": memory.updated_at.isoformat(),
+                        },
+                        source=(operation.operator_type.value if operation else "system"),
+                        occurred_at=memory.updated_at,
+                        scope_id=memory.scope_id, subject_id=memory.subject_id,
+                        memory_id=memory.id,
+                    )
+                self._store.update(memory, expected_revision=expected_revision,
+                                   revision=revision, source=None, operation=operation)
+                if intent is not None and ledger is not None:
+                    ledger.record_committed(intent)
+                return WriteReceipt(memory.id, memory.current_revision,
+                                    self._sync_one(memory.id))
+
+    async def restore(self, memory: MemoryEntity, *, expected_revision: int,
+                      revision: MemoryRevision,
+                      operation: MemoryOperation | None = None) -> WriteReceipt:
+        """Ledger-first ARCHIVED -> ACTIVE restore (USER_ARCHIVE only)."""
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                ledger = self._ledger
+                lineage: str | None = None
+                creation_seq: int | None = None
+                intent = None
+                if ledger is not None and ledger.enabled:
+                    lineage, creation_seq = self._store.get_lineage(
+                        memory.id, scope_id=memory.scope_id, subject_id=memory.subject_id,
+                    )
+                    intent = ledger.record_intent(
+                        LedgerEventType.RESTORE_MEMORY,
+                        payload={
+                            "db_lineage_id": lineage,
+                            "creation_seq": creation_seq,
+                            "memory_id": memory.id,
+                            "previous_reason": memory.archive_reason.value if memory.archive_reason else None,
+                            "revision_id": revision.id,
+                            "operation_id": operation.id if operation else None,
+                            "occurred_at": memory.updated_at.isoformat(),
+                        },
+                        source=(operation.operator_type.value if operation else "system"),
+                        occurred_at=memory.updated_at,
+                        scope_id=memory.scope_id, subject_id=memory.subject_id,
+                        memory_id=memory.id,
+                    )
+                self._store.update(memory, expected_revision=expected_revision,
+                                   revision=revision, source=None, operation=operation)
+                if intent is not None and ledger is not None:
+                    ledger.record_committed(intent)
+                return WriteReceipt(memory.id, memory.current_revision,
+                                    self._sync_one(memory.id))
+
+    async def purge(self, memory_id: str, *, scope_id: str, subject_id: str,
+                    operation_id: str, operator_type: OperatorType,
+                    operator_id: str, occurred_at: datetime) -> OperationReceipt:
+        """Ledger-first irreversible purge of an ARCHIVED memory."""
+        async with self._lock:
+            with self._write_lock:
+                self._ensure_open()
+                ledger = self._ledger
+                lineage: str | None = None
+                creation_seq: int | None = None
+                intent = None
+                if ledger is not None and ledger.enabled:
+                    lineage, creation_seq = self._store.get_lineage(
+                        memory_id, scope_id=scope_id, subject_id=subject_id,
+                    )
+                    intent = ledger.record_intent(
+                        LedgerEventType.PURGE_MEMORY,
+                        payload={
+                            "db_lineage_id": lineage,
+                            "creation_seq": creation_seq,
+                            "memory_id": memory_id,
+                            "operation_id": operation_id,
+                            "operator_type": operator_type.value,
+                            "operator_id": operator_id,
+                            "occurred_at": occurred_at.isoformat(),
+                        },
+                        source=operator_type.value, occurred_at=occurred_at,
+                        scope_id=scope_id, subject_id=subject_id,
+                        memory_id=memory_id,
+                    )
+                purged = self._store.purge_archived(
+                    memory_id, scope_id=scope_id, subject_id=subject_id,
+                    operation_id=operation_id, operator_type=operator_type,
+                    operator_id=operator_id, occurred_at=occurred_at,
+                    expected_lineage=lineage,
+                    expected_creation_seq=creation_seq,
+                    idempotent=intent is not None,
+                )
+                if intent is not None and ledger is not None:
+                    ledger.record_committed(intent)
+                state = self._sync_one(memory_id)
+                purged_ok = self._secure_purge() if state is IndexState.HEALTHY else False
+                return OperationReceipt(operation_id, 1 if purged else 0, state,
+                                        purged_ok)
 
     async def clear_scope(self, scope_id: str, *, operation_id: str,
                           operator_type: OperatorType, operator_id: str,

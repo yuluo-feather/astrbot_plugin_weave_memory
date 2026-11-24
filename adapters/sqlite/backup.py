@@ -27,6 +27,7 @@ from ...app.ledger_service import (
     LedgerService,
     boundaries_from_payload,
     lineage_fields_from_payload,
+    time_from_payload,
 )
 from ...app.write_coordinator import WriteCoordinator
 from ...core.errors import (
@@ -35,7 +36,7 @@ from ...core.errors import (
     StorageError,
     ValidationError,
 )
-from ...core.model import LedgerEvent, LedgerEventType
+from ...core.model import ArchiveReason, LedgerEvent, LedgerEventType
 from ...core.ports import (
     RESTORE_MODES,
     Clock,
@@ -46,7 +47,9 @@ from ...core.ports import (
 )
 
 BACKUP_FORMAT = "weave-memory-backup-v1"
-MANIFEST_SCHEMA = 1
+MANIFEST_SCHEMA = 2
+MANIFEST_MIN_READER = 2
+KNOWN_SECTIONS = frozenset({"core", "archive"})
 BACKUP_ROOT_PARTS = ("backups", "v1.8")
 JOURNAL_NAME = "restore_journal.json"
 # Restore rewrites authoritative tables directly, bypassing the store's dirty
@@ -54,19 +57,33 @@ JOURNAL_NAME = "restore_journal.json"
 # index.rebuild() leaves is_healthy() False until a rebuild really succeeds.
 _RESTORE_FTS_SENTINEL = '["__restore__"]'
 
+
+def _ledger_timestamp(value: object, name: str) -> str:
+    return (
+        time_from_payload(value, name)
+        .astimezone(UTC)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+
 _TABLES = (
     "memory_scopes", "memories", "memory_revisions", "memory_sources",
     "memory_tags", "memory_relations", "memory_consents", "memory_operations",
     "memory_meta", "memory_lineage_meta", "extraction_jobs", "import_jobs",
+    "provider_call_audit",
 )
 
-_MEMORY_COLUMNS = (
+_MEMORY_COLUMNS_V9 = (
     "id", "scope_id", "subject_id", "memory_type", "content",
     "normalized_content", "normalization_version", "status", "source_type",
     "current_revision", "valid_from", "valid_until", "superseded_by",
     "created_at", "updated_at", "last_accessed_at", "metadata_json",
     "candidate_expires_at", "db_lineage_id", "creation_seq",
 )
+_MEMORY_COLUMNS_V10 = _MEMORY_COLUMNS_V9 + (
+    "archived_at", "purge_after", "archive_reason",
+)
+_MEMORY_COLUMNS = _MEMORY_COLUMNS_V10
 _REVISION_COLUMNS = (
     "id", "memory_id", "revision", "content", "status", "changed_at",
     "change_reason", "snapshot_json",
@@ -231,11 +248,7 @@ class BackupService:
             self._database.backup_to(main_path)
             self._verify_file(main_path)
             row_counts = self._table_row_counts(main_path)
-            payload = {
-                "format": BACKUP_FORMAT,
-                "manifest_schema": MANIFEST_SCHEMA,
-                "backup_id": backup_id,
-                "created_at": now.isoformat(),
+            core_section = {
                 "schema_version": self._schema_version(main_path),
                 "db_lineage_id": lineage,
                 "ledger_id": ledger_store.ledger_id(),
@@ -246,6 +259,18 @@ class BackupService:
                 "size": main_path.stat().st_size,
                 "table_row_counts": row_counts,
                 "config_redacted": True,
+            }
+            payload = {
+                "format": BACKUP_FORMAT,
+                "manifest_schema": MANIFEST_SCHEMA,
+                "min_reader_version": MANIFEST_MIN_READER,
+                "backup_id": backup_id,
+                "created_at": now.isoformat(),
+                **core_section,
+                "sections": {
+                    "core": core_section,
+                    "archive": self._archive_section(main_path),
+                },
             }
             (temp_dir / "sidecar.json").write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
@@ -306,6 +331,22 @@ class BackupService:
             raise StorageError("backup sidecar is invalid") from exc
         if not isinstance(payload, dict) or payload.get("format") != BACKUP_FORMAT:
             raise ValidationError("backup format is not supported")
+        try:
+            manifest_schema = int(payload.get("manifest_schema", 1))
+            min_reader = int(payload.get("min_reader_version", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("backup manifest version is invalid") from exc
+        if manifest_schema not in (1, 2):
+            raise ValidationError("backup manifest schema is not supported")
+        if min_reader > MANIFEST_SCHEMA:
+            raise ValidationError("backup requires a newer reader")
+        sections = payload.get("sections")
+        if sections is not None:
+            if not isinstance(sections, dict) or "core" not in sections:
+                raise ValidationError("backup manifest sections are invalid")
+            unknown = set(sections) - KNOWN_SECTIONS
+            if unknown:
+                raise ValidationError("backup manifest contains an unknown section")
         return payload, directory
 
     # ----------------------------------------------------------------- verify
@@ -334,7 +375,7 @@ class BackupService:
         if main_path.stat().st_size != int(manifest.get("size", -1)):
             raise StorageError("backup snapshot size does not match sidecar")
         self._verify_file(main_path)
-        if self._schema_version(main_path) != 9:
+        if self._schema_version(main_path) not in (9, 10):
             raise StorageError("backup schema version is not supported")
         ledger_store = self._ledger.ledger
         coverage = ledger_store.coverage_report()
@@ -452,6 +493,12 @@ class BackupService:
         ordered = tuple(sorted(unique.values(), key=lambda item: item.seq))
         try:
             for event in ordered:
+                if event.event_type is LedgerEventType.UNKNOWN:
+                    if str(event.payload.get("category", "")).lower() == "informational":
+                        continue
+                    raise StorageError(
+                        f"unknown ledger event {event.raw_event_type!r}; refusing restore",
+                    )
                 if event.event_type is LedgerEventType.DELETE_MEMORY:
                     lineage_fields_from_payload(event.payload)
                 elif event.event_type is LedgerEventType.CLEAR_SCOPE:
@@ -486,6 +533,19 @@ class BackupService:
                         "consent_type", "new_state", "source",
                     )):
                         raise StorageError("consent_change event is missing fields")
+                elif event.event_type is LedgerEventType.ARCHIVE_MEMORY:
+                    lineage_fields_from_payload(event.payload)
+                    try:
+                        ArchiveReason(str(event.payload.get("archive_reason")))
+                    except ValueError as exc:
+                        raise StorageError("archive_memory event has an invalid reason") from exc
+                    time_from_payload(event.payload.get("archived_at"), "archived_at")
+                    time_from_payload(event.payload.get("purge_after"), "purge_after")
+                elif event.event_type is LedgerEventType.RESTORE_MEMORY:
+                    lineage_fields_from_payload(event.payload)
+                    time_from_payload(event.payload.get("occurred_at"), "occurred_at")
+                elif event.event_type is LedgerEventType.PURGE_MEMORY:
+                    lineage_fields_from_payload(event.payload)
         except ValidationError as exc:
             raise StorageError(f"ledger event cannot be replayed: {exc}") from exc
         return ordered
@@ -504,6 +564,10 @@ class BackupService:
         for event in events:
             payload = event.payload
             if event.event_type is LedgerEventType.DELETE_MEMORY:
+                memory_id = event.memory_id or payload.get("memory_id")
+                if isinstance(memory_id, str):
+                    delete_ids.add(memory_id)
+            elif event.event_type is LedgerEventType.PURGE_MEMORY:
                 memory_id = event.memory_id or payload.get("memory_id")
                 if isinstance(memory_id, str):
                     delete_ids.add(memory_id)
@@ -590,6 +654,7 @@ class BackupService:
             journal["phase"] = "resuming"
         _atomic_json(self._journal_path, journal)
         try:
+            snapshot_schema = self._schema_version(main_path)
             with self._attached(main_path):
                 with self._database.transaction() as tx:
                     if mode == "disaster-rebuild":
@@ -597,6 +662,7 @@ class BackupService:
                         self._import_all(
                             tx, excluded_ids=excluded_ids,
                             excluded_scopes=excluded_scopes,
+                            snapshot_schema=snapshot_schema,
                         )
                         tx.execute(
                             "INSERT INTO memory_meta(key,value) VALUES('db_lineage_id',?) "
@@ -607,7 +673,9 @@ class BackupService:
                         self._merge_tables(
                             tx, mode=mode, excluded_ids=excluded_ids,
                             excluded_scopes=excluded_scopes,
+                            snapshot_schema=snapshot_schema,
                         )
+                    self._normalize_archive_columns(tx)
                     applied_excluded = self._apply_exclusions(tx, events)
                     self._advance_watermarks(
                         tx, manifest, events, mode=mode,
@@ -685,8 +753,12 @@ class BackupService:
 
     def _merge_tables(self, tx: sqlite3.Connection, *, mode: str,
                       excluded_ids: set[str],
-                      excluded_scopes: set[str]) -> None:
+                      excluded_scopes: set[str],
+                      snapshot_schema: int) -> None:
         self._prepare_exclusion_tables(tx, excluded_ids, excluded_scopes)
+        memory_columns = (
+            _MEMORY_COLUMNS_V10 if snapshot_schema >= 10 else _MEMORY_COLUMNS_V9
+        )
         scope_filter = (
             " AND b.id NOT IN (SELECT id FROM restore_excluded_scopes)"
         )
@@ -707,11 +779,11 @@ class BackupService:
             + scope_filter,
         )
         tx.execute(
-            _insert_select("memories", _MEMORY_COLUMNS)
+            _insert_select("memories", memory_columns)
             + " WHERE NOT EXISTS (SELECT 1 FROM memories m WHERE m.id=b.id)"
             + memory_filter,
         )
-        assignment = ", ".join(f"{column}=b.{column}" for column in _MEMORY_COLUMNS[1:])
+        assignment = ", ".join(f"{column}=b.{column}" for column in memory_columns[1:])
         if mode == "revert":
             tx.execute(
                 f"UPDATE memories AS m SET {assignment} "
@@ -780,22 +852,51 @@ class BackupService:
 
     def _clear_target(self, tx: sqlite3.Connection) -> None:
         for table in (
+            "memory_embeddings", "index_jobs", "provider_call_audit",
             "memory_relations", "memory_tags", "memory_sources",
             "memory_revisions", "memories", "memory_consents",
             "memory_operations", "import_jobs", "extraction_jobs",
             "memory_scopes",
         ):
             tx.execute(f"DELETE FROM {table}")
+        tx.execute(
+            "INSERT INTO index_state(target,status,updated_at) VALUES('VECTOR','STALE',?) "
+            "ON CONFLICT(target) DO UPDATE SET status='STALE', updated_at=excluded.updated_at",
+            (self._clock.now().isoformat(),),
+        )
+
+    def _normalize_archive_columns(self, tx: sqlite3.Connection) -> None:
+        """Keep archive columns consistent after restoring a v9 snapshot."""
+        tx.execute(
+            """UPDATE memories
+               SET archived_at=NULL, purge_after=NULL, archive_reason=NULL
+               WHERE status<>'ARCHIVED'
+                 AND (archived_at IS NOT NULL OR purge_after IS NOT NULL OR archive_reason IS NOT NULL)""",
+        )
+        tx.execute(
+            """UPDATE memories
+               SET archived_at=COALESCE(archived_at, updated_at),
+                   archive_reason=COALESCE(archive_reason, 'CANDIDATE_EXPIRED'),
+                   purge_after=COALESCE(
+                       purge_after,
+                       strftime('%Y-%m-%dT%H:%M:%f', COALESCE(archived_at, updated_at), '+30 days') || '000Z'
+                   )
+               WHERE status='ARCHIVED'
+                 AND (archived_at IS NULL OR purge_after IS NULL OR archive_reason IS NULL)""",
+        )
 
     def _import_all(self, tx: sqlite3.Connection, *, excluded_ids: set[str],
-                    excluded_scopes: set[str]) -> None:
+                    excluded_scopes: set[str], snapshot_schema: int) -> None:
         self._prepare_exclusion_tables(tx, excluded_ids, excluded_scopes)
+        memory_columns = (
+            _MEMORY_COLUMNS_V10 if snapshot_schema >= 10 else _MEMORY_COLUMNS_V9
+        )
         tx.execute(
             _insert_select("memory_scopes", _SCOPE_COLUMNS)
             + " WHERE b.id NOT IN (SELECT id FROM restore_excluded_scopes)",
         )
         tx.execute(
-            _insert_select("memories", _MEMORY_COLUMNS)
+            _insert_select("memories", memory_columns)
             + " WHERE b.id NOT IN (SELECT id FROM restore_excluded_memories)"
             + " AND b.scope_id NOT IN (SELECT id FROM restore_excluded_scopes)",
         )
@@ -836,6 +937,7 @@ class BackupService:
                           events: tuple[LedgerEvent, ...]) -> int:
         excluded = 0
         consents: dict[tuple[str, str, str], LedgerEvent] = {}
+        archive_states: dict[str, LedgerEvent] = {}
         for event in events:
             payload = event.payload
             if event.event_type is LedgerEventType.DELETE_MEMORY:
@@ -850,6 +952,27 @@ class BackupService:
                 if row is not None:
                     self._delete_memories(tx, (memory_id,))
                     excluded += 1
+            elif event.event_type is LedgerEventType.PURGE_MEMORY:
+                lineage, seq = lineage_fields_from_payload(payload)
+                memory_id = event.memory_id or payload.get("memory_id")
+                if not isinstance(memory_id, str):
+                    raise StorageError("purge_memory event is missing memory_id")
+                row = tx.execute(
+                    "SELECT 1 FROM memories WHERE id=? AND db_lineage_id=? AND creation_seq=?",
+                    (memory_id, lineage, seq),
+                ).fetchone()
+                if row is not None:
+                    self._delete_memories(tx, (memory_id,))
+                    excluded += 1
+            elif event.event_type in (
+                LedgerEventType.ARCHIVE_MEMORY, LedgerEventType.RESTORE_MEMORY,
+            ):
+                memory_id = event.memory_id or payload.get("memory_id")
+                if not isinstance(memory_id, str):
+                    raise StorageError("archive/restore event is missing memory_id")
+                current = archive_states.get(memory_id)
+                if current is None or event.seq > current.seq:
+                    archive_states[memory_id] = event
             elif event.event_type is LedgerEventType.CLEAR_SCOPE:
                 scope_id = event.scope_id
                 if not scope_id:
@@ -909,6 +1032,38 @@ class BackupService:
             self._enforce_consent_state(
                 tx, scope_id, subject_id, consent_type, event,
             )
+        for memory_id, event in archive_states.items():
+            payload = event.payload
+            lineage, seq = lineage_fields_from_payload(payload)
+            row = tx.execute(
+                "SELECT status FROM memories WHERE id=? AND db_lineage_id=? AND creation_seq=?",
+                (memory_id, lineage, seq),
+            ).fetchone()
+            if row is None:
+                continue
+            if event.event_type is LedgerEventType.ARCHIVE_MEMORY:
+                reason_raw = str(payload.get("archive_reason") or "")
+                try:
+                    reason = ArchiveReason(reason_raw)
+                except ValueError as exc:
+                    raise StorageError("archive_memory event has an invalid reason") from exc
+                tx.execute(
+                    """UPDATE memories SET status='ARCHIVED', archived_at=?,
+                       purge_after=?, archive_reason=?, candidate_expires_at=NULL
+                       WHERE id=?""",
+                    (
+                        _ledger_timestamp(payload.get("archived_at"), "archived_at"),
+                        _ledger_timestamp(payload.get("purge_after"), "purge_after"),
+                        reason.value, memory_id,
+                    ),
+                )
+            else:
+                tx.execute(
+                    """UPDATE memories SET status='ACTIVE', archived_at=NULL,
+                       purge_after=NULL, archive_reason=NULL
+                       WHERE id=? AND status='ARCHIVED'""",
+                    (memory_id,),
+                )
         return excluded
 
     @staticmethod
@@ -929,6 +1084,14 @@ class BackupService:
         )
         tx.execute(
             f"DELETE FROM memory_revisions WHERE memory_id IN ({placeholders})",
+            memory_ids,
+        )
+        tx.execute(
+            f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders})",
+            memory_ids,
+        )
+        tx.execute(
+            f"DELETE FROM index_jobs WHERE memory_id IN ({placeholders})",
             memory_ids,
         )
         tx.execute(
@@ -1068,6 +1231,10 @@ class BackupService:
                 memory_id = event.memory_id or payload.get("memory_id")
                 if isinstance(memory_id, str):
                     delete_ids.add(memory_id)
+            elif event.event_type is LedgerEventType.PURGE_MEMORY:
+                memory_id = event.memory_id or payload.get("memory_id")
+                if isinstance(memory_id, str):
+                    delete_ids.add(memory_id)
             elif event.event_type is LedgerEventType.CLEAR_SCOPE:
                 scope_id = event.scope_id
                 if scope_id:
@@ -1113,10 +1280,40 @@ class BackupService:
         }
 
     # ---------------------------------------------------------------- helpers
+    @staticmethod
+    def _archive_section(path: Path) -> dict[str, object]:
+        with _readonly(path) as connection:
+            row = connection.execute(
+                """SELECT count(*) AS count, min(purge_after) AS min_after,
+                          max(purge_after) AS max_after
+                   FROM memories WHERE status='ARCHIVED'""",
+            ).fetchone()
+            reasons = {
+                str(item["archive_reason"]): int(item["count"])
+                for item in connection.execute(
+                    """SELECT archive_reason, count(*) AS count FROM memories
+                       WHERE status='ARCHIVED' AND archive_reason IS NOT NULL
+                       GROUP BY archive_reason""",
+                ).fetchall()
+            }
+        return {
+            "archive_schema": 1,
+            "archived_count": int(row["count"]) if row is not None else 0,
+            "purge_after_min": row["min_after"] if row is not None else None,
+            "purge_after_max": row["max_after"] if row is not None else None,
+            "archive_reason_counts": reasons,
+        }
+
     def _table_row_counts(self, path: Path) -> dict[str, int]:
         counts: dict[str, int] = {}
         with _readonly(path) as connection:
             for table in _TABLES:
+                exists = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                ).fetchone()
+                if exists is None:
+                    continue
                 row = connection.execute(f"SELECT count(*) FROM {table}").fetchone()
                 counts[table] = int(row[0]) if row is not None else 0
         return counts

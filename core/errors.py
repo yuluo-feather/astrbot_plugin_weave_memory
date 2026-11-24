@@ -33,6 +33,26 @@ class IndexUnavailable(DomainError):
     pass
 
 
+class VectorDimensionMismatch(IndexUnavailable):
+    """The stored embedding dimension does not match the configured provider."""
+
+
+class IndexJobFailed(DomainError):
+    """A vector index job exhausted its retry budget."""
+
+
+class IndexNotConfigured(IndexUnavailable):
+    """Vector indexing is disabled or has no usable embedding provider."""
+
+
+class SensitiveContentBlocked(DomainError):
+    """Text was not sent to an external provider because it matched a sensitive category."""
+
+
+class LedgerUnknownDestructive(DomainError):
+    """Ledger contains an event type this binary cannot classify; maintenance is refused."""
+
+
 class StorageError(DomainError):
     pass
 

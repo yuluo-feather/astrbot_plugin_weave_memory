@@ -93,7 +93,7 @@ class SQLiteDatabase:
     multi-process write coordination.
     """
 
-    CURRENT_SCHEMA_VERSION = 9
+    CURRENT_SCHEMA_VERSION = 10
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -294,8 +294,16 @@ class SQLiteDatabase:
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (9, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("lineage_ledger",),
                     )
+                    version = 9
+                if version < 10:
+                    migration_v10 = (Path(__file__).parent / "migrations" / "010_hybrid_retrieval.sql").read_text(encoding="utf-8")
+                    _apply_script(conn, migration_v10)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, name, applied_at) VALUES (10, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        ("hybrid_retrieval",),
+                    )
         except sqlite3.Error as exc:
-            raise StorageError("SQLite schema migration failed") from exc
+            raise StorageError(f"SQLite schema migration failed: {exc}") from exc
         finally:
             self.connection.execute("PRAGMA foreign_keys = ON")
         return backup_path
@@ -307,7 +315,18 @@ class SQLiteDatabase:
         version = self.schema_version()
         # V1.8 keeps its lineage columns and allocator; rolling back only removes
         # the v9 marker and relies on ledger_first_enabled=false at runtime.
-        effective_version = 8 if version >= 9 else version
+        effective_version = 9 if version >= 10 else (8 if version >= 9 else version)
+        if version >= 10:
+            archived = int(self.connection.execute(
+                "SELECT count(*) FROM memories WHERE status='ARCHIVED'",
+            ).fetchone()[0])
+            if archived:
+                raise StorageError("cannot roll back while ARCHIVED memories exist")
+            pending_jobs = int(self.connection.execute(
+                "SELECT count(*) FROM index_jobs WHERE status IN ('PENDING','RUNNING')",
+            ).fetchone()[0])
+            if pending_jobs:
+                raise StorageError("cannot roll back while pending index jobs exist")
         checks: list[tuple[bool, int, str, str]] = [
             (no_import_jobs, 8, "import_jobs",
              "cannot roll back while import_jobs contains data"),
@@ -322,6 +341,80 @@ class SQLiteDatabase:
             if int(self.connection.execute(f"SELECT count(*) FROM {target}").fetchone()[0]):
                 raise StorageError(message)
 
+    def rollback_to_v9(self) -> None:
+        """Roll v10 back to v9 only when no archive or pending vector job remains."""
+        self._ensure_open()
+        if self.schema_version() != 10:
+            raise StorageError("v10 rollback requires schema version 10")
+        self._ensure_rollback_guards()
+        self.connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            with self.transaction() as conn:
+                conn.execute("""
+                    CREATE TABLE memories_v9 (
+                        id TEXT PRIMARY KEY,
+                        scope_id TEXT NOT NULL REFERENCES memory_scopes(id) ON DELETE RESTRICT,
+                        subject_id TEXT NOT NULL,
+                        memory_type TEXT NOT NULL CHECK (memory_type IN ('PREFERENCE','FACT','EVENT')),
+                        content TEXT NOT NULL CHECK (length(trim(content)) > 0),
+                        normalized_content TEXT NOT NULL CHECK (length(trim(normalized_content)) > 0),
+                        normalization_version INTEGER NOT NULL DEFAULT 1,
+                        status TEXT NOT NULL CHECK (status IN ('CANDIDATE','ACTIVE','SUPERSEDED','ARCHIVED','EXPIRED','DELETED','REJECTED')),
+                        source_type TEXT NOT NULL CHECK (source_type IN ('EXPLICIT','INFERRED','OBSERVED','IMPORTED','MANUAL','AGENT')),
+                        current_revision INTEGER NOT NULL CHECK (current_revision >= 1),
+                        valid_from TEXT,
+                        valid_until TEXT,
+                        superseded_by TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        last_accessed_at TEXT,
+                        metadata_json TEXT NOT NULL DEFAULT '{}',
+                        candidate_expires_at TEXT,
+                        db_lineage_id TEXT NOT NULL,
+                        creation_seq INTEGER NOT NULL CHECK (creation_seq >= 1),
+                        CHECK ((status = 'SUPERSEDED' AND superseded_by IS NOT NULL) OR
+                               (status <> 'SUPERSEDED' AND superseded_by IS NULL)),
+                        UNIQUE (db_lineage_id, creation_seq)
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO memories_v9
+                        (id, scope_id, subject_id, memory_type, content, normalized_content,
+                         normalization_version, status, source_type, current_revision,
+                         valid_from, valid_until, superseded_by, created_at, updated_at,
+                         last_accessed_at, metadata_json, candidate_expires_at,
+                         db_lineage_id, creation_seq)
+                    SELECT id, scope_id, subject_id, memory_type, content, normalized_content,
+                           normalization_version, status, source_type, current_revision,
+                           valid_from, valid_until, superseded_by, created_at, updated_at,
+                           last_accessed_at, metadata_json, candidate_expires_at,
+                           db_lineage_id, creation_seq
+                    FROM memories
+                """)
+                conn.execute("DROP TABLE memories")
+                conn.execute("ALTER TABLE memories_v9 RENAME TO memories")
+                conn.execute("""
+                    CREATE UNIQUE INDEX uq_memories_active_dedup
+                    ON memories(scope_id, subject_id, memory_type, normalized_content)
+                    WHERE status IN ('ACTIVE','CANDIDATE')
+                """)
+                conn.execute(
+                    "CREATE INDEX ix_memories_scope_status ON memories(scope_id, subject_id, status)",
+                )
+                conn.execute(
+                    "CREATE INDEX ix_memories_candidate_expiry ON memories(status, candidate_expires_at)",
+                )
+                conn.execute("DROP TABLE IF EXISTS memory_embeddings")
+                conn.execute("DROP TABLE IF EXISTS index_jobs")
+                conn.execute("DROP TABLE IF EXISTS index_state")
+                conn.execute("DELETE FROM schema_migrations WHERE version=10")
+        except StorageError:
+            raise
+        except sqlite3.Error as exc:
+            raise StorageError("could not roll back V2.0 schema to V1.8") from exc
+        finally:
+            self.connection.execute("PRAGMA foreign_keys = ON")
+
     def rollback_to_v8(self) -> None:
         """Remove the v9 schema marker while keeping lineage columns.
 
@@ -330,6 +423,8 @@ class SQLiteDatabase:
         application must also set ``ledger_first_enabled=false``.
         """
         self._ensure_open()
+        if self.schema_version() >= 10:
+            self.rollback_to_v9()
         try:
             with self.transaction() as conn:
                 conn.execute("DELETE FROM schema_migrations WHERE version=9")
@@ -338,6 +433,9 @@ class SQLiteDatabase:
 
     def rollback_to_v05(self) -> None:
         """Roll back the V1.0-only reserved relation table to the V0.5 schema.
+
+        Historical name: ``rollback_v1_to_v05`` reflects "V1.0 -> V0.5"; it must
+        not be confused with schema v10 rollback (``rollback_to_v9``).
 
         Refuse rollback if relations exist; V1.0 deliberately exposes no relation
         write API, so an empty table is the expected safe downgrade condition.
@@ -356,7 +454,7 @@ class SQLiteDatabase:
         if self.schema_version() == 6:
             self.rollback_to_v5()
         if self.schema_version() == 5:
-            self.rollback_to_v10()
+            self.rollback_v1_to_v05()
         try:
             with self.transaction() as conn:
                 version = int(conn.execute(
@@ -499,6 +597,15 @@ class SQLiteDatabase:
                 import_jobs = int(self.connection.execute(
                     "SELECT count(*) FROM import_jobs",
                 ).fetchone()[0])
+            archived = 0
+            pending_index_jobs = 0
+            if version >= 10:
+                archived = int(self.connection.execute(
+                    "SELECT count(*) FROM memories WHERE status='ARCHIVED'",
+                ).fetchone()[0])
+                pending_index_jobs = int(self.connection.execute(
+                    "SELECT count(*) FROM index_jobs WHERE status IN ('PENDING','RUNNING')",
+                ).fetchone()[0])
         except sqlite3.Error as exc:
             raise StorageError("could not preview V1.1 rollback") from exc
         can_rollback = (
@@ -516,6 +623,8 @@ class SQLiteDatabase:
             "extraction_job_count": extraction_jobs,
             "candidate_count": candidates,
             "import_job_count": import_jobs,
+            "archived_count": archived,
+            "pending_index_job_count": pending_index_jobs,
             "groups": [
                 {
                     "scope_id": row["id"], "platform": row["platform"],
@@ -526,16 +635,17 @@ class SQLiteDatabase:
             ],
             "can_rollback": can_rollback,
             "steps": [
+                "（v10）先恢复或彻底删除所有 ARCHIVED 记忆，并清空 pending index_jobs",
                 "（v8）清空 import_jobs 或接受 rollback_to_v7 拒绝",
                 "（v7）归档/清理候选，或接受 rollback_to_v6 拒绝",
                 "（v6）清空 extraction_jobs 或接受 rollback_to_v5 拒绝",
                 "关闭 → [清空 →] 销毁每个群（会写入备份）",
                 "确认无群 scope / 群记忆 / 群 consent / 候选 / 提取任务",
-                "执行 rollback_to_v10() 回到 v4",
+                "执行 rollback_v1_to_v05() 回到 v4",
             ],
         }
 
-    def rollback_to_v10(self, *, dry_run: bool = False) -> dict[str, object] | None:
+    def rollback_v1_to_v05(self, *, dry_run: bool = False) -> dict[str, object] | None:
         """Roll v5 back to v4 only when no group data remains.
 
         Newer schemas are rolled back first with their own guards.
@@ -627,6 +737,8 @@ class SQLiteDatabase:
             with self.transaction() as conn:
                 conn.execute("DROP TABLE IF EXISTS memory_fts")
                 for table in (
+                    "provider_call_audit", "index_state", "index_jobs",
+                    "memory_embeddings",
                     "import_jobs", "extraction_jobs",
                     "memory_lineage_meta",
                     "memory_relations", "memory_consents", "memory_operations", "memory_tags", "memory_sources",

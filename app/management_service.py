@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
+from typing import Any
 
 from ..core.errors import (
     AuthorizationDenied,
@@ -78,7 +79,9 @@ class ManagementService:
                  imports: ImportService, group_memories: GroupMemoryService,
                  settings: Mapping[str, object], group_max_tokens: int = 192,
                  group_max_memories: int = 2,
-                 backup: BackupPort | None = None) -> None:
+                 backup: BackupPort | None = None,
+                 vector_rebuild: Any | None = None,
+                 vector_enabled: bool = False) -> None:
         self._repository = repository
         self._store = store
         self._index = index
@@ -91,6 +94,8 @@ class ManagementService:
         self._group_max_tokens = group_max_tokens
         self._group_max_memories = group_max_memories
         self._backup = backup
+        self._vector_rebuild = vector_rebuild
+        self._vector_enabled = vector_enabled
 
     def _index_status(self) -> dict[str, object]:
         try:
@@ -140,6 +145,11 @@ class ManagementService:
             "valid_from": _time(memory.valid_from),
             "valid_until": _time(memory.valid_until),
             "candidate_expires_at": _time(memory.candidate_expires_at),
+            "archived_at": _time(memory.archived_at),
+            "purge_after": _time(memory.purge_after),
+            "archive_reason": (
+                memory.archive_reason.value if memory.archive_reason else None
+            ),
             "last_accessed_at": _time(memory.last_accessed_at),
             "metadata": dict(memory.metadata),
         }
@@ -348,6 +358,14 @@ class ManagementService:
         except IndexUnavailable as exc:
             raise StorageError("could not rebuild the search index") from exc
         return {"rebuilt": True, "documents": count}
+
+    async def reindex_async(self) -> dict[str, object]:
+        result = self.reindex()
+        if self._vector_enabled and self._vector_rebuild is not None:
+            rebuilt = await self._vector_rebuild.rebuild_all()
+            result["vector_rebuilt"] = rebuilt
+            result["vector_documents"] = rebuilt
+        return result
 
     def _require_backup(self) -> BackupPort:
         if self._backup is None:

@@ -19,9 +19,9 @@ class AstrBotBackupCommands:
             "织忆备份与恢复（实例级，仅私聊）：\n"
             "/织忆 备份 —— 立即创建主库快照（自动先重放未完成 ledger 事件）\n"
             "/织忆 备份 列表 —— 列出可用备份\n"
-            "/织忆 恢复 <备份ID> —— dry-run，只输出将复活/不会复活清单\n"
-            "/织忆 恢复 <备份ID> 确认 —— 以 merge 模式恢复\n"
-            "/织忆 恢复 <备份ID> <merge|revert|disaster-rebuild> 确认 —— 显式模式恢复\n"
+            "/织忆 备份恢复 <备份ID> —— dry-run，只输出将复活/不会复活清单\n"
+            "/织忆 备份恢复 <备份ID> 确认 —— 以 merge 模式恢复\n"
+            "/织忆 备份恢复 <备份ID> <merge|revert|disaster-rebuild> 确认 —— 显式模式恢复\n"
             "备份不含 memory_ledger.sqlite3；旧备份不会复活已删除/清空/撤销授权的内容。"
         )
 
@@ -38,9 +38,9 @@ class AstrBotBackupCommands:
         return json.dumps(manifest, ensure_ascii=False, indent=2)
 
     def restore(self, event: Any) -> str:
-        tail = tail_after_command(event, "恢复")
+        tail = tail_after_command(event, "备份恢复")
         if not tail:
-            return "用法：/织忆 恢复 <备份ID> [merge|revert|disaster-rebuild] 确认"
+            return "用法：/织忆 备份恢复 <备份ID> [merge|revert|disaster-rebuild] 确认"
         parts = tail.split()
         backup_id = parts[0]
         mode = "merge"

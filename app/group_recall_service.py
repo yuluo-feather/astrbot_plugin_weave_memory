@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import uuid
 from datetime import UTC
 from typing import Any, Callable
@@ -153,7 +154,7 @@ class GroupContextComposer:
     _PREFIX = GROUP_CONTEXT_PREFIX
     _SUFFIX = GROUP_CONTEXT_SUFFIX
 
-    def __init__(self, recall: GroupRecallService, *, max_tokens: int = 192,
+    def __init__(self, recall: Any, *, max_tokens: int = 192,
                  max_memories: int = 2, candidate_limit: int = 8) -> None:
         self._recall = recall
         self._max_tokens = max_tokens
@@ -161,9 +162,12 @@ class GroupContextComposer:
         self._candidate_limit = candidate_limit
 
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
-        candidates, trace = self._recall.recall_group_with_trace(
+        result = self._recall.recall_group_with_trace(
             query, scope, limit=self._candidate_limit,
         )
+        if inspect.isawaitable(result):
+            result = await result
+        candidates, trace = result
         if not candidates:
             self._recall.record_omitted(scope.id, 0)
             self._recall.record_diagnostics(trace)

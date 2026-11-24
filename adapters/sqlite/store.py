@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -19,6 +19,7 @@ from ...core.errors import (
 )
 from ...core.model import (
     AdminSource,
+    ArchiveReason,
     Identity,
     MemoryEntity,
     MemoryOperation,
@@ -44,6 +45,10 @@ def _time_dump(value: datetime | None) -> str | None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValidationError("SQLite timestamps must be timezone-aware")
     return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _content_hash(text: str) -> str:
+    return sha256(text.encode("utf-8")).hexdigest()
 
 
 def _time_load(value: str | None) -> datetime | None:
@@ -77,8 +82,17 @@ def _json_load(value: str) -> dict[str, Any]:
 
 
 class SQLiteMemoryStore:
-    def __init__(self, database: SQLiteDatabase) -> None:
+    def __init__(self, database: SQLiteDatabase, *,
+                 vector_outbox: Callable[
+                     [sqlite3.Connection, str, str, str], None,
+                 ] | None = None) -> None:
         self.db = database
+        self._vector_outbox = vector_outbox
+
+    def _enqueue_vector(self, conn: sqlite3.Connection, memory_id: str,
+                        operation: str, content_hash: str) -> None:
+        if self._vector_outbox is not None:
+            self._vector_outbox(conn, memory_id, operation, content_hash)
 
     def create_scope(self, scope: Scope) -> None:
         identity = scope.identity
@@ -296,6 +310,8 @@ class SQLiteMemoryStore:
                         memory.superseded_by, _time_dump(memory.created_at),
                         _time_dump(memory.updated_at), _time_dump(memory.last_accessed_at),
                         _json_dump(memory.metadata),
+                        _time_dump(memory.archived_at), _time_dump(memory.purge_after),
+                        memory.archive_reason.value if memory.archive_reason else None,
                     )
                     stored_memory = tuple(existing[key] for key in (
                         "id", "scope_id", "subject_id", "memory_type", "content",
@@ -303,6 +319,7 @@ class SQLiteMemoryStore:
                         "current_revision", "valid_from", "valid_until",
                         "candidate_expires_at", "superseded_by",
                         "created_at", "updated_at", "last_accessed_at", "metadata_json",
+                        "archived_at", "purge_after", "archive_reason",
                     ))
                     existing_revision = conn.execute(
                         "SELECT * FROM memory_revisions WHERE id=?", (revision.id,)
@@ -340,8 +357,9 @@ class SQLiteMemoryStore:
                      normalization_version, status, source_type, current_revision,
                      valid_from, valid_until, candidate_expires_at, superseded_by,
                      created_at, updated_at, last_accessed_at, metadata_json,
+                     archived_at, purge_after, archive_reason,
                      db_lineage_id, creation_seq)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (memory.id, memory.scope_id, memory.subject_id, memory.memory_type.value,
                      memory.content, memory.normalized_content, NORMALIZATION_VERSION,
                      memory.status.value, memory.source_type.value, memory.current_revision,
@@ -349,11 +367,19 @@ class SQLiteMemoryStore:
                      _time_dump(memory.candidate_expires_at),
                      memory.superseded_by, _time_dump(memory.created_at),
                      _time_dump(memory.updated_at), _time_dump(memory.last_accessed_at),
-                     _json_dump(memory.metadata), *self._allocate_creation_seq(conn)),
+                     _json_dump(memory.metadata),
+                     _time_dump(memory.archived_at), _time_dump(memory.purge_after),
+                     memory.archive_reason.value if memory.archive_reason else None,
+                     *self._allocate_creation_seq(conn)),
                 )
                 self._insert_revision(conn, revision)
                 self._insert_source(conn, source)
                 self._mark_fts_dirty(conn, memory.id)
+                if memory.status is MemoryStatus.ACTIVE:
+                    self._enqueue_vector(
+                        conn, memory.id, "UPSERT",
+                        _content_hash(memory.normalized_content),
+                    )
         except (AuthorizationDenied, Conflict, NotFound, ValidationError):
             raise
         except sqlite3.IntegrityError as exc:
@@ -393,7 +419,8 @@ class SQLiteMemoryStore:
                     """UPDATE memories SET scope_id=?, subject_id=?, memory_type=?, content=?, normalized_content=?,
                     normalization_version=?, status=?, source_type=?, current_revision=?,
                     valid_from=?, valid_until=?, candidate_expires_at=?, superseded_by=?,
-                    updated_at=?, last_accessed_at=?, metadata_json=?
+                    updated_at=?, last_accessed_at=?, metadata_json=?,
+                    archived_at=?, purge_after=?, archive_reason=?
                     WHERE id=? AND current_revision=?""",
                     (memory.scope_id, memory.subject_id, memory.memory_type.value,
                      memory.content, memory.normalized_content, NORMALIZATION_VERSION,
@@ -402,6 +429,8 @@ class SQLiteMemoryStore:
                      _time_dump(memory.candidate_expires_at),
                      memory.superseded_by, _time_dump(memory.updated_at),
                      _time_dump(memory.last_accessed_at), _json_dump(memory.metadata),
+                     _time_dump(memory.archived_at), _time_dump(memory.purge_after),
+                     memory.archive_reason.value if memory.archive_reason else None,
                      memory.id, expected_revision),
                 )
                 if cursor.rowcount != 1:
@@ -423,6 +452,16 @@ class SQLiteMemoryStore:
                         metadata=operation.metadata,
                     )
                 self._mark_fts_dirty(conn, memory.id)
+                if memory.status is MemoryStatus.ACTIVE:
+                    self._enqueue_vector(
+                        conn, memory.id, "UPSERT",
+                        _content_hash(memory.normalized_content),
+                    )
+                else:
+                    self._enqueue_vector(
+                        conn, memory.id, "DELETE",
+                        _content_hash(memory.normalized_content),
+                    )
         except (AuthorizationDenied, Conflict, NotFound, ValidationError):
             raise
         except sqlite3.IntegrityError as exc:
@@ -526,6 +565,77 @@ class SQLiteMemoryStore:
             ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError("could not list active memories") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
+
+    def get_any(self, memory_id: str) -> MemoryEntity:
+        """Internal index-worker lookup; never used for user-facing reads."""
+        try:
+            row = self.db.connection.execute(
+                "SELECT * FROM memories WHERE id=?", (memory_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read memory for indexing") from exc
+        if row is None:
+            raise NotFound("memory not found")
+        return self._row_to_memory(row)
+
+    def scope_type(self, scope_id: str) -> str:
+        try:
+            row = self.db.connection.execute(
+                "SELECT scope_type FROM memory_scopes WHERE id=?", (scope_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read scope type") from exc
+        if row is None:
+            raise NotFound("scope not found")
+        return str(row["scope_type"])
+
+    def list_active_all(self) -> tuple[MemoryEntity, ...]:
+        try:
+            rows = self.db.connection.execute(
+                """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                   WHERE m.status='ACTIVE' AND s.is_enabled=1
+                   ORDER BY m.created_at, m.id""",
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list active memories for rebuild") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
+
+    def list_active_by_tag_text(self, query_text: str, *, scope_id: str,
+                                subject_id: str,
+                                limit: int = 20) -> tuple[MemoryEntity, ...]:
+        text = (query_text or "").strip()
+        if not text or limit < 1:
+            return ()
+        try:
+            rows = self.db.connection.execute(
+                """SELECT DISTINCT m.* FROM memories m
+                   JOIN memory_scopes s ON s.id=m.scope_id
+                   JOIN memory_tags t ON t.memory_id=m.id
+                   WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                     AND s.is_enabled=1 AND INSTR(?, t.tag) > 0
+                   ORDER BY m.created_at DESC, m.id LIMIT ?""",
+                (scope_id, subject_id, text, limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list active memories by tag") from exc
+        return tuple(self._row_to_memory(row) for row in rows)
+
+    def list_active_in_window(self, start: datetime, end: datetime, *,
+                              scope_id: str, subject_id: str,
+                              limit: int = 20) -> tuple[MemoryEntity, ...]:
+        if limit < 1 or end <= start:
+            return ()
+        try:
+            rows = self.db.connection.execute(
+                """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
+                   WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                     AND s.is_enabled=1 AND m.created_at>=? AND m.created_at<?
+                   ORDER BY m.created_at DESC, m.id LIMIT ?""",
+                (scope_id, subject_id, _time_dump(start), _time_dump(end), limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list active memories by time") from exc
         return tuple(self._row_to_memory(row) for row in rows)
 
     def list_for_export(
@@ -894,7 +1004,7 @@ class SQLiteMemoryStore:
                     raise Conflict("operation id already belongs to another operation")
                 row = conn.execute(
                     """SELECT id, memory_type, source_type, current_revision,
-                       db_lineage_id, creation_seq
+                       normalized_content, db_lineage_id, creation_seq
                     FROM memories WHERE id=? AND scope_id=? AND subject_id=?""",
                     (memory_id, scope_id, subject_id),
                 ).fetchone()
@@ -919,6 +1029,10 @@ class SQLiteMemoryStore:
                               "creation_seq": int(row["creation_seq"])},
                 )
                 self._mark_fts_dirty(conn, memory_id)
+                self._enqueue_vector(
+                    conn, memory_id, "DELETE",
+                    _content_hash(row["normalized_content"]),
+                )
                 conn.execute(
                     "DELETE FROM memory_relations WHERE source_memory_id=? OR target_memory_id=?",
                     (memory_id, memory_id),
@@ -926,6 +1040,7 @@ class SQLiteMemoryStore:
                 conn.execute("DELETE FROM memory_tags WHERE memory_id=?", (memory_id,))
                 conn.execute("DELETE FROM memory_sources WHERE memory_id=?", (memory_id,))
                 conn.execute("DELETE FROM memory_revisions WHERE memory_id=?", (memory_id,))
+                self._delete_derived_rows(conn, (memory_id,))
                 conn.execute("DELETE FROM memories WHERE id=?", (memory_id,))
                 self._mark_secure_purge_pending(conn)
                 return True
@@ -935,6 +1050,153 @@ class SQLiteMemoryStore:
             raise Conflict("delete operation identifier already exists") from exc
         except sqlite3.Error as exc:
             raise StorageError("could not delete memory transaction") from exc
+
+    def list_expired_archives(self, *, at: datetime, limit: int) -> tuple[MemoryEntity, ...]:
+        """Return ARCHIVED rows whose retention window has elapsed."""
+        if limit < 1:
+            raise ValidationError("archive cleanup limit must be >= 1")
+        try:
+            rows = self.db.connection.execute(
+                """SELECT * FROM memories
+                   WHERE status='ARCHIVED' AND purge_after IS NOT NULL AND purge_after<=?
+                   ORDER BY purge_after, id LIMIT ?""",
+                (_time_dump(at), limit),
+            ).fetchall()
+            return tuple(self._row_to_memory(row) for row in rows)
+        except sqlite3.Error as exc:
+            raise StorageError("could not list expired archives") from exc
+
+    def purge_archived(self, memory_id: str, *, scope_id: str, subject_id: str,
+                       operation_id: str, operator_type: OperatorType,
+                       operator_id: str, occurred_at: datetime,
+                       expected_lineage: str | None = None,
+                       expected_creation_seq: int | None = None,
+                       idempotent: bool = False) -> bool:
+        """Permanently purge an ARCHIVED row and all derived/cascade data."""
+        try:
+            with self.db.transaction() as conn:
+                prior = conn.execute(
+                    "SELECT * FROM memory_operations WHERE id=?", (operation_id,),
+                ).fetchone()
+                if prior is not None:
+                    if (prior["scope_id"], prior["memory_id"], prior["operation_type"],
+                        prior["operator_type"], prior["operator_id"], prior["occurred_at"]) == (
+                        scope_id, memory_id, "PURGE_MEMORY", operator_type.value,
+                        operator_id, _time_dump(occurred_at)):
+                        return False
+                    raise Conflict("operation id already belongs to another operation")
+                row = conn.execute(
+                    """SELECT id, memory_type, source_type, current_revision, status,
+                       normalized_content, archive_reason, db_lineage_id, creation_seq
+                    FROM memories WHERE id=? AND scope_id=? AND subject_id=?""",
+                    (memory_id, scope_id, subject_id),
+                ).fetchone()
+                if row is None:
+                    if idempotent:
+                        return False
+                    raise NotFound("memory not found")
+                if row["status"] != "ARCHIVED":
+                    raise Conflict("purge requires an ARCHIVED memory")
+                if expected_lineage is not None and row["db_lineage_id"] != expected_lineage:
+                    raise Conflict("purge event lineage does not match the stored row")
+                if (expected_creation_seq is not None
+                        and int(row["creation_seq"]) != expected_creation_seq):
+                    raise Conflict("purge event creation_seq does not match the stored row")
+                self._insert_operation(
+                    conn, operation_id=operation_id, scope_id=scope_id,
+                    memory_id=memory_id, operation_type="PURGE_MEMORY",
+                    operator_type=operator_type, operator_id=operator_id,
+                    occurred_at=occurred_at,
+                    metadata={"status": "DELETED", "memory_type": row["memory_type"],
+                              "source_type": row["source_type"],
+                              "last_revision": row["current_revision"],
+                              "archive_reason": row["archive_reason"],
+                              "db_lineage_id": row["db_lineage_id"],
+                              "creation_seq": int(row["creation_seq"])},
+                )
+                self._mark_fts_dirty(conn, memory_id)
+                self._enqueue_vector(
+                    conn, memory_id, "DELETE",
+                    _content_hash(row["normalized_content"]),
+                )
+                conn.execute(
+                    "DELETE FROM memory_relations WHERE source_memory_id=? OR target_memory_id=?",
+                    (memory_id, memory_id),
+                )
+                conn.execute("DELETE FROM memory_tags WHERE memory_id=?", (memory_id,))
+                conn.execute("DELETE FROM memory_sources WHERE memory_id=?", (memory_id,))
+                conn.execute("DELETE FROM memory_revisions WHERE memory_id=?", (memory_id,))
+                self._delete_derived_rows(conn, (memory_id,))
+                conn.execute("DELETE FROM memories WHERE id=?", (memory_id,))
+                self._mark_secure_purge_pending(conn)
+                return True
+        except (Conflict, NotFound, ValidationError):
+            raise
+        except sqlite3.IntegrityError as exc:
+            raise Conflict("purge operation identifier already exists") from exc
+        except sqlite3.Error as exc:
+            raise StorageError("could not purge archived memory transaction") from exc
+
+    def replay_archive(self, memory_id: str, *, scope_id: str,
+                       archived_at: datetime, purge_after: datetime,
+                       archive_reason: ArchiveReason, occurred_at: datetime) -> bool:
+        """Apply a pending archive intent during ledger replay (body-free)."""
+        try:
+            with self.db.transaction() as conn:
+                cursor = conn.execute(
+                    """UPDATE memories
+                       SET status='ARCHIVED', archived_at=?, purge_after=?,
+                           archive_reason=?, candidate_expires_at=NULL, updated_at=?
+                       WHERE id=? AND scope_id=?""",
+                    (_time_dump(archived_at), _time_dump(purge_after),
+                     archive_reason.value, _time_dump(occurred_at),
+                     memory_id, scope_id),
+                )
+                if cursor.rowcount != 1:
+                    return False
+                self._mark_fts_dirty(conn, memory_id)
+                content = conn.execute(
+                    "SELECT normalized_content FROM memories WHERE id=?", (memory_id,),
+                ).fetchone()
+                if content is not None:
+                    self._enqueue_vector(
+                        conn, memory_id, "DELETE",
+                        _content_hash(content["normalized_content"]),
+                    )
+                return True
+        except sqlite3.IntegrityError as exc:
+            raise Conflict("archive replay violates a storage constraint") from exc
+        except sqlite3.Error as exc:
+            raise StorageError("could not replay archive event") from exc
+
+    def replay_restore(self, memory_id: str, *, scope_id: str,
+                       occurred_at: datetime) -> bool:
+        """Apply a pending restore intent during ledger replay."""
+        try:
+            with self.db.transaction() as conn:
+                cursor = conn.execute(
+                    """UPDATE memories
+                       SET status='ACTIVE', archived_at=NULL, purge_after=NULL,
+                           archive_reason=NULL, updated_at=?
+                       WHERE id=? AND scope_id=? AND status='ARCHIVED'""",
+                    (_time_dump(occurred_at), memory_id, scope_id),
+                )
+                if cursor.rowcount != 1:
+                    return False
+                self._mark_fts_dirty(conn, memory_id)
+                content = conn.execute(
+                    "SELECT normalized_content FROM memories WHERE id=?", (memory_id,),
+                ).fetchone()
+                if content is not None:
+                    self._enqueue_vector(
+                        conn, memory_id, "UPSERT",
+                        _content_hash(content["normalized_content"]),
+                    )
+                return True
+        except sqlite3.IntegrityError as exc:
+            raise Conflict("restore replay conflicts with an active duplicate") from exc
+        except sqlite3.Error as exc:
+            raise StorageError("could not replay restore event") from exc
 
     def reject_candidate(self, memory: MemoryEntity, *, expected_revision: int,
                          revision: MemoryRevision, operation: MemoryOperation,
@@ -968,7 +1230,8 @@ class SQLiteMemoryStore:
                     raise AuthorizationDenied("scope is disabled")
                 cursor = conn.execute(
                     """UPDATE memories SET status=?, current_revision=?, candidate_expires_at=?,
-                    superseded_by=?, updated_at=?, metadata_json=?
+                    superseded_by=?, updated_at=?, metadata_json=?,
+                    archived_at=NULL, purge_after=NULL, archive_reason=NULL
                     WHERE id=? AND current_revision=? AND status='CANDIDATE'""",
                     (memory.status.value, memory.current_revision,
                      _time_dump(memory.candidate_expires_at), memory.superseded_by,
@@ -990,6 +1253,10 @@ class SQLiteMemoryStore:
                     metadata=operation.metadata,
                 )
                 self._mark_fts_dirty(conn, memory.id)
+                self._enqueue_vector(
+                    conn, memory.id, "DELETE",
+                    _content_hash(memory.normalized_content),
+                )
                 if purge_body:
                     conn.execute(
                         "DELETE FROM memory_relations WHERE source_memory_id=? OR target_memory_id=?",
@@ -998,6 +1265,7 @@ class SQLiteMemoryStore:
                     conn.execute("DELETE FROM memory_tags WHERE memory_id=?", (memory.id,))
                     conn.execute("DELETE FROM memory_sources WHERE memory_id=?", (memory.id,))
                     conn.execute("DELETE FROM memory_revisions WHERE memory_id=?", (memory.id,))
+                    self._delete_derived_rows(conn, (memory.id,))
                     conn.execute("DELETE FROM memories WHERE id=?", (memory.id,))
                     self._mark_secure_purge_pending(conn)
                 else:
@@ -1034,7 +1302,7 @@ class SQLiteMemoryStore:
                     raise NotFound("scope not found")
                 if boundaries is None:
                     rows = conn.execute(
-                        """SELECT id, db_lineage_id, creation_seq FROM memories
+                        """SELECT id, normalized_content, db_lineage_id, creation_seq FROM memories
                         WHERE scope_id=? ORDER BY id""",
                         (scope_id,),
                     ).fetchall()
@@ -1046,7 +1314,7 @@ class SQLiteMemoryStore:
                     for lineage, boundary in boundaries.items():
                         params.extend((lineage, boundary))
                     rows = conn.execute(
-                        f"""SELECT id, db_lineage_id, creation_seq FROM memories
+                        f"""SELECT id, normalized_content, db_lineage_id, creation_seq FROM memories
                         WHERE scope_id=? AND ({clauses}) ORDER BY id""",
                         tuple(params),
                     ).fetchall()
@@ -1064,6 +1332,10 @@ class SQLiteMemoryStore:
                                   "creation_seq": int(row["creation_seq"])},
                     )
                     self._mark_fts_dirty(conn, row["id"])
+                    self._enqueue_vector(
+                        conn, row["id"], "DELETE",
+                        _content_hash(row["normalized_content"]),
+                    )
                 self._insert_operation(
                     conn, operation_id=operation_id, scope_id=scope_id,
                     memory_id=None, operation_type="CLEAR_SCOPE",
@@ -1088,6 +1360,7 @@ class SQLiteMemoryStore:
                         f"DELETE FROM memory_revisions WHERE memory_id IN ({placeholders})",
                         memory_ids,
                     )
+                    self._delete_derived_rows(conn, memory_ids)
                     conn.execute(
                         f"DELETE FROM memories WHERE id IN ({placeholders})",
                         memory_ids,
@@ -1325,14 +1598,17 @@ class SQLiteMemoryStore:
                     return 0
                 if row["scope_type"] != "GROUP":
                     raise Conflict("delete_group_scope requires a GROUP scope")
-                memory_ids = tuple(
-                    item["id"] for item in conn.execute(
-                        "SELECT id FROM memories WHERE scope_id=? ORDER BY id",
-                        (scope_id,),
-                    ).fetchall()
-                )
-                for memory_id in memory_ids:
-                    self._mark_fts_dirty(conn, memory_id)
+                rows = conn.execute(
+                    "SELECT id, normalized_content FROM memories WHERE scope_id=? ORDER BY id",
+                    (scope_id,),
+                ).fetchall()
+                memory_ids = tuple(item["id"] for item in rows)
+                for item in rows:
+                    self._mark_fts_dirty(conn, item["id"])
+                    self._enqueue_vector(
+                        conn, item["id"], "DELETE",
+                        _content_hash(item["normalized_content"]),
+                    )
                 conn.execute(
                     """DELETE FROM memory_relations
                        WHERE source_memory_id IN (SELECT id FROM memories WHERE scope_id=?)
@@ -1351,6 +1627,7 @@ class SQLiteMemoryStore:
                     "DELETE FROM memory_revisions WHERE memory_id IN (SELECT id FROM memories WHERE scope_id=?)",
                     (scope_id,),
                 )
+                self._delete_derived_rows(conn, memory_ids)
                 conn.execute("DELETE FROM memories WHERE scope_id=?", (scope_id,))
                 conn.execute("DELETE FROM memory_consents WHERE scope_id=?", (scope_id,))
                 conn.execute("DELETE FROM memory_operations WHERE scope_id=?", (scope_id,))
@@ -1362,7 +1639,7 @@ class SQLiteMemoryStore:
         except sqlite3.IntegrityError as exc:
             raise Conflict("could not destroy group scope due to a constraint") from exc
         except sqlite3.Error as exc:
-            raise StorageError("could not destroy group scope") from exc
+            raise StorageError(f"could not destroy group scope: {exc}") from exc
 
     @staticmethod
     def _mark_secure_purge_pending(conn: sqlite3.Connection) -> None:
@@ -1414,6 +1691,24 @@ class SQLiteMemoryStore:
         )
 
     @staticmethod
+    def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,),
+        ).fetchone() is not None
+
+    @staticmethod
+    def _delete_derived_rows(conn: sqlite3.Connection, memory_ids: tuple[str, ...]) -> None:
+        if not memory_ids:
+            return
+        placeholders = ",".join("?" for _ in memory_ids)
+        for table in ("memory_embeddings", "index_jobs"):
+            if SQLiteMemoryStore._table_exists(conn, table):
+                conn.execute(
+                    f"DELETE FROM {table} WHERE memory_id IN ({placeholders})",
+                    memory_ids,
+                )
+
+    @staticmethod
     def _mark_fts_dirty(conn: sqlite3.Connection, memory_id: str) -> None:
         row = conn.execute("SELECT value FROM memory_meta WHERE key='fts_dirty_ids'").fetchone()
         try:
@@ -1432,7 +1727,7 @@ class SQLiteMemoryStore:
 
     @staticmethod
     def _row_to_memory(row: sqlite3.Row) -> MemoryEntity:
-        from ...core.model import MemoryType, SourceType
+        from ...core.model import ArchiveReason, MemoryType, SourceType
         stored_version = int(row["normalization_version"])
         if stored_version != NORMALIZATION_VERSION:
             raise StorageError(
@@ -1449,5 +1744,10 @@ class SQLiteMemoryStore:
             valid_from=_time_load(row["valid_from"]), valid_until=_time_load(row["valid_until"]),
             candidate_expires_at=_time_load(row["candidate_expires_at"]),
             superseded_by=row["superseded_by"], last_accessed_at=_time_load(row["last_accessed_at"]),
+            archived_at=_time_load(row["archived_at"]),
+            purge_after=_time_load(row["purge_after"]),
+            archive_reason=(
+                ArchiveReason(row["archive_reason"]) if row["archive_reason"] else None
+            ),
             metadata=_json_load(row["metadata_json"]),
         )
