@@ -26,25 +26,32 @@ def _is_too_large(exc: BaseException) -> bool:
 
 
 class AstrBotEmbeddingProvider(EmbeddingProvider):
+    """Resolves the host provider per call so plugin load order does not matter."""
+
     def __init__(self, context: Any, provider_id: str, model: str = "",
                  *, batch_size: int = 50) -> None:
         self.provider_id = provider_id.strip()
         if not self.provider_id:
             raise IndexNotConfigured("embedding_provider_id is empty")
-        resolver = getattr(context, "get_provider_by_id", None)
+        self._context = context
+        self._model_override = model.strip()
+        self._batch_size = max(1, int(batch_size))
+
+    def resolve(self) -> Any | None:
+        resolver = getattr(self._context, "get_provider_by_id", None)
         provider = resolver(self.provider_id) if callable(resolver) else None
         if provider is None:
-            raise IndexNotConfigured("embedding provider is not registered")
+            return None
         if not (callable(getattr(provider, "get_embedding", None))
                 or callable(getattr(provider, "get_embeddings", None))):
-            raise IndexNotConfigured("provider does not expose embeddings")
-        self._provider = provider
-        self._batch_size = max(1, int(batch_size))
-        self.model = (
-            model.strip()
-            or self._provider_model(provider)
-        )
-        self.dimension = self._provider_dimension(provider)
+            return None
+        return provider
+
+    def _require(self) -> Any:
+        provider = self.resolve()
+        if provider is None:
+            raise IndexNotConfigured("embedding provider is not registered")
+        return provider
 
     @staticmethod
     def _provider_model(provider: Any) -> str:
@@ -80,7 +87,23 @@ class AstrBotEmbeddingProvider(EmbeddingProvider):
                 configured = config.get(key)
                 if isinstance(configured, int) and configured > 0:
                     return configured
-        raise IndexNotConfigured("embedding provider dimension is unavailable")
+        return 0
+
+    @property
+    def model(self) -> str:
+        provider = self.resolve()
+        if provider is None:
+            return self._model_override or "unknown"
+        return self._model_override or self._provider_model(provider)
+
+    @property
+    def dimension(self) -> int:
+        provider = self.resolve()
+        return self._provider_dimension(provider) if provider is not None else 0
+
+    @property
+    def ready(self) -> bool:
+        return self.dimension > 0
 
     async def embed_query(self, text: str) -> tuple[float, ...]:
         vectors = await self.embed_documents((text,))
@@ -91,13 +114,14 @@ class AstrBotEmbeddingProvider(EmbeddingProvider):
     ) -> tuple[tuple[float, ...], ...]:
         if not texts:
             return ()
+        provider = self._require()
         results: list[tuple[float, ...]] = []
         batch_size = self._batch_size
         index = 0
         while index < len(texts):
             chunk = texts[index:index + batch_size]
             try:
-                vectors = await self._embed_chunk(chunk)
+                vectors = await self._embed_chunk(provider, chunk)
             except Exception as exc:
                 if _is_too_large(exc) and batch_size > 1:
                     batch_size = max(1, batch_size // 2)
@@ -109,13 +133,14 @@ class AstrBotEmbeddingProvider(EmbeddingProvider):
             index += len(chunk)
         return tuple(results)
 
-    async def _embed_chunk(self, texts: tuple[str, ...]) -> list[list[float]]:
-        batch = getattr(self._provider, "get_embeddings", None)
+    async def _embed_chunk(self, provider: Any,
+                           texts: tuple[str, ...]) -> list[list[float]]:
+        batch = getattr(provider, "get_embeddings", None)
         if callable(batch):
             value = await batch(list(texts))
             if isinstance(value, list):
                 return value
-        single = getattr(self._provider, "get_embedding", None)
+        single = getattr(provider, "get_embedding", None)
         if not callable(single):
             raise IndexNotConfigured("provider does not expose get_embedding")
         results: list[list[float]] = []

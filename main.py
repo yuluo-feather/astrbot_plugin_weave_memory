@@ -4,6 +4,7 @@ import asyncio
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -129,6 +130,15 @@ class WeaveMemoryPlugin(Star):
         self._extraction_capture: AstrBotExtractionCapture | None = None
         self._retention: RetentionService | None = None
         self._scheduled_backup_task: asyncio.Task[None] | None = None
+        self._embedding_attach_task: asyncio.Task[None] | None = None
+        self._store: Any = None
+        self._clock: Any = None
+        self._index: Any = None
+        self._provider_config: Any = None
+        self._embedding_provider: Any = None
+        self._provider_audit: Any = None
+        self._hybrid: Any = None
+        self._hybrid_group: Any = None
         self._index_worker: IndexWorker | None = None
         self._provider_policy: ProviderPolicy | None = None
         self._injector: AstrBotMemoryInjector | None = None
@@ -180,7 +190,7 @@ class WeaveMemoryPlugin(Star):
                         "织忆 embedding provider 不可用：%s", type(exc).__name__,
                     )
                     provider = None
-                if provider is not None:
+                if provider is not None and provider.ready:
                     provider_policy = ProviderPolicy(
                         provider, provider_config, provider_audit,
                         EmbeddingLRUCache(
@@ -207,11 +217,20 @@ class WeaveMemoryPlugin(Star):
                 ),
             )
             coordinator = WriteCoordinator(store, index, ledger)
+            self._store = store
+            self._clock = clock
+            self._index = index
+            self._provider_config = provider_config
+            self._embedding_provider = provider
+            self._provider_audit = provider_audit
             vector_index: SQLiteVectorIndex | None = None
             index_jobs: SQLiteIndexJobStore | None = None
             index_worker: IndexWorker | None = None
             index_rebuild: IndexRebuildService | None = None
-            if provider is not None and provider_config.vector_index_enabled:
+            if (
+                provider is not None and provider.ready
+                and provider_config.vector_index_enabled
+            ):
                 config_hash = sha256(
                     (
                         f"{provider.provider_id}|{provider.model}|{provider.dimension}|"
@@ -312,6 +331,20 @@ class WeaveMemoryPlugin(Star):
                     logger.warning(
                         "织忆访问审计清理失败：%s", type(exc).__name__,
                     )
+            if (
+                provider is not None and not provider.ready
+                and provider_config.vector_index_enabled
+            ):
+                try:
+                    self._embedding_attach_task = (
+                        asyncio.get_running_loop().create_task(
+                            self._wait_for_embedding(),
+                        )
+                    )
+                except RuntimeError:
+                    logger.warning(
+                        "织忆向量延迟挂载未启动：当前没有运行中的事件循环。",
+                    )
             if provider_audit is not None:
                 try:
                     provider_audit.prune_before(
@@ -409,6 +442,7 @@ class WeaveMemoryPlugin(Star):
                         "recall_diagnostics_include_query", False,
                     ),
                 )
+                self._hybrid = hybrid
             composer = MemoryContextComposer(
                 hybrid or recall,
                 max_tokens=self._config_int("personal_max_tokens", 384),
@@ -476,6 +510,7 @@ class WeaveMemoryPlugin(Star):
                         "recall_diagnostics_include_query", False,
                     ),
                 )
+                self._hybrid_group = hybrid_group
                 group_composer = GroupContextComposer(
                     hybrid_group,
                     max_tokens=self._config_int("group_max_tokens", 192),
@@ -1309,6 +1344,70 @@ class WeaveMemoryPlugin(Star):
         if callable(stop_event):
             stop_event()
 
+    async def _wait_for_embedding(self) -> None:
+        provider = self._embedding_provider
+        if provider is None or self._provider_config is None:
+            return
+        for _ in range(60):
+            await asyncio.sleep(15)
+            if not provider.ready:
+                continue
+            try:
+                self._attach_vector_stack(provider)
+            except Exception as exc:  # noqa: BLE001 - retry on next tick
+                logger.warning(
+                    "织忆向量组件挂载失败：%s", type(exc).__name__,
+                )
+                continue
+            return
+        logger.warning("织忆 embedding provider 15 分钟内未就绪，向量通道保持关闭。")
+
+    def _attach_vector_stack(self, provider: Any) -> None:
+        config = self._provider_config
+        config_hash = sha256(
+            (
+                f"{provider.provider_id}|{provider.model}|{provider.dimension}|"
+                f"{NORMALIZATION_VERSION}|"
+                f"{config.embedding_max_text_chars}"
+            ).encode("utf-8"),
+        ).hexdigest()[:16]
+        vector = SQLiteVectorIndex(
+            self._database, provider_id=provider.provider_id,
+            model=provider.model, dim=provider.dimension,
+            config_hash=config_hash,
+            states=SQLiteIndexStateStore(self._database),
+            snapshot_cache_mb=config.vector_snapshot_cache_mb,
+        )
+        policy = ProviderPolicy(
+            provider, config, self._provider_audit,
+            EmbeddingLRUCache(
+                max_mb=config.embedding_cache_mb,
+                ttl_seconds=config.embedding_cache_ttl_minutes * 60,
+            ),
+            self._clock,
+        )
+        jobs = SQLiteIndexJobStore(self._database)
+        service = IndexJobService(
+            self._store, jobs, vector, policy, self._coordinator, self._clock,
+            max_attempts=config.index_job_max_attempts, enabled=True,
+        )
+        rebuild = IndexRebuildService(
+            self._store, vector, policy, self._coordinator, self._clock,
+        )
+        worker = IndexWorker(
+            service, jobs, rebuild, self._clock,
+            interval_seconds=config.index_worker_interval_seconds, enabled=True,
+        )
+        worker.start()
+        if self._hybrid is not None:
+            self._hybrid.attach_vector(vector, policy)
+        if self._hybrid_group is not None:
+            self._hybrid_group.attach_vector(vector, policy)
+        self._vector_index = vector
+        self._index_worker = worker
+        asyncio.get_running_loop().create_task(rebuild.rebuild_all())
+        logger.info("织忆 embedding provider 已就绪，向量通道已挂载并开始补齐。")
+
     async def _scheduled_backup_loop(self, backup: BackupService,
                                      interval_seconds: int) -> None:
         while True:
@@ -1325,6 +1424,13 @@ class WeaveMemoryPlugin(Star):
                 logger.info("织忆定时备份完成：%s", result.get("backup_id"))
 
     async def terminate(self):
+        if self._embedding_attach_task is not None:
+            self._embedding_attach_task.cancel()
+            try:
+                await self._embedding_attach_task
+            except asyncio.CancelledError:
+                pass
+            self._embedding_attach_task = None
         if self._scheduled_backup_task is not None:
             self._scheduled_backup_task.cancel()
             try:

@@ -478,6 +478,12 @@ class HybridRecallService:
         )
         require_access()
 
+    def attach_vector(self, vector: VectorIndex,
+                      provider: ProviderPolicy | None = None) -> None:
+        """Attach a late-created vector stack once the host provider appears."""
+        self._provider = provider
+        self._vector = vector
+
     def record_omitted(self, scope_id: str, count: int) -> None:
         self._last_omitted[scope_id] = max(0, count)
 
