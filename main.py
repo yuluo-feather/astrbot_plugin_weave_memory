@@ -330,6 +330,11 @@ class WeaveMemoryPlugin(Star):
                     classifier_mode=provider_config.query_classifier_mode,
                     rerank_enabled=provider_config.rerank_enabled,
                     rerank_timeout_seconds=provider_config.rerank_timeout_seconds,
+                    rerank_max_docs=provider_config.rerank_max_docs,
+                    rerank_max_text_chars=provider_config.rerank_max_text_chars,
+                    rerank_cooldown_seconds=(
+                        provider_config.provider_failure_cooldown_seconds
+                    ),
                     tag_candidate_limit=provider_config.tag_candidate_limit,
                     time_candidate_limit=provider_config.time_candidate_limit,
                     relevance_threshold=provider_config.vector_relevance_threshold,

@@ -37,6 +37,8 @@ def test_v2_defaults_are_safe_and_frozen():
         "embedding_cache_ttl_minutes": 30,
         "embedding_timeout_seconds": 5,
         "embedding_max_text_chars": 1200,
+        "rerank_max_docs": 16,
+        "rerank_max_text_chars": 1200,
         "external_provider_opt_in": False,
         "external_provider_allowlist": [],
         "provider_call_audit_retention_days": 90,
