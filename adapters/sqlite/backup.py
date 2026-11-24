@@ -435,6 +435,45 @@ class BackupService:
                         "use disaster-rebuild to adopt it",
                     )
 
+    def _verify_clear_boundaries(self, manifest: Mapping[str, Any],
+                                 directory: Path,
+                                 events: tuple[LedgerEvent, ...], *,
+                                 mode: str) -> None:
+        """Reject clear boundaries that exceed every persisted high watermark.
+
+        ``merge``/``revert`` run against the live database, whose per-lineage
+        counter only grows, so a boundary above it cannot come from a real
+        clear. ``disaster-rebuild`` targets an empty database by design: the
+        ledger is then the only authority, and post-backup clears may legitimately
+        exceed the backup watermark.
+        """
+        if mode == "disaster-rebuild":
+            return
+        known: dict[str, int] = {
+            str(key): int(value)
+            for key, value in dict(
+                manifest.get("lineage_high_watermarks") or {},
+            ).items()
+        }
+        with _readonly(directory / "main.sqlite3") as connection:
+            rows = connection.execute(
+                "SELECT db_lineage_id, high_watermark FROM memory_lineage_meta",
+            ).fetchall()
+        for row in rows:
+            lineage = str(row["db_lineage_id"])
+            known[lineage] = max(known.get(lineage, 0), int(row["high_watermark"]))
+        for lineage, high in self._store.lineage_high_watermarks().items():
+            known[lineage] = max(known.get(lineage, 0), int(high))
+        for event in events:
+            if event.event_type is not LedgerEventType.CLEAR_SCOPE:
+                continue
+            for lineage, boundary in boundaries_from_payload(event.payload).items():
+                high = known.get(lineage)
+                if high is None or boundary > high:
+                    raise StorageError(
+                        "clear boundary exceeds the persisted high watermark",
+                    )
+
     # ---------------------------------------------------------------- restore
     def restore(self, backup_id: str, *, mode: str = "merge",
                 confirm: bool = False, dry_run: bool = False,
@@ -446,7 +485,7 @@ class BackupService:
             )
         if not dry_run and not confirm:
             raise ValidationError("restore requires explicit confirmation")
-        return self._coordinator.run_write_locked(
+        return self._coordinator.run_maintenance_locked(
             lambda: self._restore_locked(
                 backup_id, mode=mode, dry_run=dry_run,
                 operator_id=operator_id, resume=None,
@@ -483,6 +522,115 @@ class BackupService:
                 dry_run=False, operator_id="restore-journal", resume=journal,
             ),
         )
+
+    # ------------------------------------------------------ restore snapshots
+    def _snapshot_root(self) -> Path:
+        return self._data_dir / "restore_snapshots"
+
+    def list_restore_snapshots(self) -> list[dict[str, object]]:
+        """List pre-restore snapshots so an operator can roll back by hand."""
+        root = self._snapshot_root()
+        if not root.exists():
+            return []
+        entries: list[dict[str, object]] = []
+        for directory in sorted(
+            (path for path in root.iterdir()
+             if path.is_dir() and not path.name.startswith(".")),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        ):
+            snapshot = directory / "main.sqlite3"
+            if not snapshot.exists():
+                continue
+            metadata: dict[str, Any] = {}
+            meta_path = directory / "metadata.json"
+            if meta_path.exists():
+                try:
+                    loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    loaded = {}
+                if isinstance(loaded, dict):
+                    metadata = loaded
+            entries.append({
+                "snapshot_id": directory.name,
+                "created_at": metadata.get("created_at"),
+                "db_lineage_id": metadata.get("db_lineage_id"),
+                "size": snapshot.stat().st_size,
+            })
+        return entries
+
+    def rollback_to_snapshot(self, snapshot_id: str, *, confirm: bool = False,
+                             operator_id: str = "admin") -> dict[str, object]:
+        """Restore one pre-restore snapshot into the live database."""
+        self._require_enabled()
+        if not confirm:
+            raise ValidationError("snapshot rollback requires explicit confirmation")
+        return self._coordinator.run_maintenance_locked(
+            lambda: self._rollback_snapshot_locked(snapshot_id, operator_id),
+        )
+
+    def _rollback_snapshot_locked(self, snapshot_id: str,
+                                  operator_id: str) -> dict[str, object]:
+        if not snapshot_id or any(char in snapshot_id for char in ("/", "\\", "..")):
+            raise ValidationError("invalid snapshot id")
+        directory = self._snapshot_root() / snapshot_id
+        snapshot = directory / "main.sqlite3"
+        if not snapshot.exists():
+            raise NotFound("restore snapshot not found")
+        self._verify_file(snapshot)
+        metadata: dict[str, Any] = {}
+        meta_path = directory / "metadata.json"
+        if meta_path.exists():
+            try:
+                loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise StorageError(
+                    "restore snapshot metadata is corrupt",
+                ) from exc
+            if not isinstance(loaded, dict):
+                raise StorageError("restore snapshot metadata is invalid")
+            metadata = loaded
+        lineage = str(metadata.get("db_lineage_id") or "")
+        if not lineage or lineage != self._store.current_lineage_id():
+            raise Conflict(
+                "restore snapshot belongs to a different database lineage",
+            )
+        if self._journal_path.exists():
+            try:
+                journal = json.loads(self._journal_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise StorageError(
+                    "restore journal is corrupt; refusing to roll back",
+                ) from exc
+            if not isinstance(journal, dict) or journal.get("phase") != "failed":
+                raise StorageError(
+                    "an unfinished restore journal exists; restart the plugin first",
+                )
+        safety = self._pre_restore_snapshot()
+        with _readonly(snapshot) as source:
+            source.backup(self._database.connection)
+        if self._database.path != ":memory:":
+            self._verify_file(Path(self._database.path))
+        self._database.connection.execute(
+            "INSERT INTO memory_meta(key,value) VALUES('fts_dirty_ids',?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (_RESTORE_FTS_SENTINEL,),
+        )
+        self._index.rebuild()
+        if self._vector is not None:
+            self._vector.mark_stale(at=self._clock.now())
+        try:
+            self._journal_path.unlink()
+        except OSError:
+            pass
+        return {
+            "snapshot_id": snapshot_id,
+            "snapshot_path": str(snapshot),
+            "db_lineage_id": lineage,
+            "pre_rollback_snapshot": safety,
+            "operator_id": operator_id,
+            "rolled_back": True,
+        }
 
     def _replay_events(self, manifest: Mapping[str, Any]) -> tuple[LedgerEvent, ...]:
         watermark = int(manifest.get("ledger_seq_at_backup", 0))
@@ -612,6 +760,7 @@ class BackupService:
             self._ledger.strict_drain(self._store, self._consents)
         self._verify_backup(manifest, directory, mode)
         events = self._replay_events(manifest)
+        self._verify_clear_boundaries(manifest, directory, events, mode=mode)
         if dry_run:
             return self._dry_run_report(manifest, directory, events, mode)
         excluded_ids, excluded_scopes = self._pre_exclusion_sets(directory, events)

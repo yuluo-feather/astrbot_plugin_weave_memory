@@ -421,3 +421,34 @@ def test_explicit_save_rejects_same_content_candidate_with_friendly_message(extr
             stack["scope"], "用户喜欢黑咖啡", operator_id="u1",
             memory_type=MemoryType.PREFERENCE,
         ))
+
+
+def test_cancel_job_stops_further_model_calls(extraction_stack):
+    stack = extraction_stack
+    scope = stack["scope"]
+    _grant_all(stack["consent"], scope)
+    now = stack["clock"].now()
+    stack["jobs"].create_or_get(ExtractionJob(
+        id="job-cancel", platform="astrbot", tenant_id="default",
+        scope_id=scope.id, subject_id="u1", conversation_id="conv-1",
+        watermark=1, content_hash="hash-1",
+        status=ExtractionJobStatus.PENDING, attempts=0,
+        created_at=now, updated_at=now,
+    ))
+
+    cancelled = stack["service"].cancel_job(scope, "job-cancel", operator_id="u1")
+    assert cancelled.status is ExtractionJobStatus.CANCELLED
+    assert stack["jobs"].get("job-cancel").status is ExtractionJobStatus.CANCELLED
+
+    window = ExtractionWindow(
+        scope_id=scope.id, subject_id="u1", conversation_id="conv-1",
+        watermark=1, content_hash="hash-1", messages=("我喜欢黑咖啡",),
+    )
+    result = asyncio.run(stack["service"]._run(
+        scope, cancelled, window, stack["service"].gates(scope), None,
+    ))
+    assert result.status is ExtractionJobStatus.CANCELLED
+    assert stack["extractor"].calls == []
+
+    with pytest.raises(Conflict):
+        stack["service"].cancel_job(scope, "job-cancel", operator_id="u1")

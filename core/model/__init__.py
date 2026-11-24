@@ -375,8 +375,6 @@ class ExtractionJobStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     SKIPPED_DUPLICATE_ACTIVE = "SKIPPED_DUPLICATE_ACTIVE"
     FAILED = "FAILED"
-    # TODO(V2): reserved by the contract and the SQLite CHECK constraint for
-    # manual cancellation; no producer exists yet. Do not remove as dead code.
     CANCELLED = "CANCELLED"
 
 

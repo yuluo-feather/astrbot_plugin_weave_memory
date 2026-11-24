@@ -51,6 +51,7 @@ _USAGE = (
     "用法：/织忆 提取 开启 <capture|auto_extract|external_model|store_candidate|全部>\n"
     "/织忆 提取 关闭 <能力>\n"
     "/织忆 提取 敏感 <类别...>（清空表示不保存敏感类别）\n"
+    "/织忆 提取 取消 <任务ID>\n"
     "/织忆 提取 状态\n"
     "/织忆 候选 列表\n"
     "/织忆 候选 确认 <候选ID>\n"
@@ -95,6 +96,13 @@ class AstrBotExtractionCommands:
             return self._toggle(scope, operator_id, subcommand, parts[1])
         if subcommand == "敏感":
             return self._sensitive(scope, operator_id, parts[1:])
+        if subcommand == "取消":
+            if len(parts) != 2:
+                return "用法：/织忆 提取 取消 <任务ID>"
+            job = self._extraction.cancel_job(
+                scope, parts[1], operator_id=operator_id,
+            )
+            return f"已取消提取任务 {job.id}，后续不会再调用模型。"
         return _USAGE
 
     def _toggle(self, scope, operator_id: str, action: str, ability: str) -> str:

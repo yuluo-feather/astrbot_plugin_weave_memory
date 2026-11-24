@@ -931,3 +931,24 @@ def test_explicit_update_rechecks_consent_inside_write_lock(app_stack, monkeypat
     asyncio.run(update())
     stored = store.get(memory.id, scope_id=scope.id, subject_id="u1")
     assert stored == memory
+
+
+def test_prune_operations_removes_only_rows_older_than_cutoff(app_stack):
+    _, store, _, scopes, _, _, _, _ = app_stack
+    scope = scopes.resolve(identity())
+
+    def record(operation_id: str, occurred_at: datetime) -> None:
+        store.record_operation(
+            operation_id=operation_id, scope_id=scope.id, memory_id=None,
+            operation_type="DELETE_MEMORY", operator_type=OperatorType.USER,
+            operator_id="u1", occurred_at=occurred_at, metadata={},
+        )
+
+    record("op-old", datetime(2020, 1, 1, tzinfo=UTC))
+    record("op-new", NOW)
+    assert store.prune_operations(before=NOW) == 1
+    operations, total = store.list_operations(
+        scope_id=scope.id, subject_id="u1", limit=10, offset=0,
+    )
+    assert total == 1
+    assert [item["id"] for item in operations] == ["op-new"]

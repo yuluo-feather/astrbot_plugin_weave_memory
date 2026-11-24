@@ -155,13 +155,17 @@ class GroupContextComposer:
     _SUFFIX = GROUP_CONTEXT_SUFFIX
 
     def __init__(self, recall: Any, *, max_tokens: int = 192,
-                 max_memories: int = 2, candidate_limit: int = 8) -> None:
+                 max_memories: int = 2, candidate_limit: int = 8,
+                 maintenance: Callable[[], bool] | None = None) -> None:
         self._recall = recall
         self._max_tokens = max_tokens
         self._max_memories = max_memories
         self._candidate_limit = candidate_limit
+        self._maintenance = maintenance
 
     async def compose(self, query: str, scope: Scope) -> MemoryContext | None:
+        if self._maintenance is not None and self._maintenance():
+            return None
         result = self._recall.recall_group_with_trace(
             query, scope, limit=self._candidate_limit,
         )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -692,3 +693,56 @@ def test_manifest_v1_is_still_readable(stack):
     path.write_text(json.dumps(payload), encoding="utf-8")
     result = stack.backup.restore(backup_id, dry_run=True)
     assert result["backup_id"] == backup_id
+
+
+def test_restore_snapshot_can_be_listed_and_rolled_back(stack):
+    first = save(stack, "第一条")
+    second = save(stack, "第二条")
+    backup_id = make_backup(stack)
+    third = save(stack, "第三条")
+    result = stack.backup.restore(backup_id, mode="revert", confirm=True)
+    snapshot_id = Path(str(result["pre_restore_snapshot"])).parent.name
+
+    listed = stack.backup.list_restore_snapshots()
+    assert snapshot_id in [entry["snapshot_id"] for entry in listed]
+
+    save(stack, "第四条")
+    rolled = stack.backup.rollback_to_snapshot(snapshot_id, confirm=True)
+    assert rolled["rolled_back"] is True
+    assert memory_ids(stack) == {first.id, second.id, third.id}
+    assert stack.index.search(
+        "第四条", scope_id=stack.scope.id, subject_id="u1",
+    ) == ()
+
+
+def test_snapshot_rollback_requires_confirmation(stack):
+    save(stack, "第一条")
+    backup_id = make_backup(stack)
+    result = stack.backup.restore(backup_id, mode="revert", confirm=True)
+    snapshot_id = Path(str(result["pre_restore_snapshot"])).parent.name
+
+    with pytest.raises(ValidationError):
+        stack.backup.rollback_to_snapshot(snapshot_id)
+
+
+def test_restore_rejects_clear_boundary_above_the_persisted_watermark(stack):
+    save(stack, "第一条")
+    backup_id = make_backup(stack)
+    lineage = stack.store.current_lineage_id()
+    payload = {
+        "lineage_boundaries": [{
+            "db_lineage_id": lineage,
+            "clear_creation_seq": 999,
+            "high_watermark": 999,
+        }],
+    }
+    for state in (LedgerState.INTENT, LedgerState.COMMITTED):
+        stack.ledger_store.append(
+            event_id="corrupt-clear", event_type=LedgerEventType.CLEAR_SCOPE,
+            state=state, source="test", occurred_at=stack.clock.now(),
+            payload=payload, scope_id=stack.scope.id,
+        )
+
+    with pytest.raises(StorageError, match="clear boundary"):
+        stack.backup.restore(backup_id, mode="merge", confirm=True)
+    assert row_count(stack, "memories") == 1

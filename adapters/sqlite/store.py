@@ -585,13 +585,24 @@ class SQLiteMemoryStore:
             raise StorageError("could not list expired candidates") from exc
         return tuple(self._row_to_memory(row) for row in rows)
 
-    def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]:
+    def list_active(self, *, scope_id: str, subject_id: str,
+                    at: datetime | None = None,
+                    include_overdue: bool = False) -> tuple[MemoryEntity, ...]:
+        at_key = _time_dump(at or datetime.now(UTC))
+        validity = "" if include_overdue else (
+            " AND (m.valid_until IS NULL OR m.valid_until > ?)"
+        )
+        params: tuple[Any, ...] = (
+            (scope_id, subject_id) if include_overdue
+            else (scope_id, subject_id, at_key)
+        )
         try:
             rows = self.db.connection.execute(
                 """SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
-                WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE' AND s.is_enabled=1
-                ORDER BY m.created_at, m.id""",
-                (scope_id, subject_id),
+                WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
+                  AND s.is_enabled=1""" + validity +
+                " ORDER BY m.created_at, m.id",
+                params,
             ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError("could not list active memories") from exc
@@ -677,10 +688,11 @@ class SQLiteMemoryStore:
 
     def list_for_export(
         self, *, scope_id: str, subject_id: str,
-        statuses: tuple[MemoryStatus, ...],
+        statuses: tuple[MemoryStatus, ...], at: datetime | None = None,
     ) -> tuple[MemoryEntity, ...]:
         if not statuses:
             return ()
+        at_key = _time_dump(at or datetime.now(UTC))
         targets = tuple(status.value for status in statuses)
         placeholders = ",".join("?" for _ in targets)
         try:
@@ -688,8 +700,9 @@ class SQLiteMemoryStore:
                 f"""SELECT m.* FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
                 WHERE m.scope_id=? AND m.subject_id=? AND s.is_enabled=1
                   AND m.status IN ({placeholders})
+                  AND (m.status!='ACTIVE' OR m.valid_until IS NULL OR m.valid_until > ?)
                 ORDER BY m.created_at, m.id""",
-                (scope_id, subject_id, *targets),
+                (scope_id, subject_id, *targets, at_key),
             ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError("could not list memories for export") from exc
@@ -724,29 +737,32 @@ class SQLiteMemoryStore:
 
     def list_active_page(
         self, *, scope_id: str, subject_id: str, limit: int, offset: int,
-        memory_type: MemoryType | None = None,
+        memory_type: MemoryType | None = None, at: datetime | None = None,
     ) -> tuple[tuple[MemoryEntity, ...], int]:
         """Read one bounded page and its total from the same visible scope."""
+        at_key = _time_dump(at or datetime.now(UTC))
         type_clause = " AND m.memory_type=?" if memory_type is not None else ""
-        params: tuple[Any, ...] = (scope_id, subject_id)
-        if memory_type is not None:
-            params += (memory_type.value,)
+        type_params: tuple[Any, ...] = (
+            (memory_type.value,) if memory_type is not None else ()
+        )
         try:
             with self.db.transaction(immediate=False) as conn:
                 total_row = conn.execute(
                     """SELECT count(*) AS total FROM memories m
                     JOIN memory_scopes s ON s.id=m.scope_id
                     WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
-                      AND s.is_enabled=1""" + type_clause,
-                    params,
+                      AND s.is_enabled=1
+                      AND (m.valid_until IS NULL OR m.valid_until > ?)""" + type_clause,
+                    (scope_id, subject_id, at_key) + type_params,
                 ).fetchone()
                 rows = conn.execute(
                     """SELECT m.* FROM memories m
                     JOIN memory_scopes s ON s.id=m.scope_id
                     WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
-                      AND s.is_enabled=1""" + type_clause +
+                      AND s.is_enabled=1
+                      AND (m.valid_until IS NULL OR m.valid_until > ?)""" + type_clause +
                     " ORDER BY m.created_at, m.id LIMIT ? OFFSET ?",
-                    params + (limit, offset),
+                    (scope_id, subject_id, at_key) + type_params + (limit, offset),
                 ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError("could not list active memory page") from exc
@@ -806,15 +822,20 @@ class SQLiteMemoryStore:
             evidence_ref=row["evidence_ref"], metadata=_json_load(row["metadata_json"]),
         ) for row in rows)
 
-    def statistics(self, *, scope_id: str, subject_id: str) -> dict[str, Any]:
+    def statistics(self, *, scope_id: str, subject_id: str,
+                   at: datetime | None = None) -> dict[str, Any]:
         """Return counts only; never include memory bodies in management stats."""
+        at_key = _time_dump(at or datetime.now(UTC))
         try:
             rows = self.db.connection.execute(
-                """SELECT m.status, m.memory_type, m.source_type, count(*) AS total
+                """SELECT m.status, m.memory_type, m.source_type,
+                CASE WHEN m.status='ACTIVE' AND m.valid_until IS NOT NULL
+                          AND m.valid_until <= ? THEN 1 ELSE 0 END AS expired,
+                count(*) AS total
                 FROM memories m JOIN memory_scopes s ON s.id=m.scope_id
                 WHERE m.scope_id=? AND m.subject_id=? AND s.is_enabled=1
-                GROUP BY m.status, m.memory_type, m.source_type""",
-                (scope_id, subject_id),
+                GROUP BY m.status, m.memory_type, m.source_type, expired""",
+                (at_key, scope_id, subject_id),
             ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError("could not read memory statistics") from exc
@@ -825,7 +846,8 @@ class SQLiteMemoryStore:
         for row in rows:
             count = int(row["total"])
             total += count
-            by_status[row["status"]] = by_status.get(row["status"], 0) + count
+            status = "EXPIRED" if int(row["expired"]) else row["status"]
+            by_status[status] = by_status.get(status, 0) + count
             by_type[row["memory_type"]] = by_type.get(row["memory_type"], 0) + count
             by_source[row["source_type"]] = by_source.get(row["source_type"], 0) + count
         return {
@@ -971,6 +993,18 @@ class SQLiteMemoryStore:
             "scope_counts": scope_counts,
             "database_bytes": database_bytes,
         }
+
+    def prune_operations(self, *, before: datetime) -> int:
+        """Delete audit rows older than the configured retention window."""
+        try:
+            with self.db.transaction() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM memory_operations WHERE occurred_at < ?",
+                    (_time_dump(before),),
+                )
+                return int(cursor.rowcount)
+        except sqlite3.Error as exc:
+            raise StorageError("could not prune memory operations") from exc
 
     def list_operations(
         self, *, scope_id: str, subject_id: str, limit: int, offset: int,
@@ -1128,6 +1162,24 @@ class SQLiteMemoryStore:
             return tuple(self._row_to_memory(row) for row in rows)
         except sqlite3.Error as exc:
             raise StorageError("could not list expired archives") from exc
+
+    def list_expired_active(self, *, at: datetime,
+                            limit: int) -> tuple[MemoryEntity, ...]:
+        """Return ACTIVE rows whose semantic validity has elapsed."""
+        if limit < 1:
+            raise ValidationError("expiry sweep limit must be >= 1")
+        try:
+            rows = self.db.connection.execute(
+                """SELECT m.* FROM memories m
+                   JOIN memory_scopes s ON s.id=m.scope_id
+                   WHERE m.status='ACTIVE' AND s.is_enabled=1
+                     AND m.valid_until IS NOT NULL AND m.valid_until<=?
+                   ORDER BY m.valid_until, m.id LIMIT ?""",
+                (_time_dump(at), limit),
+            ).fetchall()
+            return tuple(self._row_to_memory(row) for row in rows)
+        except sqlite3.Error as exc:
+            raise StorageError("could not list expired active memories") from exc
 
     def purge_archived(self, memory_id: str, *, scope_id: str, subject_id: str,
                        operation_id: str, operator_type: OperatorType,

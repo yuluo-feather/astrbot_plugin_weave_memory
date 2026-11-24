@@ -2,7 +2,7 @@
 
 import json
 from hashlib import sha256
-from typing import Any
+from typing import Any, Callable
 
 from ...app.consent_service import ConsentService, PersonalConsentType
 from ...app.export import to_json, to_markdown
@@ -38,7 +38,8 @@ class AstrBotMemoryCommands:
                  memories: MemoryApplicationService, recall: RecallService,
                  lifecycle: LifecycleService, clock: Clock,
                  ids: IdGenerator, import_service: ImportService, *,
-                 auto_enroll: bool = True) -> None:
+                 auto_enroll: bool = True,
+                 maintenance: Callable[[], bool] | None = None) -> None:
         self._scopes = scopes
         self._consent = consent
         self._memories = memories
@@ -48,7 +49,13 @@ class AstrBotMemoryCommands:
         self._ids = ids
         self._imports = import_service
         self._auto_enroll = auto_enroll
+        self._maintenance = maintenance
         self._identity = AstrBotIdentityAdapter()
+
+    def _maintenance_notice(self) -> str:
+        if self._maintenance is not None and self._maintenance():
+            return "数据库维护中（备份/恢复/回滚），请稍后重试。"
+        return ""
 
     def _scope(self, event: Any, *, create: bool = False, enroll: bool = True):
         identity = self._identity.resolve_identity(event)
@@ -386,8 +393,11 @@ class AstrBotMemoryCommands:
         )
 
     def status(self, event: Any) -> str:
-        scope = self._scope(event)
-        stats = self._memories.statistics(scope)
+        notice = self._maintenance_notice()
+        if notice:
+            return notice
+        scope = self._scope(event, enroll=False)
+        stats = self._memories.statistics(scope, require_consent=False)
         index = self._recall.index_status(scope)
         consent_event = self._consent.current(scope, PersonalConsentType.PERSONAL_MEMORY)
         result = {
@@ -403,17 +413,25 @@ class AstrBotMemoryCommands:
         return json.dumps(result, ensure_ascii=False) + self._take_notice(event)
 
     def stats(self, event: Any) -> str:
-        scope = self._scope(event)
-        stats = dict(self._memories.statistics(scope))
-        recent, _ = self._memories.operations(scope, limit=5, offset=0)
+        notice = self._maintenance_notice()
+        if notice:
+            return notice
+        scope = self._scope(event, enroll=False)
+        stats = dict(self._memories.statistics(scope, require_consent=False))
+        recent, _ = self._memories.operations(
+            scope, limit=5, offset=0, require_consent=False,
+        )
         stats["scope_type"] = "PERSONAL"
         stats["recent_operations"] = list(recent)
         return json.dumps(stats, ensure_ascii=False) + self._take_notice(event)
 
     def operations(self, event: Any, *, limit: int = 20, offset: int = 0) -> str:
-        scope = self._scope(event)
+        notice = self._maintenance_notice()
+        if notice:
+            return notice
+        scope = self._scope(event, enroll=False)
         operations, total = self._memories.operations(
-            scope, limit=limit, offset=offset,
+            scope, limit=limit, offset=offset, require_consent=False,
         )
         return json.dumps(
             {"total": total, "offset": offset, "limit": limit, "items": operations},
@@ -421,6 +439,9 @@ class AstrBotMemoryCommands:
         ) + self._take_notice(event)
 
     def export(self, event: Any, format_name: str = "json") -> str:
+        notice = self._maintenance_notice()
+        if notice:
+            return notice
         tokens = format_name.split()
         include_all = any(token.lower() == "all" for token in tokens)
         normalized_format = next(
@@ -489,6 +510,9 @@ class AstrBotMemoryCommands:
         return f"记忆已更新：{memory.id}（revision {memory.current_revision}）\n{state}" + self._take_notice(event)
 
     def list(self, event: Any) -> str:
+        notice = self._maintenance_notice()
+        if notice:
+            return notice
         scope = self._scope(event)
         memories = self._memories.list_active(scope)
         if not memories:
@@ -498,6 +522,9 @@ class AstrBotMemoryCommands:
         return "个人记忆：\n" + "\n".join(lines) + suffix + self._take_notice(event)
 
     async def query(self, event: Any) -> str:
+        notice = self._maintenance_notice()
+        if notice:
+            return notice
         query = tail_after_command(event, "查询")
         if not query:
             return "用法：/织忆 查询 <问题>"
@@ -516,6 +543,9 @@ class AstrBotMemoryCommands:
         return result
 
     async def retrieval_debug(self, event: Any) -> str:
+        notice = self._maintenance_notice()
+        if notice:
+            return notice
         query = tail_after_command(event, "检索调试")
         if not query:
             return "用法：/织忆 检索调试 <问题>"

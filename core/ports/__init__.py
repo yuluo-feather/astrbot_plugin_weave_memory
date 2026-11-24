@@ -83,7 +83,10 @@ class MemoryStore(Protocol):
                          revision: MemoryRevision, operation: MemoryOperation,
                          purge_body: bool) -> None: ...
 
-    def list_active(self, *, scope_id: str, subject_id: str) -> tuple[MemoryEntity, ...]: ...
+    def list_active(self, *, scope_id: str, subject_id: str,
+                    at: datetime | None = None,
+                    include_overdue: bool = False,
+                    ) -> tuple[MemoryEntity, ...]: ...
 
     def get_any(self, memory_id: str) -> MemoryEntity: ...
 
@@ -102,7 +105,7 @@ class MemoryStore(Protocol):
 
     def list_for_export(
         self, *, scope_id: str, subject_id: str,
-        statuses: tuple[MemoryStatus, ...],
+        statuses: tuple[MemoryStatus, ...], at: datetime | None = None,
     ) -> tuple[MemoryEntity, ...]: ...
 
     def find_import_source(self, evidence_ref: str) -> bool: ...
@@ -115,7 +118,7 @@ class MemoryStore(Protocol):
 
     def list_active_page(
         self, *, scope_id: str, subject_id: str, limit: int, offset: int,
-        memory_type: MemoryType | None = None,
+        memory_type: MemoryType | None = None, at: datetime | None = None,
     ) -> tuple[tuple[MemoryEntity, ...], int]: ...
 
     def list_revisions(
@@ -126,11 +129,14 @@ class MemoryStore(Protocol):
         self, memory_id: str, *, scope_id: str, subject_id: str,
     ) -> tuple[MemorySource, ...]: ...
 
-    def statistics(self, *, scope_id: str, subject_id: str) -> dict[str, object]: ...
+    def statistics(self, *, scope_id: str, subject_id: str,
+                   at: datetime | None = None) -> dict[str, object]: ...
 
     def list_operations(
         self, *, scope_id: str, subject_id: str, limit: int, offset: int,
     ) -> tuple[tuple[dict[str, object], ...], int]: ...
+
+    def prune_operations(self, *, before: datetime) -> int: ...
 
     def record_access(self, memory_ids: tuple[str, ...], *, scope_id: str,
                       subject_id: str, at: datetime,
@@ -146,6 +152,9 @@ class MemoryStore(Protocol):
 
     def list_expired_archives(self, *, at: datetime,
                               limit: int) -> tuple[MemoryEntity, ...]: ...
+
+    def list_expired_active(self, *, at: datetime,
+                            limit: int) -> tuple[MemoryEntity, ...]: ...
 
     def purge_archived(self, memory_id: str, *, scope_id: str, subject_id: str,
                        operation_id: str, operator_type: OperatorType,
@@ -198,6 +207,11 @@ class BackupPort(Protocol):
     def restore(self, backup_id: str, *, mode: str = "merge",
                 confirm: bool = False, dry_run: bool = False,
                 operator_id: str = "admin") -> dict[str, object]: ...
+
+    def list_restore_snapshots(self) -> list[dict[str, object]]: ...
+
+    def rollback_to_snapshot(self, snapshot_id: str, *, confirm: bool = False,
+                             operator_id: str = "admin") -> dict[str, object]: ...
 
     def recover_if_needed(self) -> dict[str, object] | None: ...
 

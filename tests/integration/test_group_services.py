@@ -578,3 +578,29 @@ def test_group_command_error_text_distinguishes_admin_reasons():
     assert "group_admin_ids" in unavailable
     assert "不是本群管理员" in not_admin
     assert "尚未创建" in not_created
+
+
+def test_group_destroy_cleans_expired_destroy_backups(group_stack):
+    identity = group_identity()
+    scope, decision = make_scope(group_stack, identity)
+    lifecycle = group_stack["lifecycle"]
+    asyncio.run(lifecycle.enable(scope, decision, operator_id="admin-1"))
+    asyncio.run(group_stack["memories"].save_group(
+        scope, "销毁时清理旧备份", group_label="topic", operator_id="admin-1",
+        decision=decision,
+    ))
+    backups = Path(group_stack["db"].path).parent / "backups"
+    backups.mkdir(exist_ok=True)
+    stale = backups / "group-stale-op-20260101T000000000000.sqlite3"
+    stale.write_bytes(b"stale")
+    stale.with_suffix(".json").write_text("{}", encoding="utf-8")
+    os.utime(stale, (0, 0))
+    os.utime(stale.with_suffix(".json"), (0, 0))
+
+    asyncio.run(lifecycle.disable(scope, decision, operator_id="admin-1"))
+    receipt = asyncio.run(lifecycle.destroy(
+        scope, decision, operator_id="admin-1",
+    ))
+    assert receipt.backup_mode == "REQUIRED"
+    assert Path(receipt.backup_path).exists()
+    assert not stale.exists()

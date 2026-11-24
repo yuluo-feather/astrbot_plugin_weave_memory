@@ -81,10 +81,18 @@ class WriteCoordinator:
         self._lock = asyncio.Lock()
         self._write_lock = RLock()
         self._closed = False
+        self._maintenance = False
+
+    @property
+    def in_maintenance(self) -> bool:
+        """True while a restore holds the lease and reads must not inject."""
+        return self._maintenance
 
     def _ensure_open(self) -> None:
         if self._closed:
             raise ServiceClosed("write coordinator is closed")
+        if self._maintenance:
+            raise ServiceClosed("maintenance in progress")
 
     def write_metadata(self, operation: Callable[[], T]) -> T:
         """Serialize synchronous scope/consent metadata writes with content writes."""
@@ -129,6 +137,16 @@ class WriteCoordinator:
         with self._write_lock:
             self._ensure_open()
             return operation()
+
+    def run_maintenance_locked(self, operation: Callable[[], T]) -> T:
+        """Hold the lease in maintenance mode: writes and injection are frozen."""
+        with self._write_lock:
+            self._ensure_open()
+            self._maintenance = True
+            try:
+                return operation()
+            finally:
+                self._maintenance = False
 
     def ledger_intent(self, event_type: LedgerEventType, *,
                       payload: dict[str, object], source: str,

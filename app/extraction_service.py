@@ -229,12 +229,18 @@ class ExtractionService:
 
         current = running
         while True:
+            latest = self._jobs.get(job.id)
+            if latest.status is ExtractionJobStatus.CANCELLED:
+                return latest
             try:
                 async with asyncio.timeout(self._timeout):
                     candidates = await self._extractor.extract(
                         window, allowed_types=_ALLOWED_TYPES,
                         sensitive_categories=gates.sensitive_categories,
                     )
+                latest = self._jobs.get(job.id)
+                if latest.status is ExtractionJobStatus.CANCELLED:
+                    return latest
                 created_any, skipped_any, created = await self._materialize(
                     scope, job.id, candidates,
                 )
@@ -476,6 +482,31 @@ class ExtractionService:
         return self._store.get(
             memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
         )
+
+    def cancel_job(self, scope: Scope, job_id: str, *,
+                   operator_id: str | None = None) -> ExtractionJob:
+        """Cancel a queued/running job so the extractor is not called again."""
+        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        job = self._jobs.get(job_id)
+        if job.scope_id != scope.id or job.subject_id != scope.identity.subject_id:
+            raise NotFound("extraction job not found")
+        if job.status not in (
+            ExtractionJobStatus.PENDING, ExtractionJobStatus.RUNNING,
+        ):
+            raise Conflict("only PENDING or RUNNING extraction jobs can be cancelled")
+        cancelled = replace(
+            job, status=ExtractionJobStatus.CANCELLED,
+            last_error="cancelled_by_user", updated_at=self._clock.now(),
+            metadata={
+                **dict(job.metadata),
+                "cancelled_by": operator_id or scope.identity.subject_id,
+            },
+        )
+        try:
+            self._jobs.update(cancelled, expected_status=job.status)
+        except Conflict as exc:
+            raise Conflict("extraction job status changed concurrently") from exc
+        return cancelled
 
     def job_summary(self, scope: Scope) -> dict[str, int]:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)

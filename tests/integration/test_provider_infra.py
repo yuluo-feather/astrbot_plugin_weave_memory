@@ -76,8 +76,27 @@ def test_astrbot_embedding_provider_binds_and_batches():
     assert host.calls == 2
 
 
-def test_astrbot_embedding_provider_rejects_unknown_or_wrong_type():
+def test_empty_id_uses_first_host_embedding_provider():
+    class AutoContext:
+        def get_all_embedding_providers(self):
+            return [HostProvider()]
+
+        def get_all_providers(self):
+            return []
+
+    provider = AstrBotEmbeddingProvider(AutoContext(), "")
+    assert provider.ready is True
+    assert provider.dimension == 2
+    assert provider.model == "host-model"
+
+
+def test_astrbot_embedding_provider_resolves_lazily():
+    missing = AstrBotEmbeddingProvider(Context(HostProvider()), "missing")
+    assert missing.resolve() is None
+    assert missing.ready is False
     with pytest.raises(IndexNotConfigured):
-        AstrBotEmbeddingProvider(Context(HostProvider()), "missing")
-    with pytest.raises(IndexNotConfigured):
-        AstrBotEmbeddingProvider(Context(object()), "fake")
+        asyncio.run(missing.embed_query("x"))
+
+    wrong = AstrBotEmbeddingProvider(Context(object()), "fake")
+    assert wrong.resolve() is None
+    assert wrong.ready is False

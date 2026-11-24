@@ -1512,3 +1512,60 @@ def test_plugin_group_import_requires_admin(monkeypatch, tmp_path):
     )))[0]
     assert "导入正文" in listed
     asyncio.run(plugin.terminate())
+
+
+def test_plugin_management_reads_work_after_revoke(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    asyncio.run(collect(plugin.memory_grant(FakeEvent(message="/织忆 授权"))))
+    asyncio.run(collect(plugin.memory_save(
+        FakeEvent(message="/织忆 保存 我住在东京"),
+    )))
+    asyncio.run(collect(plugin.memory_revoke(FakeEvent(message="/织忆 撤销授权"))))
+
+    status = asyncio.run(collect(plugin.memory_status(
+        FakeEvent(message="/织忆 状态"),
+    )))[0]
+    assert '"consent": "NOT_GRANTED"' in status
+    stats = asyncio.run(collect(plugin.memory_stats(
+        FakeEvent(message="/织忆 统计"),
+    )))[0]
+    assert '"total"' in stats
+    operations = asyncio.run(collect(plugin.memory_operations(
+        FakeEvent(message="/织忆 操作记录"),
+    )))[0]
+    assert '"total"' in operations
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_reads_and_injection_pause_during_maintenance(monkeypatch, tmp_path):
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    asyncio.run(collect(plugin.memory_grant(FakeEvent(message="/织忆 授权"))))
+    asyncio.run(collect(plugin.memory_save(
+        FakeEvent(message="/织忆 保存 我喜欢热可可"),
+    )))
+    plugin._coordinator._maintenance = True
+    try:
+        status = asyncio.run(collect(plugin.memory_status(
+            FakeEvent(message="/织忆 状态"),
+        )))[0]
+        assert "维护中" in status
+        request = types.SimpleNamespace(extra_user_content_parts=[])
+        asyncio.run(plugin.inject_personal_memory(
+            FakeEvent(message="你喜欢什么？"), request,
+        ))
+        assert request.extra_user_content_parts == []
+        save_result = asyncio.run(collect(plugin.memory_save(
+            FakeEvent(message="/织忆 保存 维护期间不应写入"),
+        )))[0]
+        assert "维护" in save_result
+    finally:
+        plugin._coordinator._maintenance = False
+    status = asyncio.run(collect(plugin.memory_status(
+        FakeEvent(message="/织忆 状态"),
+    )))[0]
+    assert "维护中" not in status
+    asyncio.run(plugin.terminate())

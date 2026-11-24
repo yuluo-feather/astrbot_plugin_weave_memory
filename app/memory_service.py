@@ -41,6 +41,7 @@ class MemoryApplicationService:
         """Expire an overdue ACTIVE duplicate so it stops blocking the unique key."""
         for memory in self._store.list_active(
             scope_id=scope.id, subject_id=scope.identity.subject_id,
+            at=now, include_overdue=True,
         ):
             if (memory.memory_type is memory_type
                     and memory.normalized_content == normalized
@@ -251,8 +252,10 @@ class MemoryApplicationService:
 
     def list_active(self, scope: Scope) -> tuple[MemoryEntity, ...]:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
-        return self._store.list_active(scope_id=scope.id,
-                                       subject_id=scope.identity.subject_id)
+        return self._store.list_active(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            at=self._clock.now(),
+        )
 
     def get_memory(self, scope: Scope, memory_id: str) -> MemoryEntity:
         self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
@@ -348,6 +351,7 @@ class MemoryApplicationService:
         return self._store.list_active_page(
             scope_id=scope.id, subject_id=scope.identity.subject_id,
             limit=limit, offset=offset, memory_type=memory_type,
+            at=self._clock.now(),
         )
 
     def history(
@@ -366,20 +370,26 @@ class MemoryApplicationService:
         )
         return revisions, sources
 
-    def statistics(self, scope: Scope) -> dict[str, object]:
-        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+    def statistics(self, scope: Scope, *,
+                   require_consent: bool = True) -> dict[str, object]:
+        """Counts only; management/audit reads may skip the consent re-check."""
+        if require_consent:
+            self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
         return self._store.statistics(
             scope_id=scope.id, subject_id=scope.identity.subject_id,
+            at=self._clock.now(),
         )
 
     def operations(
         self, scope: Scope, *, limit: int = 20, offset: int = 0,
+        require_consent: bool = True,
     ) -> tuple[tuple[dict[str, object], ...], int]:
         if type(limit) is not int or limit < 1 or limit > 100:
             raise ValidationError("limit must be between 1 and 100")
         if type(offset) is not int or offset < 0:
             raise ValidationError("offset must be non-negative")
-        self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
+        if require_consent:
+            self._consent.require(scope, PersonalConsentType.PERSONAL_MEMORY)
         return self._store.list_operations(
             scope_id=scope.id, subject_id=scope.identity.subject_id,
             limit=limit, offset=offset,
@@ -391,7 +401,7 @@ class MemoryApplicationService:
         if include_all:
             memories = self._store.list_for_export(
                 scope_id=scope.id, subject_id=scope.identity.subject_id,
-                statuses=EXPORTED_STATUSES,
+                statuses=EXPORTED_STATUSES, at=self._clock.now(),
             )
         else:
             memories = self.list_active(scope)
