@@ -144,7 +144,7 @@ class GroupRecallService:
         await self._coordinator.record_access(
             memory_ids, scope_id=scope.id,
             subject_id=scope.identity.subject_id, at=self._clock.now(),
-            guard=require_access,
+            guard=require_access, surface="group",
         )
         # No await follows this check; revoke/disable cannot interleave here.
         require_access()

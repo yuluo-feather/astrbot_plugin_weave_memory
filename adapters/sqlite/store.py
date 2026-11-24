@@ -601,26 +601,6 @@ class SQLiteMemoryStore:
             raise StorageError("could not list active memories for rebuild") from exc
         return tuple(self._row_to_memory(row) for row in rows)
 
-    def list_active_by_tag_text(self, query_text: str, *, scope_id: str,
-                                subject_id: str,
-                                limit: int = 20) -> tuple[MemoryEntity, ...]:
-        text = (query_text or "").strip()
-        if not text or limit < 1:
-            return ()
-        try:
-            rows = self.db.connection.execute(
-                """SELECT DISTINCT m.* FROM memories m
-                   JOIN memory_scopes s ON s.id=m.scope_id
-                   JOIN memory_tags t ON t.memory_id=m.id
-                   WHERE m.scope_id=? AND m.subject_id=? AND m.status='ACTIVE'
-                     AND s.is_enabled=1 AND INSTR(?, t.tag) > 0
-                   ORDER BY m.created_at DESC, m.id LIMIT ?""",
-                (scope_id, subject_id, text, limit),
-            ).fetchall()
-        except sqlite3.Error as exc:
-            raise StorageError("could not list active memories by tag") from exc
-        return tuple(self._row_to_memory(row) for row in rows)
-
     def list_active_in_window(self, start: datetime, end: datetime, *,
                               scope_id: str, subject_id: str,
                               limit: int = 20) -> tuple[MemoryEntity, ...]:
@@ -968,22 +948,48 @@ class SQLiteMemoryStore:
         return operations, int(total_row["total"])
 
     def record_access(self, memory_ids: tuple[str, ...], *, scope_id: str,
-                      subject_id: str, at: datetime) -> None:
+                      subject_id: str, at: datetime,
+                      actor_id: str | None = None,
+                      surface: str = "") -> None:
         if not memory_ids:
             return
         placeholders = ",".join("?" for _ in memory_ids)
+        at_dump = _time_dump(at)
         try:
             with self.db.transaction() as conn:
-                conn.execute(
+                updated = conn.execute(
                     f"""UPDATE memories SET last_accessed_at=?
                     WHERE id IN ({placeholders}) AND scope_id=? AND subject_id=?
                       AND status='ACTIVE'
                       AND EXISTS (SELECT 1 FROM memory_scopes s
-                                  WHERE s.id=memories.scope_id AND s.is_enabled=1)""",
-                    (_time_dump(at), *memory_ids, scope_id, subject_id),
-                )
+                                  WHERE s.id=memories.scope_id AND s.is_enabled=1)
+                    RETURNING id""",
+                    (at_dump, *memory_ids, scope_id, subject_id),
+                ).fetchall()
+                if updated:
+                    conn.executemany(
+                        """INSERT INTO memory_access_events
+                           (scope_id, subject_id, memory_id, actor_id, surface,
+                            accessed_at) VALUES (?, ?, ?, ?, ?, ?)""",
+                        [
+                            (scope_id, subject_id, row["id"],
+                             actor_id or subject_id, surface, at_dump)
+                            for row in updated
+                        ],
+                    )
         except sqlite3.Error as exc:
             raise StorageError("could not record memory access") from exc
+
+    def prune_access_events(self, *, before: datetime) -> int:
+        try:
+            with self.db.transaction() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM memory_access_events WHERE accessed_at < ?",
+                    (_time_dump(before),),
+                )
+                return int(cursor.rowcount or 0)
+        except sqlite3.Error as exc:
+            raise StorageError("could not prune access events") from exc
 
     def delete(self, memory_id: str, *, scope_id: str, subject_id: str,
                operation_id: str, operator_type: OperatorType, operator_id: str,

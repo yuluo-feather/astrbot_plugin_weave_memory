@@ -91,10 +91,6 @@ class MemoryStore(Protocol):
 
     def list_active_all(self) -> tuple[MemoryEntity, ...]: ...
 
-    def list_active_by_tag_text(self, query_text: str, *, scope_id: str,
-                                subject_id: str,
-                                limit: int = 20) -> tuple[MemoryEntity, ...]: ...
-
     def list_active_in_window(self, start: datetime, end: datetime, *,
                               scope_id: str, subject_id: str,
                               limit: int = 20) -> tuple[MemoryEntity, ...]: ...
@@ -132,7 +128,9 @@ class MemoryStore(Protocol):
     ) -> tuple[tuple[dict[str, object], ...], int]: ...
 
     def record_access(self, memory_ids: tuple[str, ...], *, scope_id: str,
-                      subject_id: str, at: datetime) -> None: ...
+                      subject_id: str, at: datetime,
+                      actor_id: str | None = None,
+                      surface: str = "") -> None: ...
 
     def delete(self, memory_id: str, *, scope_id: str, subject_id: str,
                operation_id: str, operator_type: OperatorType, operator_id: str,

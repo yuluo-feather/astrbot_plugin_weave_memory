@@ -565,7 +565,9 @@ class WriteCoordinator:
 
     async def record_access(self, memory_ids: tuple[str, ...], *, scope_id: str,
                             subject_id: str, at: datetime,
-                            guard: Callable[[], None]) -> None:
+                            guard: Callable[[], None],
+                            actor_id: str | None = None,
+                            surface: str = "") -> None:
         """Persist access metadata without creating a content revision."""
         if not memory_ids:
             return
@@ -575,6 +577,7 @@ class WriteCoordinator:
                 guard()
                 self._store.record_access(
                     memory_ids, scope_id=scope_id, subject_id=subject_id, at=at,
+                    actor_id=actor_id, surface=surface,
                 )
 
     async def close(self) -> None:

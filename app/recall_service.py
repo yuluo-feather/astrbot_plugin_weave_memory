@@ -262,7 +262,7 @@ class RecallService:
         await self._coordinator.record_access(
             memory_ids, scope_id=scope.id,
             subject_id=scope.identity.subject_id, at=self._clock.now(),
-            guard=require_access,
+            guard=require_access, surface="personal",
         )
         # No await follows this check; on the owning event loop the result cannot
         # be injected after a concurrent revoke/disable that won the next turn.

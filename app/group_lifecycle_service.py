@@ -124,6 +124,33 @@ class GroupLifecycleService:
                 ) from exc
         return GroupLifecycleReceipt(op, changed)
 
+    async def disable_system(self, scope: Scope, *, operator_id: str,
+                             operation_id: str | None = None) -> GroupLifecycleReceipt:
+        """Disable a group scope after the bot was removed or the group dissolved.
+
+        Data is retained; only the scope and group consent are turned off so a
+        later administrator decision can re-enable it.
+        """
+        self._require_group(scope)
+        op = operation_id or self._ids.new_id("operation")
+        changed = self._coordinator.write_metadata(
+            lambda: self._store.disable_group_scope(
+                scope.id, operation_id=op, operator_type=OperatorType.SYSTEM,
+                operator_id=operator_id, occurred_at=self._clock.now(),
+            ),
+        )
+        if self._consent.is_granted(scope, GroupConsentType.GROUP_MEMORY):
+            try:
+                self._consent.revoke(
+                    scope, GroupConsentType.GROUP_MEMORY,
+                    operator_id=operator_id, source="group_left_or_dismissed",
+                )
+            except StorageError as exc:
+                raise GroupConsentRevocationPending(
+                    "group scope is disabled; group_memory revocation must be retried",
+                ) from exc
+        return GroupLifecycleReceipt(op, changed)
+
     async def clear(self, scope: Scope, decision: AdminDecision, *,
                     operator_id: str,
                     operation_id: str | None = None) -> OperationReceipt:

@@ -25,7 +25,6 @@ def test_v2_defaults_are_safe_and_frozen():
         "query_classifier_mode": "rules",
         "vector_candidate_limit": 20,
         "hybrid_candidate_limit": 24,
-        "tag_candidate_limit": 10,
         "time_candidate_limit": 10,
         "vector_relevance_threshold": 0.35,
         "fts_relevance_ratio": 0.5,
