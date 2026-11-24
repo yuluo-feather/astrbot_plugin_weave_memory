@@ -33,7 +33,21 @@
     "description": "累计多少条私聊消息后触发一次提取",
     "type": "int",
     "default": 5,
-    "hint": "只统计已 opt-in 的私聊消息；用户说“记住……”时会立即提交当前缓冲。设为 1 表示每条消息都尝试提取。"
+    "hint": "只统计已 opt-in 的私聊消息；用户说“记住……”时会立即提交当前缓冲。设为 1 表示每条消息都尝试提取。",
+    "options": [
+      2,
+      3,
+      5,
+      10,
+      20
+    ],
+    "labels": [
+      "2 条",
+      "3 条",
+      "5 条 推荐",
+      "10 条",
+      "20 条"
+    ]
   },
   "extraction_queue_size": {
     "description": "待处理提取任务上限",
@@ -45,13 +59,39 @@
     "description": "候选记忆有效期（天）",
     "type": "int",
     "default": 7,
-    "hint": "候选创建时写入 candidate_expires_at；到期在读取候选列表时转 ARCHIVED，不物理删除。与记忆的语义有效期 valid_until 不同。"
+    "hint": "候选创建时写入 candidate_expires_at；到期在读取候选列表时转 ARCHIVED，不物理删除。与记忆的语义有效期 valid_until 不同。",
+    "options": [
+      1,
+      3,
+      7,
+      14,
+      30
+    ],
+    "labels": [
+      "1 天",
+      "3 天",
+      "7 天 推荐",
+      "14 天",
+      "30 天"
+    ]
   },
   "archive_retention_days": {
     "description": "软删除保留期（天）",
     "type": "int",
     "default": 30,
-    "hint": "用户归档的记忆在此期限内可用 /织忆 恢复；到期后由清理任务物理清除。候选过期归档不可恢复。范围 1–365。"
+    "hint": "用户归档的记忆在此期限内可用 /织忆 恢复；到期后由清理任务物理清除。候选过期归档不可恢复。范围 1–365。",
+    "options": [
+      7,
+      30,
+      90,
+      180
+    ],
+    "labels": [
+      "7 天",
+      "30 天 推荐",
+      "90 天",
+      "180 天"
+    ]
   },
   "purge_batch_size": {
     "description": "到期清理每批处理条数",
@@ -87,7 +127,15 @@
     "description": "查询分类模式",
     "type": "string",
     "default": "rules",
-    "hint": "rules 使用规则分类并写入 trace；off 关闭分类。不调用 LLM。"
+    "hint": "rules 使用规则分类并写入 trace；off 关闭分类。不调用 LLM。",
+    "options": [
+      "rules",
+      "off"
+    ],
+    "labels": [
+      "规则分类",
+      "关闭"
+    ]
   },
   "vector_candidate_limit": {
     "description": "向量通道候选数",
@@ -123,7 +171,23 @@
     "description": "FTS 相对相关性阈值",
     "type": "float",
     "default": 0.3,
-    "hint": "仅保留本 query FTS 最高分 × 该比例的候选；默认单路 FTS 与 hybrid 都生效，0 表示关闭。范围 0–1。"
+    "hint": "仅保留本 query FTS 最高分 × 该比例的候选；默认单路 FTS 与 hybrid 都生效，0 表示关闭。范围 0–1。",
+    "options": [
+      0.0,
+      0.2,
+      0.3,
+      0.5,
+      0.7,
+      1.0
+    ],
+    "labels": [
+      "关闭",
+      "0.2 宽松",
+      "0.3 推荐",
+      "0.5 严格",
+      "0.7 更严格",
+      "1.0 仅最佳"
+    ]
   },
   "vector_snapshot_cache_mb": {
     "description": "向量快照缓存（MB）",
@@ -165,7 +229,17 @@
     "description": "Embedding 调用超时（秒）",
     "type": "int",
     "default": 5,
-    "hint": "超时按失败处理并回退 FTS；范围 1–30。"
+    "hint": "超时按失败处理并回退 FTS；范围 1–30。",
+    "options": [
+      5,
+      10,
+      30
+    ],
+    "labels": [
+      "5 秒 推荐",
+      "10 秒",
+      "30 秒"
+    ]
   },
   "embedding_max_text_chars": {
     "description": "单条 Embedding 最大字符数",
@@ -189,25 +263,77 @@
     "description": "Rerank 调用超时（秒）",
     "type": "int",
     "default": 5,
-    "hint": "超时/失败保持 RRF 顺序，并在 provider_failure_cooldown_seconds 内跳过重排；范围 1–30。"
+    "hint": "超时/失败保持 RRF 顺序，并在 provider_failure_cooldown_seconds 内跳过重排；范围 1–30。",
+    "options": [
+      5,
+      8,
+      15,
+      30
+    ],
+    "labels": [
+      "5 秒",
+      "8 秒",
+      "15 秒 推荐",
+      "30 秒"
+    ]
   },
   "rerank_max_docs": {
     "description": "Rerank 候选上限",
     "type": "int",
     "default": 16,
-    "hint": "最多对前 N 条候选重排，其余保持原顺序；范围 1–100。"
+    "hint": "最多对前 N 条候选重排，其余保持原顺序；范围 1–100。",
+    "options": [
+      8,
+      16,
+      24,
+      32,
+      64
+    ],
+    "labels": [
+      "8",
+      "16 推荐",
+      "24",
+      "32",
+      "64"
+    ]
   },
   "rerank_max_text_chars": {
     "description": "Rerank 单条截断（字符）",
     "type": "int",
     "default": 1200,
-    "hint": "送入重排前按字符截断，控制长记忆导致的延迟；范围 100–8000。"
+    "hint": "送入重排前按字符截断，控制长记忆导致的延迟；范围 100–8000。",
+    "options": [
+      600,
+      1200,
+      2000,
+      4000
+    ],
+    "labels": [
+      "600",
+      "1200 推荐",
+      "2000",
+      "4000"
+    ]
   },
   "provider_failure_cooldown_seconds": {
     "description": "Provider 失败冷却（秒）",
     "type": "int",
     "default": 60,
-    "hint": "失败后冷却期内不重复调用；0 表示不冷却。范围 0–3600。"
+    "hint": "失败后冷却期内不重复调用；0 表示不冷却。范围 0–3600。",
+    "options": [
+      0,
+      30,
+      60,
+      120,
+      300
+    ],
+    "labels": [
+      "不冷却",
+      "30 秒",
+      "60 秒 推荐",
+      "2 分钟",
+      "5 分钟"
+    ]
   },
   "external_provider_opt_in": {
     "description": "允许外部 Provider（默认关闭）",
@@ -218,7 +344,9 @@
   "external_provider_allowlist": {
     "description": "外部 Provider 白名单",
     "type": "list",
-    "items": { "type": "string" },
+    "items": {
+      "type": "string"
+    },
     "default": [],
     "hint": "匹配 provider_id、model 或 provider_id/model；空列表表示拒绝所有外部调用。"
   },
@@ -249,14 +377,18 @@
   "command_admin_ids": {
     "description": "备份/恢复命令管理员 ID 列表",
     "type": "list",
-    "items": { "type": "string" },
+    "items": {
+      "type": "string"
+    },
     "default": [],
     "hint": "备份与备份恢复命令只允许宿主的 is_admin 用户或名单内用户 ID 执行；名单为空时仅宿主管理员可用。"
   },
   "api_admin_usernames": {
     "description": "管理 API 用户名白名单",
     "type": "list",
-    "items": { "type": "string" },
+    "items": {
+      "type": "string"
+    },
     "default": [],
     "hint": "为空表示任意 dashboard 登录用户可读实例级管理端点；非空时只允许名单内用户名。V1.7 的 GET /v1/export 与 POST /v1/import、V1.8 的 maintenance/backup|restore|reindex 要求非空名单且用户名命中（fail-closed）。"
   },
@@ -276,7 +408,23 @@
     "description": "定时备份间隔（小时，0 为不启用）",
     "type": "int",
     "default": 0,
-    "hint": "大于 0 时按间隔在后台创建整库备份；需要账本启用。范围 0–168。"
+    "hint": "大于 0 时按间隔在后台创建整库备份；需要账本启用。范围 0–168。",
+    "options": [
+      0,
+      6,
+      12,
+      24,
+      72,
+      168
+    ],
+    "labels": [
+      "关闭",
+      "每 6 小时",
+      "每 12 小时",
+      "每天",
+      "每 3 天",
+      "每周"
+    ]
   },
   "backup_keep_last": {
     "description": "备份保留份数（至少保留最近 N 份）",
@@ -301,36 +449,120 @@
     "description": "个人记忆注入 Token 预算（估算值）",
     "type": "int",
     "default": 384,
-    "hint": "provider-neutral 估算，不是精确 tokenizer 计数；范围 64–4096。"
+    "hint": "provider-neutral 估算，不是精确 tokenizer 计数；范围 64–4096。",
+    "options": [
+      256,
+      384,
+      512,
+      768,
+      1024
+    ],
+    "labels": [
+      "256",
+      "384 推荐",
+      "512",
+      "768",
+      "1024"
+    ]
   },
   "personal_max_memories": {
     "description": "个人记忆注入最大条数",
     "type": "int",
     "default": 4,
-    "hint": "0 表示不注入；正整数为每条消息最多注入的条数；范围 0–20。"
+    "hint": "0 表示不注入；正整数为每条消息最多注入的条数；范围 0–20。",
+    "options": [
+      0,
+      2,
+      4,
+      6,
+      8,
+      12
+    ],
+    "labels": [
+      "不注入",
+      "2",
+      "4 推荐",
+      "6",
+      "8",
+      "12"
+    ]
   },
   "personal_candidate_limit": {
     "description": "个人检索候选上限",
     "type": "int",
     "default": 12,
-    "hint": "注入前最多重排/预算筛选的候选数；范围 1–50。"
+    "hint": "注入前最多重排/预算筛选的候选数；范围 1–50。",
+    "options": [
+      8,
+      12,
+      16,
+      24,
+      32
+    ],
+    "labels": [
+      "8",
+      "12 推荐",
+      "16",
+      "24",
+      "32"
+    ]
   },
   "group_max_tokens": {
     "description": "群记忆注入 Token 预算（估算值）",
     "type": "int",
     "default": 192,
-    "hint": "群上下文默认比私聊更小；这是 provider-neutral 估算，不是精确 tokenizer 计数。"
+    "hint": "群上下文默认比私聊更小；这是 provider-neutral 估算，不是精确 tokenizer 计数。",
+    "options": [
+      128,
+      192,
+      256,
+      384,
+      512
+    ],
+    "labels": [
+      "128",
+      "192 推荐",
+      "256",
+      "384",
+      "512"
+    ]
   },
   "group_max_memories": {
     "description": "群记忆注入最大条数",
     "type": "int",
     "default": 2,
-    "hint": "设为 0 表示不注入群记忆；正整数表示每条群消息最多注入的条数。"
+    "hint": "设为 0 表示不注入群记忆；正整数表示每条群消息最多注入的条数。",
+    "options": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "labels": [
+      "不注入",
+      "1",
+      "2 推荐",
+      "3",
+      "4"
+    ]
   },
   "group_candidate_limit": {
     "description": "群检索候选上限",
     "type": "int",
-    "default": 8
+    "default": 8,
+    "options": [
+      4,
+      8,
+      12,
+      16
+    ],
+    "labels": [
+      "4",
+      "8 推荐",
+      "12",
+      "16"
+    ]
   },
   "group_max_active": {
     "description": "单个群 ACTIVE 记忆软上限（告警用）",
@@ -342,7 +574,19 @@
     "description": "群数据保留期建议（天）",
     "type": "int",
     "default": 90,
-    "hint": "仅用于群状态提示；不会自动删除群数据。群解散后需管理员或部署者 CLI 显式清理。"
+    "hint": "仅用于群状态提示；不会自动删除群数据。群解散后需管理员或部署者 CLI 显式清理。",
+    "options": [
+      30,
+      90,
+      180,
+      365
+    ],
+    "labels": [
+      "30 天",
+      "90 天 推荐",
+      "180 天",
+      "365 天"
+    ]
   },
   "group_destroy_backup_retention_days": {
     "description": "群销毁备份保留天数",
