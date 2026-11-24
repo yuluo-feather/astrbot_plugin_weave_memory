@@ -359,12 +359,18 @@ class ManagementService:
             raise StorageError("could not rebuild the search index") from exc
         return {"rebuilt": True, "documents": count}
 
-    async def reindex_async(self) -> dict[str, object]:
+    async def reindex_async(self, *, scope_id: str | None = None,
+                            subject_id: str | None = None) -> dict[str, object]:
         result = self.reindex()
         if self._vector_enabled and self._vector_rebuild is not None:
-            rebuilt = await self._vector_rebuild.rebuild_all()
+            rebuilt = await self._vector_rebuild.rebuild_all(
+                scope_id=scope_id, subject_id=subject_id,
+            )
             result["vector_rebuilt"] = rebuilt
             result["vector_documents"] = rebuilt
+            if scope_id:
+                result["scope_id"] = scope_id
+                result["subject_id"] = subject_id
         return result
 
     def _require_backup(self) -> BackupPort:
