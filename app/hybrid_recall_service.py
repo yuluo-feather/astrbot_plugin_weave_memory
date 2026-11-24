@@ -283,8 +283,10 @@ class HybridRecallService:
 
         rerank_ms = 0
         rerank_info: dict[str, object] = {
-            "enabled": self._rerank_enabled, "provider": None,
-            "model": None, "candidates": [],
+            "enabled": self._rerank_enabled,
+            "provider": getattr(self._rerank, "provider_id", None),
+            "model": getattr(self._rerank, "model", None),
+            "candidates": [],
         }
         if self._rerank_enabled and self._rerank is not None and selected:
             rerank_started = monotonic()

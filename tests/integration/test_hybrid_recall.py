@@ -267,3 +267,33 @@ def test_group_hybrid_recall_uses_group_scope_and_consent(stack):
     )
     assert [memory.id for memory in memories] == ["g1m"]
     assert trace.scope["type"] == "GROUP"
+
+
+class FakeRerankProvider:
+    provider_id = "local-rerank"
+    model = "bge-reranker-v2-m3"
+
+    async def rerank(self, query, documents, top_n):
+        return tuple(
+            (index, 1.0 if "绿茶" in document else 0.0)
+            for index, document in enumerate(documents)
+        )
+
+
+def test_hybrid_rerank_reorders_and_trace_records_provider(stack):
+    _, store, index, vector, consent, coordinator, scope = stack
+    hybrid = HybridRecallService(
+        store, index, consent, FixedClock(), store, coordinator,
+        vector=vector, provider=_policy(),
+        rerank=FakeRerankProvider(), rerank_enabled=True,
+        rerank_timeout_seconds=5,
+        vector_candidate_limit=5, hybrid_candidate_limit=10,
+    )
+    memories, trace = asyncio.run(
+        hybrid.recall_with_trace("喜欢", scope, limit=5),
+    )
+    assert memories and memories[0].id == "m2"
+    assert trace.rerank["provider"] == "local-rerank"
+    assert trace.rerank["model"] == "bge-reranker-v2-m3"
+    assert trace.rerank["candidates"]
+    assert "degraded" not in trace.rerank
