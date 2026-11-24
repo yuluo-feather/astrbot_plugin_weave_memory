@@ -22,6 +22,7 @@ def test_v2_defaults_are_safe_and_frozen():
         "hybrid_retrieval_enabled": False,
         "vector_index_enabled": False,
         "rerank_enabled": False,
+        "auto_enroll": True,
         "query_classifier_mode": "rules",
         "vector_candidate_limit": 20,
         "hybrid_candidate_limit": 24,

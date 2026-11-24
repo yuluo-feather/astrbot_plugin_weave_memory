@@ -444,7 +444,7 @@ class WeaveMemoryPlugin(Star):
                     logger.warning(f"织忆提取任务恢复：{recovered} 个中断任务已标记失败。")
 
             self._coordinator = coordinator
-            auto_enroll = self._config_bool("auto_enroll", False)
+            auto_enroll = self._config_bool("auto_enroll", True)
             self._commands = AstrBotMemoryCommands(
                 scopes, consent, memories, recall, lifecycle, clock, ids, imports,
                 auto_enroll=auto_enroll,

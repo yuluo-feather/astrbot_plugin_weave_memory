@@ -14,7 +14,7 @@ class AstrBotMemoryInjector:
     def __init__(self, scopes: PersonalScopeService,
                  consent: ConsentService,
                  composer: MemoryContextComposer, *,
-                 auto_enroll: bool = False) -> None:
+                 auto_enroll: bool = True) -> None:
         self._scopes = scopes
         self._consent = consent
         self._composer = composer

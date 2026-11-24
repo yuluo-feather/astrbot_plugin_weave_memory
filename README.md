@@ -37,7 +37,7 @@
 
 ## 🧵 功能特点
 
-- 🔒 **默认需要授权**：`auto_enroll=false`（默认）时，用户发送 `/织忆 授权` 后才会记录与检索；首次私聊只发送一次授权提示，不写入任何记忆。设为 `auto_enroll=true` 可回到首次私聊自动登记（opt-out）；群记忆仍需管理员 `/织忆 群开启`。
+- 🔒 **默认开启，可随时撤销**：`auto_enroll=true`（默认）时，首次私聊自动登记并发送一次告知；`/织忆 撤销授权` 可随时停止保存、检索与注入，已有数据保留。需要严格 opt-in 时把 `auto_enroll` 设为 `false`；群记忆仍需管理员 `/织忆 群开启`。
 - 🏠 **本地优先，零第三方运行时依赖**：权威数据存本机 SQLite，检索用 FTS5；插件本身不依赖额外的 Python 包，AstrBot 与 SQLite 由宿主提供。
 - 🧪 **Agent 记忆工具（V1.3）**：Personal 范围的 `weave_memory_search/get/list/history` 可用；`weave_memory_remember/update` 已启用写入，来源记录插件侧 `evidence_ref`（`message_id` 优先、`session` 回退、内容哈希），不冒充宿主 `tool_call_id`。`requested_persistence=false` 时不写库；只有工具返回成功后才能对用户确认已保存。后台自动提取仍只产候选，不会自动变成用户事实。
 - 🧠 **自动注入，但不污染会话**：LLM 请求到来时检索少量相关记忆，通过临时 `TextPart` 追加到本次请求；不修改 system prompt，也不写入持久会话历史。个人默认最多 4 条、384 estimated tokens。
@@ -60,7 +60,7 @@
 
 | 功能 | 命令 | 描述 |
 |------|------|------|
-| 🆔 授权 | `/织忆 授权` | 显式开启个人记忆（默认配置下必需） |
+| 🆔 授权 | `/织忆 授权` | 显式开启个人记忆（`auto_enroll=false` 或撤销后需要） |
 | 🚫 撤销授权 | `/织忆 撤销授权` | 停止保存、检索和注入；已有数据保留，auto_enroll 不会自动复活 |
 | 💾 保存 | `/织忆 保存 <内容>` | 显式保存一条事实；相同规范化内容重复保存沿用原 ID |
 | ✏️ 更新 | `/织忆 更新 <记忆ID> <当前revision> <新内容>` | 显式修订指定记忆；revision 不匹配时拒绝覆盖 |
@@ -137,11 +137,11 @@
 
 ## ⚙ 工作流程
 ```
-首次私聊（默认 auto_enroll=false）
-   └─ 发送一次授权提示，不登记、不写入
+首次私聊（默认 auto_enroll=true）
+   └─ 自动登记 personal_memory=GRANTED + 一次性告知
         │
         ▼
-/织忆 授权 → 登记 personal_memory=GRANTED
+/织忆 撤销授权 可随时停止
         │
         ▼
 /织忆 保存 内容 或 /织忆 更新（EXPLICIT / USER）
@@ -170,7 +170,7 @@ Agent 工具：`weave_memory_search/get/list/history` 仅访问当前 Personal S
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `auto_enroll` | bool | `false` | Personal 记忆默认登记。默认关闭：用户发送 `/织忆 授权` 后才记录与检索，首次私聊只提示一次。设为 `true` 回到 opt-out：新用户首次私聊自动登记并告知。已有授权/撤销记录不会被改写。 |
+| `auto_enroll` | bool | `true` | Personal 记忆默认登记。默认 opt-out：新用户首次私聊自动登记并告知，可随时撤销。设为 `false` 回到严格 opt-in，用户需发送 `/织忆 授权`。已有授权/撤销记录不会被改写。 |
 | `agent_write_enabled` | bool | `true` | 控制 Agent 记忆写入工具开关。开启后 `weave_memory_remember/update` 可写入；来源记录插件侧 `evidence_ref`（message/session + 内容哈希）与工具 metadata，不冒充宿主 `tool_call_id`。 |
 | `group_admin_ids` | object | `{}` | 群管理员回退配置。键为 `platform\|tenant_id\|group_id`，值为管理员 ID 数组；仅在平台无法解析群主/管理员角色时使用。键必须精确匹配平台、平台实例与群 ID，避免跨群/跨实例复用。 |
 | `group_max_tokens` | int | `192` | 群记忆注入的 Token 预算（provider-neutral 估算值）。 |
@@ -220,7 +220,7 @@ git clone https://github.com/yuluo-feather/astrbot_plugin_weave_memory.git
 
 > 📌 **白名单提示**：如果 AstrBot 的 `plugin_set` 是手工白名单，必须把 `astrbot_plugin_weave_memory` 加进去；否则插件能加载，但命令会被静默过滤。
 >
-> 安装后首次私聊只会收到一次授权提示，不会自动记录；用户发送 `/织忆 授权` 后开启。若希望恢复旧的自动登记行为，把 `auto_enroll` 设为 `true`。
+> 安装后首次私聊会自动登记并给一次告知；`/织忆 撤销授权` 可随时停止。需要严格逐用户 opt-in 时把 `auto_enroll` 设为 `false`。
 
 ## 🧱 技术实现
 
@@ -265,7 +265,7 @@ V1.4/V1.5 的评测数据与 Harness 在开发侧维护，不随插件分发。G
 
 ## 🌙 注意事项
 
-- **默认需要授权**：用户发送 `/织忆 授权` 后才记录与检索；首次私聊只提示一次。`/织忆 撤销授权` 或 `/织忆 关闭` 停止保存、检索与注入，已有数据保留。群记忆仍需管理员 `/织忆 群开启`。
+- **默认开启**：`auto_enroll=true` 时首次私聊自动登记并发送一次告知；`/织忆 撤销授权` 可随时停止保存、检索与注入，已有数据保留。群记忆仍需管理员 `/织忆 群开启`。
 - **撤销不等于删除**：`/织忆 撤销授权` 只停止普通功能，历史数据仍在；要删除请用 `/织忆 删除` 或 `/织忆 清空 确认`。
 - **删除不可恢复**：个人 `删除` / `清空` 与群 `群清空` / `群销毁` 都是不可恢复操作；群销毁还会移除群 consent 与审计，只保留销毁前备份。
 - **关闭语义不同**：个人 `关闭` 永久生效，当前版本不提供重新开启；群 `关闭` 可逆，数据保留。

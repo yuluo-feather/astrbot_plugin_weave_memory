@@ -38,7 +38,7 @@ class AstrBotMemoryCommands:
                  memories: MemoryApplicationService, recall: RecallService,
                  lifecycle: LifecycleService, clock: Clock,
                  ids: IdGenerator, import_service: ImportService, *,
-                 auto_enroll: bool = False) -> None:
+                 auto_enroll: bool = True) -> None:
         self._scopes = scopes
         self._consent = consent
         self._memories = memories
@@ -123,7 +123,7 @@ class AstrBotMemoryCommands:
     def help(self) -> str:
         return (
             "织忆命令：\n"
-            "默认需要授权：发送 /织忆 授权 后才会记录与检索（auto_enroll=true 时首次私聊自动登记）。\n"
+            "默认已开启；首次私聊会自动登记并发送一次告知（auto_enroll=false 时需 /织忆 授权）。\n"
             "/织忆 授权 —— 显式开启或恢复个人记忆\n"
             "/织忆 撤销授权 —— 可逆地停止保存、检索和注入（不删除已有数据，不会被自动登记复活）\n"
             "/织忆 保存 <内容> —— 显式保存一条事实\n"

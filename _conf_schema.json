@@ -1,9 +1,9 @@
 {
   "auto_enroll": {
-    "description": "Personal 记忆默认登记（默认关闭）",
+    "description": "Personal 记忆默认登记（opt-out 模式）",
     "type": "bool",
-    "default": false,
-    "hint": "默认不登记；用户发送 /织忆 授权 后才会记录与检索。开启后新用户首次私聊会自动登记并收到一次告知（opt-out 模式）。"
+    "default": true,
+    "hint": "开启后，新用户首次私聊会自动登记个人记忆并收到一次告知；用户可随时 /织忆 撤销授权 停止。关闭后回到严格 opt-in，用户需发送 /织忆 授权。"
   },
   "agent_write_enabled": {
     "description": "控制 Agent 记忆写入工具开关（默认开启）；开启后 remember/update 可写入，来源记录插件侧 evidence_ref。",

@@ -254,7 +254,7 @@ def test_plugin_registers_only_zhuyi_prefix_and_help(monkeypatch, tmp_path):
     assert filter_obj.registered["name"] == "织忆"
     assert filter_obj.registered["alias"] == {"/织忆"}
     help_text = plugin._commands.help()
-    assert "默认需要授权" in help_text
+    assert "默认已开启" in help_text
     assert "/织忆 保存" in help_text
     assert "/织忆 归档" in help_text
     assert "/织忆 恢复" in help_text
@@ -858,7 +858,7 @@ def test_plugin_auto_enroll_disabled_requires_explicit_grant(monkeypatch, tmp_pa
     asyncio.run(plugin.terminate())
 
 
-def test_default_config_requires_explicit_grant(monkeypatch, tmp_path):
+def test_default_config_auto_enrolls_on_first_chat(monkeypatch, tmp_path):
     import asyncio
 
     plugin, _ = load_plugin(monkeypatch, tmp_path, config={})
@@ -867,12 +867,13 @@ def test_default_config_requires_explicit_grant(monkeypatch, tmp_path):
     asyncio.run(plugin.inject_personal_memory(event, request))
 
     assert len(event.sent) == 1
-    assert "尚未获得你的授权" in event.sent[0]
+    assert "默认开启" in event.sent[0]
     assert request.extra_user_content_parts == []
-    assert plugin._database.connection.execute(
-        "SELECT count(*) FROM memory_consents",
-    ).fetchone()[0] == 0
-    assert "默认需要授权" in plugin._command_service().help()
+    rows = plugin._database.connection.execute(
+        "SELECT state FROM memory_consents",
+    ).fetchall()
+    assert [(row["state"],) for row in rows] == [("GRANTED",)]
+    assert "默认已开启" in plugin._command_service().help()
     asyncio.run(plugin.terminate())
 
 
