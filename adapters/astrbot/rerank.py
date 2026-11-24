@@ -44,6 +44,14 @@ class AstrBotRerankProvider(RerankProvider):
                 return ""
         return str(getattr(provider, "model_name", "") or "")
 
+    @property
+    def endpoint(self) -> str:
+        try:
+            provider = self._resolve()
+        except IndexNotConfigured:
+            return ""
+        return str(getattr(provider, "base_url", "") or "")
+
     async def rerank(self, query: str, documents: tuple[str, ...],
                      top_n: int) -> tuple[tuple[int, float], ...]:
         provider = self._resolve()

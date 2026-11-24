@@ -399,7 +399,19 @@ class HybridRecallService:
                 "estimated_tokens": 0,
                 "budget": 0,
             },
-            provider=provider_status,
+            provider=(
+                {
+                    **provider_status,
+                    "embedding_provider": provider_status.get("provider_id"),
+                    "fallback_used": bool(vector_error),
+                    "error_code": vector_error,
+                }
+                if provider_status else {
+                    "embedding_provider": None,
+                    "fallback_used": bool(vector_error),
+                    "error_code": vector_error,
+                }
+            ),
             index_state=index_state,
             latency_ms={
                 "classify": classify_ms, "fts": fts_ms, "vector": vector_ms,

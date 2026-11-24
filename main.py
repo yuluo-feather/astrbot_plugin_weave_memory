@@ -64,6 +64,7 @@ from .app.memory_service import MemoryApplicationService
 from .app.provider_config import ProviderConfig
 from .app.provider_policy import ProviderPolicy
 from .app.recall_service import MemoryContextComposer, RecallService
+from .app.rerank_policy import GuardedRerank
 from .app.retention_service import RetentionService
 from .app.scope_service import GroupScopeService, PersonalScopeService
 from .app.startup_recovery import StartupRecoveryService
@@ -154,13 +155,20 @@ class WeaveMemoryPlugin(Star):
             )
             index = SQLiteFTSIndex(
                 self._database,
-                relevance_ratio=provider_config.fts_relevance_ratio,
+                relevance_ratio=(
+                    provider_config.fts_relevance_ratio
+                    if provider_config.hybrid_retrieval_enabled else 0.0
+                ),
             )
             provider: AstrBotEmbeddingProvider | None = None
             provider_policy: ProviderPolicy | None = None
             provider_audit: SQLiteProviderCallAudit | None = None
-            if provider_config.embedding_provider_id:
+            if (
+                provider_config.embedding_provider_id
+                or provider_config.rerank_enabled
+            ):
                 provider_audit = SQLiteProviderCallAudit(self._database)
+            if provider_config.embedding_provider_id:
                 try:
                     provider = AstrBotEmbeddingProvider(
                         self.context, provider_config.embedding_provider_id,
@@ -255,6 +263,7 @@ class WeaveMemoryPlugin(Star):
                 enabled=ledger_enabled,
                 keep_last=self._config_int("backup_keep_last", 5),
                 retention_days=self._config_int("backup_retention_days", 30),
+                vector=vector_index,
             )
             # Restore journal must be resolved before any read or write is served.
             backup.recover_if_needed()
@@ -347,6 +356,31 @@ class WeaveMemoryPlugin(Star):
                         rerank_provider = AstrBotRerankProvider(
                             self.context, provider_config.rerank_provider_id,
                         )
+                        allow_external = bool(
+                            provider_config.external_provider_opt_in
+                            and provider_config.external_provider_allowlist
+                            and (
+                                provider_config.rerank_provider_id
+                                in provider_config.external_provider_allowlist
+                                or (
+                                    provider_config.rerank_model
+                                    and provider_config.rerank_model
+                                    in provider_config.external_provider_allowlist
+                                )
+                                or (
+                                    provider_config.rerank_model
+                                    and f"{provider_config.rerank_provider_id}/"
+                                    f"{provider_config.rerank_model}"
+                                    in provider_config.external_provider_allowlist
+                                )
+                            )
+                        )
+                        rerank_provider = GuardedRerank(
+                            rerank_provider,
+                            provider_id=provider_config.rerank_provider_id,
+                            audit=provider_audit, clock=clock,
+                            allow_external=allow_external,
+                        )
                     except Exception as exc:  # noqa: BLE001 - optional provider
                         logger.warning(
                             "织忆 rerank provider 不可用：%s", type(exc).__name__,
@@ -422,10 +456,17 @@ class WeaveMemoryPlugin(Star):
                 hybrid_group = HybridGroupRecallService(
                     store, index, consent, clock, store, coordinator,
                     vector=vector_index, provider=provider_policy,
-                    rerank=None,
+                    rerank=rerank_provider,
                     vector_candidate_limit=provider_config.vector_candidate_limit,
                     hybrid_candidate_limit=provider_config.hybrid_candidate_limit,
                     classifier_mode=provider_config.query_classifier_mode,
+                    rerank_enabled=provider_config.rerank_enabled,
+                    rerank_timeout_seconds=provider_config.rerank_timeout_seconds,
+                    rerank_max_docs=provider_config.rerank_max_docs,
+                    rerank_max_text_chars=provider_config.rerank_max_text_chars,
+                    rerank_cooldown_seconds=(
+                        provider_config.provider_failure_cooldown_seconds
+                    ),
                     tag_candidate_limit=provider_config.tag_candidate_limit,
                     time_candidate_limit=provider_config.time_candidate_limit,
                     relevance_threshold=provider_config.vector_relevance_threshold,

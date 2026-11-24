@@ -190,7 +190,8 @@ class BackupService:
                  clock: Clock, ids: IdGenerator, data_dir: str | Path,
                  config: Mapping[str, Any] | None = None,
                  enabled: bool = True, keep_last: int = 5,
-                 retention_days: int = 30) -> None:
+                 retention_days: int = 30,
+                 vector: Any | None = None) -> None:
         self._database = database
         self._store = store
         self._index = index
@@ -204,6 +205,7 @@ class BackupService:
         self._enabled = enabled
         self._keep_last = max(1, keep_last)
         self._retention_days = max(1, retention_days)
+        self._vector = vector
         self._root = self._data_dir.joinpath(*BACKUP_ROOT_PARTS)
         self._journal_path = self._data_dir / JOURNAL_NAME
 
@@ -688,6 +690,10 @@ class BackupService:
                         (_RESTORE_FTS_SENTINEL,),
                     )
             self._index.rebuild()
+            if self._vector is not None:
+                # Derived vectors are not part of the snapshot; the index
+                # worker rebuilds them from authoritative text when STALE.
+                self._vector.mark_stale(at=self._clock.now())
             journal["phase"] = "complete"
             journal["completed_at"] = self._clock.now().isoformat()
             _atomic_json(self._journal_path, journal)
