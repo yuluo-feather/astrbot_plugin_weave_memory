@@ -130,11 +130,11 @@ onMounted(load);
 
 <template>
   <div>
-    <div class="text-h5 mb-3">群个人记忆与账号绑定</div>
+    <div class="page-heading"><div><h1 class="text-h5">群个人记忆与账号绑定 <span class="heading-sparkle" aria-hidden="true">♡</span></h1><p>专属记忆与连接：管理群个人功能状态、自己的记忆，以及 Dashboard 账号连接。</p></div></div>
 
     <v-row>
       <v-col cols="12" md="6">
-        <v-card class="mb-3">
+        <v-card class="mb-4 weave-panel">
           <v-card-title>群级总开关</v-card-title>
           <v-card-text>
             <v-select
@@ -160,7 +160,7 @@ onMounted(load);
           </v-card-text>
         </v-card>
 
-        <v-card>
+        <v-card class="weave-panel">
           <v-card-title>Dashboard 账号绑定</v-card-title>
           <v-card-text>
             <template v-if="bound">
@@ -183,12 +183,12 @@ onMounted(load);
       </v-col>
 
       <v-col cols="12" md="6">
-        <v-card class="mb-3">
-          <v-card-title>我的个人记忆（{{ personal.length }}）</v-card-title>
+        <v-card class="mb-4 weave-panel">
+          <v-card-title><span class="section-mark" aria-hidden="true">♡</span>我的个人记忆（{{ personal.length }}）</v-card-title>
           <v-card-text v-if="!bound" class="text-medium-emphasis">
             绑定平台账号后可在此查看与编辑自己的个人记忆。
           </v-card-text>
-          <v-list v-else density="compact" class="list">
+          <v-list v-else density="compact" class="list weave-list">
             <v-list-item
               v-for="item in personal"
               :key="item.id"
@@ -200,13 +200,13 @@ onMounted(load);
                 <v-btn size="small" variant="text" color="error" @click="archive(item)">删除</v-btn>
               </template>
             </v-list-item>
-            <v-list-item v-if="!personal.length" title="暂无个人记忆" />
+            <div v-if="!personal.length" class="weave-empty">还没有个人记忆。</div>
           </v-list>
         </v-card>
 
         <v-card>
-          <v-card-title>待确认候选（{{ candidates.length }}）</v-card-title>
-          <v-list density="compact" class="list">
+          <v-card-title><span class="section-mark mint-mark" aria-hidden="true">✧</span>待确认候选（{{ candidates.length }}）</v-card-title>
+          <v-list density="compact" class="list weave-list">
             <v-list-item
               v-for="item in candidates"
               :key="item.id"
@@ -218,7 +218,7 @@ onMounted(load);
                 <v-btn size="small" variant="text" color="error" @click="rejectCandidate(item)">拒绝</v-btn>
               </template>
             </v-list-item>
-            <v-list-item v-if="!candidates.length" title="暂无候选" />
+            <div v-if="!candidates.length" class="weave-empty">目前没有待确认候选。</div>
           </v-list>
         </v-card>
       </v-col>
@@ -239,8 +239,8 @@ onMounted(load);
 </template>
 
 <style scoped>
-.list {
-  max-height: 320px;
-  overflow: auto;
-}
+.list { max-height: 320px; overflow: auto; }
+.heading-sparkle { color: var(--weave-accent); }
+.section-mark { display: inline-grid; width: 27px; height: 27px; place-items: center; margin-right: 7px; border-radius: 9px; background: var(--weave-accent-soft); color: var(--weave-accent); }
+.mint-mark { background: var(--weave-mint-soft); color: var(--weave-mint); }
 </style>

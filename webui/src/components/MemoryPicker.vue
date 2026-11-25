@@ -30,8 +30,8 @@ onMounted(load);
 </script>
 
 <template>
-  <v-card class="mb-3">
-    <v-card-text class="d-flex flex-wrap ga-3">
+  <v-card class="mb-4 weave-panel">
+    <v-card-text class="d-flex flex-wrap ga-3 align-center">
       <v-select
         v-model="state.groupIndex"
         :items="state.groups"

@@ -10,6 +10,7 @@ const drafts = reactive<Record<string, unknown>>({});
 const dirty = ref<Set<string>>(new Set());
 
 const status = ref<Record<string, unknown> | null>(null);
+const statusEntries = computed(() => Object.entries(status.value ?? {}));
 const backups = ref<Record<string, unknown>[]>([]);
 const backupError = ref("");
 
@@ -159,11 +160,11 @@ onMounted(load);
 
 <template>
   <div>
-    <div class="text-h5 mb-3">设置与维护</div>
+    <div class="page-heading"><div><h1 class="text-h5">设置与维护 <span class="heading-sparkle" aria-hidden="true">⚙</span></h1><p>织忆小屋：把运行配置和维护工具收纳在一起，重要操作依然会经过确认。</p></div></div>
 
     <v-row>
       <v-col cols="12" md="7">
-        <v-card>
+        <v-card class="weave-panel">
           <v-card-title class="d-flex justify-space-between align-center">
             <span>运行配置</span>
             <v-btn color="primary" :disabled="!canWrite || !dirty.size" @click="save">保存</v-btn>
@@ -219,18 +220,28 @@ onMounted(load);
       </v-col>
 
       <v-col cols="12" md="5">
-        <v-card class="mb-3">
+        <v-card class="mb-4 weave-panel">
           <v-card-title>维护状态</v-card-title>
           <v-card-text>
-            <pre class="code">{{ JSON.stringify(status ?? {}, null, 2) }}</pre>
-            <div class="d-flex ga-2">
+            <div v-if="statusEntries.length" class="maintenance-status-list">
+              <div v-for="([key, value]) in statusEntries" :key="key" class="maintenance-status-row">
+                <span>{{ key.replace(/_/g, " ") }}</span>
+                <strong>{{ value !== null && typeof value === "object" ? JSON.stringify(value) : String(value ?? "—") }}</strong>
+              </div>
+            </div>
+            <div v-else class="weave-empty">暂时没有维护状态信息。</div>
+            <details class="raw-status">
+              <summary>查看原始状态数据</summary>
+              <pre class="code weave-code">{{ JSON.stringify(status ?? {}, null, 2) }}</pre>
+            </details>
+            <div class="d-flex flex-wrap ga-2 mt-3">
               <v-btn variant="tonal" :disabled="!canWrite" @click="createBackup">创建备份</v-btn>
               <v-btn variant="tonal" color="warning" :disabled="!canWrite" @click="reindex">重建索引</v-btn>
             </div>
           </v-card-text>
         </v-card>
 
-        <v-card>
+        <v-card class="weave-panel">
           <v-card-title>备份与恢复</v-card-title>
           <v-card-text>
             <div v-if="backupError" class="text-caption text-error mb-2">{{ backupError }}</div>
@@ -255,7 +266,7 @@ onMounted(load);
               <v-btn variant="tonal" :disabled="!canWrite || !restoreId" @click="dryRun">预演恢复</v-btn>
               <v-btn color="error" :disabled="!restoreReady" @click="confirmRestore">确认恢复</v-btn>
             </div>
-            <pre v-if="restoreDry" class="code mt-2">{{ JSON.stringify(restoreDry, null, 2) }}</pre>
+            <pre v-if="restoreDry" class="code weave-code mt-2">{{ JSON.stringify(restoreDry, null, 2) }}</pre>
           </v-card-text>
         </v-card>
       </v-col>
@@ -264,6 +275,14 @@ onMounted(load);
 </template>
 
 <style scoped>
+.heading-sparkle { color: var(--weave-accent); }
+.maintenance-status-list { margin-bottom: 12px; }
+.maintenance-status-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--weave-line-soft); font-size: 12px; }
+.maintenance-status-row span { color: var(--weave-muted); text-transform: capitalize; }
+.maintenance-status-row strong { color: var(--weave-text-strong); text-align: right; overflow-wrap: anywhere; }
+.raw-status { margin-top: 10px; color: var(--weave-muted); font-size: 11px; }
+.raw-status summary { cursor: pointer; padding: 5px 0; }
+.raw-status pre { margin-top: 8px; }
 .settings {
   max-height: 620px;
   overflow: auto;

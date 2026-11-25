@@ -27,11 +27,10 @@ async function run(): Promise<void> {
 
 <template>
   <div>
-    <div class="text-h5 mb-1">检索调试</div>
-    <p class="text-medium-emphasis mb-3">
-      只读模拟检索：不更新访问时间，不写诊断记录，也不返回个人记忆。
-    </p>
-    <v-card class="mb-3">
+    <div class="page-heading">
+      <div><h1 class="text-h5">检索调试 <span class="heading-sparkle" aria-hidden="true">⌕</span></h1><p>检索实验室：只读模拟检索，不更新访问时间，不写诊断记录，也不返回个人记忆。</p></div>
+    </div>
+    <v-card class="mb-4 weave-panel">
       <v-card-text class="d-flex flex-wrap ga-3 align-center">
         <v-select
           v-model="state.groupIndex"
@@ -62,17 +61,17 @@ async function run(): Promise<void> {
       </v-card-text>
     </v-card>
 
-    <v-card v-if="result">
+    <v-card v-if="result" class="weave-panel">
       <v-card-title class="d-flex justify-space-between">
         <span>结果</span>
         <span class="text-caption text-medium-emphasis">{{ result.estimated_tokens }} tokens</span>
       </v-card-title>
       <v-card-text>
-        <div class="mb-2">
-          <strong>最终注入：</strong>
-          {{ (result.injected_ids ?? []).join(", ") || "无" }}
+        <div class="injected-summary mb-3">
+          <span class="summary-label"><span aria-hidden="true">✦</span> 最终注入</span>
+          <span>{{ (result.injected_ids ?? []).join(", ") || "无" }}</span>
         </div>
-        <v-table density="compact">
+        <div class="weave-table-wrap"><v-table density="compact">
           <thead>
             <tr><th>排名</th><th>ID</th><th>BM25</th><th>过滤原因</th></tr>
           </thead>
@@ -84,8 +83,14 @@ async function run(): Promise<void> {
               <td>{{ candidate.filter_reason }}</td>
             </tr>
           </tbody>
-        </v-table>
+        </v-table></div>
       </v-card-text>
     </v-card>
   </div>
 </template>
+
+<style scoped>
+.heading-sparkle { color: var(--weave-accent); }
+.injected-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--weave-line); border-radius: 13px; background: var(--weave-soft-panel); color: var(--weave-text); font-size: 12px; overflow-wrap: anywhere; }
+.summary-label { color: var(--weave-accent); font-weight: 800; }
+</style>

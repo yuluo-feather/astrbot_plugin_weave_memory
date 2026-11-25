@@ -172,12 +172,12 @@ onMounted(load);
 
 <template>
   <div>
-    <div class="d-flex align-center justify-space-between mb-3">
-      <div class="text-h5">记忆浏览</div>
+    <div class="page-heading">
+      <div><h1 class="text-h5">记忆浏览 <span class="heading-sparkle" aria-hidden="true">✧</span></h1><p>记忆收藏夹：在这里找到、整理和更新群里的重要片段。</p></div>
       <v-btn v-if="canWrite" color="primary" @click="createOpen = true">新建群记忆</v-btn>
     </div>
 
-    <v-card class="mb-3">
+    <v-card class="mb-4 weave-panel">
       <v-card-text class="d-flex flex-wrap ga-3 align-center">
         <v-select
           v-model="state.groupIndex"
@@ -217,7 +217,7 @@ onMounted(load);
       <v-col cols="12" md="5">
         <v-card>
           <v-card-title>{{ tab === "active" ? "当前记忆" : "回收站" }}（{{ items.length }}）</v-card-title>
-          <v-list density="compact" class="list">
+          <v-list density="compact" class="list weave-list">
             <v-list-item
               v-for="item in items"
               :key="item.id"
@@ -233,7 +233,7 @@ onMounted(load);
                 <v-btn size="small" variant="text" color="error" @click.stop="beginPurge(item)">彻底删除</v-btn>
               </template>
             </v-list-item>
-            <v-list-item v-if="!items.length" title="暂无可显示的群记忆" />
+            <div v-if="!items.length" class="weave-empty"><div class="empty-flower" aria-hidden="true">✿</div>这里还没有记忆，换个筛选条件试试吧。</div>
           </v-list>
         </v-card>
       </v-col>
@@ -244,7 +244,7 @@ onMounted(load);
             <span>记忆详情</span>
             <span v-if="selected" class="text-caption text-medium-emphasis">{{ selected.status }}</span>
           </v-card-title>
-          <v-card-text v-if="!selected" class="text-medium-emphasis">选择左侧条目查看详情。</v-card-text>
+          <v-card-text v-if="!selected" class="weave-empty"><div class="empty-flower" aria-hidden="true">♡</div>选择左侧的一条记忆，看看它的详细内容。</v-card-text>
           <v-card-text v-else>
             <div class="text-body-1 mb-3">{{ selected.content }}</div>
             <div class="text-caption text-medium-emphasis mb-3">
@@ -257,7 +257,7 @@ onMounted(load);
             </div>
             <v-divider class="mb-3" />
             <div class="text-subtitle-2 mb-2">历史版本</div>
-            <v-table density="compact">
+            <div class="weave-table-wrap"><v-table density="compact">
               <tbody>
                 <tr v-for="revision in history?.revisions ?? []" :key="revision.revision">
                   <td>r{{ revision.revision }}</td>
@@ -265,9 +265,9 @@ onMounted(load);
                   <td>{{ revision.change_reason }}</td>
                 </tr>
               </tbody>
-            </v-table>
+            </v-table></div>
             <div class="text-subtitle-2 my-2">来源</div>
-            <v-table density="compact">
+            <div class="weave-table-wrap"><v-table density="compact">
               <tbody>
                 <tr v-for="source in history?.sources ?? []" :key="source.id ?? source.captured_at">
                   <td>{{ source.source_type }}</td>
@@ -275,9 +275,9 @@ onMounted(load);
                   <td>{{ source.captured_at }}</td>
                 </tr>
               </tbody>
-            </v-table>
+            </v-table></div>
             <div class="text-subtitle-2 my-2">审计</div>
-            <v-table density="compact">
+            <div class="weave-table-wrap"><v-table density="compact">
               <tbody>
                 <tr v-for="entry in operations" :key="String(entry.audit_id)">
                   <td>{{ entry.operation_type }}</td>
@@ -285,7 +285,7 @@ onMounted(load);
                   <td>{{ entry.occurred_at }}</td>
                 </tr>
               </tbody>
-            </v-table>
+            </v-table></div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -345,8 +345,7 @@ onMounted(load);
 </template>
 
 <style scoped>
-.list {
-  max-height: 640px;
-  overflow: auto;
-}
+.list { max-height: 640px; overflow: auto; }
+.heading-sparkle { color: var(--weave-accent); font-size: 17px; }
+.empty-flower { margin-bottom: 8px; color: var(--weave-accent); font-size: 26px; }
 </style>
