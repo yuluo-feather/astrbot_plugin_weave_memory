@@ -215,7 +215,7 @@ def test_plugin_registers_management_api(monkeypatch, tmp_path):
     context = FakeContext()
     plugin, _ = load_plugin(monkeypatch, tmp_path, context=context)
     routes = {route: methods for route, _, methods, _ in context.routes}
-    assert len(context.routes) == 14
+    assert len(context.routes) == 39
     assert routes["/astrbot_plugin_weave_memory/v1/overview"] == ["GET"]
     assert routes["/astrbot_plugin_weave_memory/v1/retrieval/debug"] == ["POST"]
     assert routes["/astrbot_plugin_weave_memory/v1/export"] == ["GET"]
@@ -230,6 +230,16 @@ def test_plugin_registers_without_management_api_support(monkeypatch, tmp_path):
 
     plugin, _ = load_plugin(monkeypatch, tmp_path)
     assert plugin._ready is True
+    asyncio.run(plugin.terminate())
+
+
+def test_plugin_wires_webui_state_stores_to_the_database(monkeypatch, tmp_path):
+    """Regression: webui stores take SQLiteDatabase, not SQLiteMemoryStore."""
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    assert plugin._identity_binding is not None
+    assert plugin._identity_binding.status("admin") == {"bound": False}
     asyncio.run(plugin.terminate())
 
 

@@ -24,6 +24,10 @@ from .adapters.astrbot.group_admin import AstrBotGroupAdminResolver
 from .adapters.astrbot.group_commands import AstrBotGroupCommands
 from .adapters.astrbot.group_injection import AstrBotGroupMemoryInjector
 from .adapters.astrbot.group_lifecycle_events import parse_group_lifecycle_event
+from .adapters.astrbot.group_personal_commands import AstrBotGroupPersonalCommands
+from .adapters.astrbot.group_personal_injection import (
+    AstrBotGroupPersonalMemoryInjector,
+)
 from .adapters.astrbot.identity import AstrBotIdentityAdapter
 from .adapters.astrbot.injection import AstrBotMemoryInjector
 from .adapters.astrbot.recall_diagnostics import JsonlRecallDiagnostics
@@ -46,14 +50,22 @@ from .adapters.sqlite.ledger import SQLiteLedger
 from .adapters.sqlite.provider_audit import SQLiteProviderCallAudit
 from .adapters.sqlite.store import SQLiteMemoryStore
 from .adapters.sqlite.vector import SQLiteVectorIndex
+from .adapters.sqlite.webui_state import (
+    SQLiteGroupPersonalPolicyStore,
+    SQLiteIdentityBindingStore,
+    SQLiteSensitivityStore,
+)
 from .adapters.system import SystemClock, UUID4IdGenerator
 from .app.consent_service import ConsentService
 from .app.embedding_cache import EmbeddingLRUCache
 from .app.extraction_service import ExtractionService
 from .app.group_lifecycle_service import GroupLifecycleService
 from .app.group_memory_service import GroupMemoryService
+from .app.group_personal_recall_service import GroupPersonalContextComposer
+from .app.group_personal_service import GroupPersonalService
 from .app.group_recall_service import GroupContextComposer, GroupRecallService
 from .app.hybrid_recall_service import HybridGroupRecallService, HybridRecallService
+from .app.identity_binding_service import IdentityBindingService
 from .app.import_service import ImportService
 from .app.index_job_service import IndexJobService
 from .app.index_rebuild_service import IndexRebuildService
@@ -68,7 +80,9 @@ from .app.recall_service import MemoryContextComposer, RecallService
 from .app.rerank_policy import GuardedRerank
 from .app.retention_service import RetentionService
 from .app.scope_service import GroupScopeService, PersonalScopeService
+from .app.settings_service import SettingsWriteService, load_schema
 from .app.startup_recovery import StartupRecoveryService
+from .app.webui_security import WebUiSecurity
 from .app.write_coordinator import WriteCoordinator
 from .core.errors import (
     AuthorizationDenied,
@@ -125,6 +139,8 @@ class WeaveMemoryPlugin(Star):
         self._coordinator: WriteCoordinator | None = None
         self._commands: AstrBotMemoryCommands | None = None
         self._group_commands: AstrBotGroupCommands | None = None
+        self._group_personal_commands: AstrBotGroupPersonalCommands | None = None
+        self._identity_binding: IdentityBindingService | None = None
         self._extraction_commands: AstrBotExtractionCommands | None = None
         self._backup_commands: AstrBotBackupCommands | None = None
         self._extraction_capture: AstrBotExtractionCapture | None = None
@@ -143,6 +159,7 @@ class WeaveMemoryPlugin(Star):
         self._provider_policy: ProviderPolicy | None = None
         self._injector: AstrBotMemoryInjector | None = None
         self._group_injector: AstrBotGroupMemoryInjector | None = None
+        self._group_personal_injector: AstrBotGroupPersonalMemoryInjector | None = None
         self._group_scopes: GroupScopeService | None = None
         self._group_lifecycle: GroupLifecycleService | None = None
         self._tool_call_binding = AstrBotToolCallBinding(
@@ -508,6 +525,7 @@ class WeaveMemoryPlugin(Star):
             group_memories = GroupMemoryService(
                 store, store, coordinator, consent, clock, ids,
                 max_active=self._config_int("group_max_active", 200),
+                lifecycle=lifecycle,
             )
             group_recall = GroupRecallService(
                 store, index, consent, clock, coordinator, store,
@@ -622,6 +640,35 @@ class WeaveMemoryPlugin(Star):
             self._group_injector = AstrBotGroupMemoryInjector(
                 group_scopes, consent, group_composer,
             )
+            group_personal_policies = SQLiteGroupPersonalPolicyStore(self._database, clock)
+            sensitivity_store = SQLiteSensitivityStore(self._database, clock)
+            identity_bindings = SQLiteIdentityBindingStore(self._database, clock)
+            group_personal = GroupPersonalService(
+                group_scopes, scopes, consent, group_personal_policies,
+                global_enabled=lambda: self._config_bool(
+                    "group_personal_enabled", True,
+                ),
+            )
+            self._group_personal_commands = AstrBotGroupPersonalCommands(
+                group_personal, group_scopes,
+            )
+            group_personal_composer = GroupPersonalContextComposer(
+                hybrid or recall,
+                sensitivity=sensitivity_store,
+                max_tokens=self._config_non_negative_int(
+                    "group_personal_max_tokens", 128,
+                ),
+                max_memories=self._config_non_negative_int(
+                    "group_personal_max_memories", 2,
+                ),
+                candidate_limit=self._config_int(
+                    "group_personal_candidate_limit", 8,
+                ),
+                maintenance=lambda: coordinator.in_maintenance,
+            )
+            self._group_personal_injector = AstrBotGroupPersonalMemoryInjector(
+                group_personal, group_personal_composer,
+            )
             api_admin_usernames = self._config_list("api_admin_usernames")
             management = ManagementService(
                 repository=store, store=store, index=index, groups=group_scopes,
@@ -712,6 +759,15 @@ class WeaveMemoryPlugin(Star):
                         "group_max_memories", 2,
                     ),
                     "group_candidate_limit": self._config_int("group_candidate_limit", 8),
+                    "group_personal_max_tokens": self._config_non_negative_int(
+                        "group_personal_max_tokens", 128,
+                    ),
+                    "group_personal_max_memories": self._config_non_negative_int(
+                        "group_personal_max_memories", 2,
+                    ),
+                    "group_personal_candidate_limit": self._config_int(
+                        "group_personal_candidate_limit", 8,
+                    ),
                     "group_max_active": self._config_int("group_max_active", 200),
                     "group_retention_days": self._config_int("group_retention_days", 90),
                     "group_destroy_backup_retention_days": destroy_backup_retention,
@@ -737,8 +793,24 @@ class WeaveMemoryPlugin(Star):
                     "group_max_memories", 2,
                 ),
             )
+            webui_security = WebUiSecurity(clock)
+            settings_writer = SettingsWriteService(
+                self._load_settings_schema(), writer=self._save_plugin_config,
+            )
+            identity_binding = IdentityBindingService(identity_bindings, clock)
+            self._identity_binding = identity_binding
             management_api = AstrBotManagementApi(
                 management, admin_usernames=api_admin_usernames,
+                group_personal_service=group_personal,
+                group_memory=group_memories,
+                personal_service=memories,
+                extraction_service=extraction,
+                personal_scopes=scopes,
+                identity_binding=identity_binding,
+                settings_writer=settings_writer,
+                security=webui_security,
+                settings_provider=self._settings_snapshot,
+                webui_enabled=lambda: self._config_bool("webui_enabled", True),
             )
             try:
                 registered = management_api.register(self.context)
@@ -761,6 +833,28 @@ class WeaveMemoryPlugin(Star):
         if not self._ready or self._commands is None:
             raise ServiceClosed("memory engine is not ready")
         return self._commands
+
+    def _settings_snapshot(self) -> dict[str, object]:
+        config = self._config
+        if not hasattr(config, "items"):
+            return {}
+        return {str(key): value for key, value in config.items()}
+
+    def _load_settings_schema(self) -> dict[str, object]:
+        path = Path(__file__).with_name("_conf_schema.json")
+        try:
+            return load_schema(str(path))
+        except (OSError, ValueError):
+            return {}
+
+    def _save_plugin_config(self, values: dict[str, object]) -> None:
+        config = self._config
+        save = getattr(config, "save_config", None)
+        if not callable(save) or not hasattr(config, "__setitem__"):
+            raise StorageError("plugin config is not writable in this host")
+        for key, value in values.items():
+            config[key] = value
+        save()
 
     def _group_command_service(self) -> AstrBotGroupCommands:
         if not self._ready or self._group_commands is None:
@@ -920,6 +1014,24 @@ class WeaveMemoryPlugin(Star):
             yield event.plain_result("织忆当前未就绪，请检查插件日志和 SQLite FTS5 支持。")
             return
         yield event.plain_result(self._commands.help())
+
+    @memory.command("绑定")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def memory_bind_console(self, event: AstrMessageEvent):
+        if not self._ready or self._identity_binding is None:
+            yield event.plain_result("织忆当前未就绪，请检查插件日志。")
+            return
+        try:
+            identity = AstrBotIdentityAdapter().resolve_identity(event)
+            payload = self._identity_binding.issue_code(identity)
+            yield event.plain_result(
+                "网页控制台绑定码："
+                f"{payload['code']}\n"
+                f"10 分钟内有效，在织忆控制台填写即可绑定到当前账号；"
+                "绑定后网页只能读写你自己的个人记忆。",
+            )
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(f"绑定失败：{exc}")
 
     @memory.command("授权")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
@@ -1361,16 +1473,33 @@ class WeaveMemoryPlugin(Star):
         except _COMMAND_ERRORS as exc:
             yield event.plain_result(AstrBotGroupCommands._error_text("群导入", exc))
 
+    @memory.command("群个人")
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def memory_group_personal(self, event: AstrMessageEvent, action: str):
+        if not self._ready or self._group_personal_commands is None:
+            yield event.plain_result("织忆当前未就绪，请检查插件日志。")
+            return
+        try:
+            yield event.plain_result(
+                self._group_personal_commands.execute(event, action),
+            )
+        except _COMMAND_ERRORS as exc:
+            yield event.plain_result(
+                AstrBotGroupCommands._error_text("群个人", exc),
+            )
+
     @filter.on_llm_request()
     async def inject_personal_memory(self, event: AstrMessageEvent, req: ProviderRequest):
         """Append only temporary context; never mutate persistent chat history."""
         if not self._ready or self._injector is None:
             return
         try:
-            # Hosts without is_private_chat fall through to the group injector,
-            # which fails closed for personal scopes: no memory is injected.
+            # Personal and Group shared remain separate. Group personal is a
+            # second, independently consent-gated channel and never changes
+            # the shared-group recall contract.
             is_private = getattr(event, "is_private_chat", None)
-            if callable(is_private) and is_private():
+            private_message = bool(callable(is_private) and is_private())
+            if private_message:
                 context = await self._injector.context_for(event)
             elif self._group_injector is not None:
                 context = await self._group_injector.context_for(event)
@@ -1378,6 +1507,15 @@ class WeaveMemoryPlugin(Star):
                 context = None
             if context:
                 req.extra_user_content_parts.append(TextPart(text=context).mark_as_temp())
+            if (
+                not private_message
+                and self._group_personal_injector is not None
+            ):
+                personal_context = await self._group_personal_injector.context_for(event)
+                if personal_context:
+                    req.extra_user_content_parts.append(
+                        TextPart(text=personal_context).mark_as_temp(),
+                    )
         except Exception as exc:  # noqa: BLE001 - injection must never break host chat
             # Any memory-layer or host-API failure is isolated from the chat request.
             logger.warning(f"织忆本轮未注入记忆：{type(exc).__name__}")

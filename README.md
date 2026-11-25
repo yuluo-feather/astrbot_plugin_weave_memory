@@ -33,7 +33,7 @@
 
 ---
 
-织忆是跑在 AstrBot 上的本地记忆引擎。默认开启、可随时关闭：它只记录你明确提到的长期偏好、背景或目标，不会保存完整聊天原文。记忆落在本机 SQLite，检索走 FTS5，回答前把少量相关记忆作为**临时上下文**注入，不写进持久会话历史。个人记忆只属于你，群记忆只属于当前群，两边不互通。
+织忆是跑在 AstrBot 上的本地记忆引擎。默认开启、可随时关闭：它只记录你明确提到的长期偏好、背景或目标，不会保存完整聊天原文。记忆落在本机 SQLite，检索走 FTS5，回答前把少量相关记忆作为**临时上下文**注入，不写进持久会话历史。个人记忆默认只属于本人；群共享记忆属于当前群。V2.4 起，成员可显式授权将非敏感个人记忆用于指定群的本轮回答，群管理员可关闭该群总开关，默认不共享。
 
 ## 🧵 功能特点
 
@@ -47,7 +47,7 @@
 - 🧾 **更新有版本号**：`/织忆 更新` 需要同时提供记忆 ID 与当前 revision，版本不匹配就拒绝覆盖，不静默合并。
 - 🧹 **删除是真的删**：删除/清空先写不含正文的墓碑审计，再物理删除正文与关联数据；应用连接启用 `secure_delete`，并在索引健康后执行 checkpoint + VACUUM。
 - 🛡 **故障隔离**：索引、存储或注入链路出问题时不阻塞宿主聊天；注入失败按「这一轮没有记忆」处理，正文不会因此丢失。
-- 🚧 **边界明确**：后台自动提取当前仍只产候选，不会自动变成用户事实（V1.9 将改为高置信度直写、低置信度候选）。V2.0 混合检索（FTS + 向量 + RRF + Rerank）已接入并默认开启，provider 缺失或失败时自动回退 FTS；WebUI 留给 V2.1。
+- 🚧 **边界明确**：后台自动提取当前仍只产候选，不会自动变成用户事实（V1.9 将改为高置信度直写、低置信度候选）。V2.0 混合检索（FTS + 向量 + RRF + Rerank）已接入并默认开启，provider 缺失或失败时自动回退 FTS；V2.1 WebUI 已接入 AstrBot 插件可视化视图；V2.4 Group personal 已提供群级管理员总开关、成员逐群 opt-in 与敏感内容过滤。
 - 🧾 **检索调试不落原文**：日志记录查询哈希、scope、候选 ID、BM25 分数、过滤原因、最终注入 ID 与 Token 估算，不记录查询原文或记忆正文。
 
 ## 🗂 命令手册
@@ -85,7 +85,34 @@
 | 📝 候选管理 | `/织忆 候选 列表` / `确认 <ID>` / `拒绝 <ID> [原因]` | 候选不参与检索/注入；确认后转 ACTIVE，拒绝记录原因 |
 | 🗃 备份（V1.8） | `/织忆 备份` / `/织忆 备份 列表` | 创建/查看实例级主库快照；备份不含账本，恢复不会复活已删除/撤销授权内容 |
 | ♻️ 备份恢复（V1.8） | `/织忆 备份恢复 <备份ID> [merge\|revert\|disaster-rebuild] 确认` | 不带“确认”为 dry-run；仅管理员（宿主 `is_admin` 或 `command_admin_ids` 名单） |
+| 🔗 控制台绑定（V2.4） | `/织忆 绑定` | 私聊生成 6 位一次性绑定码（10 分钟），用于把 Dashboard 账号绑定到当前平台身份 |
 | ❓ 帮助 | `/织忆 帮助` | 查看个人记忆命令说明 |
+
+### 群内个人记忆（V2.4，默认关闭）
+
+| 功能 | 命令 | 权限 |
+|------|------|------|
+| 🟢 群个人开启 | `/织忆 群个人 开启` | 群管理员；开启本群总开关，不代表成员已授权 |
+| 🔴 群个人关闭 | `/织忆 群个人 关闭` | 群管理员；立即停止本群所有个人记忆注入 |
+| 🪪 群个人授权 | `/织忆 群个人 授权` | 成员本人；先在私聊启用个人记忆，再在目标群授权 |
+| 🚫 群个人撤销 | `/织忆 群个人 撤销` | 成员本人；只撤销当前群授权 |
+| 📊 群个人状态 | `/织忆 群个人 状态` | 群成员；查看群总开关与本人授权状态 |
+
+- 群总开关与成员 opt-in 必须同时开启；Personal 默认登记不会自动授予 Group personal。
+- 群管理员重新开启本群时会递增 epoch，旧的成员 opt-in 全部失效，需要成员重新授权。
+- 全局配置 `group_personal_enabled=false` 是所有群的 kill switch。
+- 个人记忆仍归原用户所有，不复制成群共享记忆；注入只发生在该用户发言对应的本轮群聊请求。
+- 凭据、住址、身份号码、健康与财务等命中规则的敏感内容默认不进入群上下文；分类失败按 UNKNOWN 拒绝注入。当前为规则过滤，不能保证识别所有隐含表达。
+- 网页端代成员授权/撤销不开放；个人 scope 只对已绑定账号开放读写。
+- 群级关闭和个人撤销立即停止注入，不删除 Personal 原始记忆。
+
+### 管理视图（V2.1 可写控制台）
+
+AstrBot 4.29.4 插件详情页新增「织忆控制台」：总览、记忆浏览（含回收站）、历史、来源、检索调试、设置与维护六页，V2.4 追加「群个人与绑定」页。前端为 Vue 3 + Vite + Vuetify，产物在 `pages/weave-memory/`，通过 `AstrBotPluginView` bridge 调用 `v1/...` 端点，不读取 Dashboard Cookie 或浏览器存储。
+
+写操作只开放群作用域：新建、编辑（新 revision，乐观锁）、软删除、恢复、彻底删除；Settings 可写但密钥类只读，重要项需一次性确认；备份/恢复/重建索引与全部写端点要求非空 `api_admin_usernames` 白名单，并校验 CSRF token，危险操作另需一次性 nonce。
+
+个人作用域只在 V2.4 开放给已绑定账号：先私聊发送 `/织忆 绑定` 获取 6 位绑定码，在控制台完成绑定后，才能查看、编辑、软删除/恢复自己的个人记忆与确认候选；管理员不能查看他人个人记忆。未绑定一律拒绝。
 
 ### 群共享记忆（仅群聊生效，V1.1）
 
@@ -121,17 +148,26 @@
 | `GET /v1/memories`、`GET /v1/memories/<id>` | 群作用域 ACTIVE 记忆分页与详情 |
 | `GET /v1/memories/<id>/history` | 版本与来源 |
 | `GET /v1/groups` | 群列表（enabled、管理员来源、ACTIVE 计数） |
+| `GET /v1/group-personal/status` | 群内个人记忆群级总开关状态（不暴露成员个人授权） |
 | `POST /v1/retrieval/debug` | 只读检索调试：候选 ID/评分/过滤原因、最终注入 ID、Token 估算 |
 | `GET /v1/settings`、`GET /v1/maintenance/status` | 只读配置与维护状态 |
 | `GET /v1/export` | V1.7 群导出；`all=1` 附带其他状态元数据 |
 | `POST /v1/import` | V1.7 群导入；body 为 v2 导出 JSON，`dry_run=1` 只预演 |
+| `GET /v1/maintenance/backups` | V2.1 备份列表；要求 `api_admin_usernames` 非空且命中 |
 | `POST /v1/maintenance/backup` | V1.8 创建实例备份；要求 `confirm=true` |
 | `POST /v1/maintenance/restore` | V1.8 恢复；body `{backup_id, mode, confirm}`，`dry_run=true` 只输出将复活/不会复活清单 |
 | `POST /v1/maintenance/reindex` | V1.8 重建 FTS；要求 `confirm=true` |
+| `GET /v1/webui/capabilities` | 控制台能力：是否管理员、是否可写、是否已绑定 |
+| `GET /v1/ui/csrf`、`POST /v1/ui/nonce` | V2.1 写保护：5 分钟 CSRF token；危险操作一次性 nonce（2 分钟） |
+| `POST /v1/memories`、`/<id>/update\|archive\|restore\|purge` | V2.1 群作用域写端点；写响应 `{item, revision, audit_id}` |
+| `GET /v1/archived-memories`、`/<id>/operations` | 回收站与单条记忆审计 |
+| `POST /v1/settings` | 经白名单校验的设置写入；密钥类拒绝，重要项需 nonce |
+| `GET/POST /v1/webui/binding`、`/binding/unbind` | V2.4 Dashboard 账号与平台身份绑定 |
+| `/v1/personal/memories*`、`/v1/personal/candidates*` | V2.4 个人 scope 读写与候选确认；仅限已绑定本人 |
 
-- 只读端点要求 dashboard 登录用户名；配置 `api_admin_usernames` 后只允许名单内用户。
+- 只读端点要求 dashboard 登录用户名；配置 `api_admin_usernames` 后只允许名单内用户。由于 AstrBot Dashboard username 无法映射为目标群成员，部署时建议配置非空白名单，限制群共享记忆正文读取。
 - `GET /v1/export` 与 `POST /v1/import` 是 V1.7 的管理 API 写/读正文入口：必须显式配置非空 `api_admin_usernames` 且用户命中（fail-closed），只支持群作用域，要求群 `enabled=1` 且 `group_memory=GRANTED`；个人 scope 一律拒绝。
-- `POST /v1/maintenance/backup|restore|reindex` 是 V1.8 的实例级维护入口：同样要求非空 `api_admin_usernames` 与 `confirm=true`；备份/恢复在写租约内完成。
+- `GET /v1/maintenance/backups` 与 `POST /v1/maintenance/backup|restore|reindex` 是管理员维护入口：要求非空 `api_admin_usernames` 且用户名命中；备份/恢复在写租约内完成，恢复先 dry-run 再 confirm。
 - 群作用域只读端点同样要求 `enabled=1` 且 `group_memory=GRANTED`；个人正文不经 API。
 - 检索调试不返回正文、不更新访问时间、不写诊断；候选确认/拒绝与群开关仍走命令。
 - 部署者带外工具：`python scripts/weave_admin.py candidates|expire-candidates|maintenance-status ...`。
@@ -288,3 +324,10 @@ V1.4/V1.5 的评测数据与 Harness 在开发侧维护，不随插件分发。G
 - 觉得有用？来 [GitHub](https://github.com/yuluo-feather/astrbot_plugin_weave_memory) 点个 ⭐
 - 遇到问题或想提需求？欢迎提交 [Issue](https://github.com/yuluo-feather/astrbot_plugin_weave_memory/issues) 或 Pull Request
 - **致谢**：AstrBot 框架、SQLite FTS5，以及每一位愿意把记忆交给本机保管的你。
+
+## 📚 开发与版本计划
+
+- [计划书索引](docs/plans/README.md)：V2.1「织纹」、V2.4「同心」专项计划与历史版本计划。
+- [三家记忆插件调研](docs/research/三家记忆插件调研记录.md)：仅作架构/产品参考，不复用竞品代码。
+- [AstrBot 4.29.4 插件视图核对](docs/research/AstrBot_4.29.4_插件视图与API核对.md)：宿主 bridge、路由与身份边界。
+- [本轮交接记录](HANDOFF_20261125_V2.1_V2.4.md)：变更、测试、未完成项和烟测状态。

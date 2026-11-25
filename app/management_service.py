@@ -125,6 +125,18 @@ class ManagementService:
             raise AuthorizationDenied("group memory is disabled")
         return scope
 
+    def group_scope_for(self, identity: Identity) -> Scope:
+        """Public GROUP-scope resolver used by the V2.1 write surface."""
+        if identity.scope_type is not ScopeType.GROUP:
+            raise ValidationError("management API only exposes GROUP scope")
+        return self._group_scope(
+            identity.platform, identity.tenant_id, identity.scope_external_id,
+        )
+
+    def memory_view(self, memory: MemoryEntity) -> dict[str, object]:
+        """Public projection of one memory; never adds fields the UI must hide."""
+        return self._memory_view(memory)
+
     @staticmethod
     def _page(limit: object, cursor: object) -> tuple[int, int]:
         page_size = _integer(limit, name="limit", default=20, minimum=1, maximum=100)

@@ -70,7 +70,7 @@ _TABLES = (
     "memory_scopes", "memories", "memory_revisions", "memory_sources",
     "memory_tags", "memory_relations", "memory_consents", "memory_operations",
     "memory_meta", "memory_lineage_meta", "extraction_jobs", "import_jobs",
-    "provider_call_audit",
+    "provider_call_audit", "group_personal_policies", "memory_sensitivity",
 )
 
 _MEMORY_COLUMNS_V9 = (
@@ -110,6 +110,10 @@ _OPERATION_COLUMNS = (
     "id", "scope_id", "memory_id", "operation_type", "operator_type",
     "operator_id", "occurred_at", "metadata_json",
 )
+_POLICY_COLUMNS = (
+    "scope_id", "enabled", "epoch", "updated_at", "updated_by",
+)
+_SENSITIVITY_COLUMNS = ("memory_id", "category", "source", "decided_at")
 
 _SENSITIVE_KEY_PARTS = (
     "token", "api_key", "apikey", "password", "secret", "credential",
@@ -377,7 +381,7 @@ class BackupService:
         if main_path.stat().st_size != int(manifest.get("size", -1)):
             raise StorageError("backup snapshot size does not match sidecar")
         self._verify_file(main_path)
-        if self._schema_version(main_path) not in (9, 10):
+        if self._schema_version(main_path) not in (9, 10, 11, 13):
             raise StorageError("backup schema version is not supported")
         ledger_store = self._ledger.ledger
         coverage = ledger_store.coverage_report()
@@ -998,6 +1002,18 @@ class BackupService:
                   AND c.consent_type=b.consent_type)
                 AND b.scope_id NOT IN (SELECT id FROM restore_excluded_scopes)""",
         )
+        if snapshot_schema >= 13:
+            tx.execute(
+                _insert_select("group_personal_policies", _POLICY_COLUMNS)
+                + """ WHERE NOT EXISTS (
+                    SELECT 1 FROM group_personal_policies p WHERE p.scope_id=b.scope_id)
+                    AND b.scope_id NOT IN (SELECT id FROM restore_excluded_scopes)""",
+            )
+            tx.execute(
+                _insert_select("memory_sensitivity", _SENSITIVITY_COLUMNS,
+                               or_ignore=True)
+                + " WHERE b.memory_id NOT IN (SELECT id FROM restore_excluded_memories)",
+            )
         tx.execute(
             _insert_select("memory_operations", _OPERATION_COLUMNS,
                            or_ignore=True)
@@ -1011,6 +1027,7 @@ class BackupService:
             "memory_relations", "memory_tags", "memory_sources",
             "memory_revisions", "memories", "memory_consents",
             "memory_operations", "import_jobs", "extraction_jobs",
+            "memory_sensitivity", "group_personal_policies",
             "memory_scopes",
         ):
             tx.execute(f"DELETE FROM {table}")
@@ -1076,6 +1093,15 @@ class BackupService:
             _insert_select("memory_consents", _CONSENT_COLUMNS)
             + " WHERE b.scope_id NOT IN (SELECT id FROM restore_excluded_scopes)",
         )
+        if snapshot_schema >= 13:
+            tx.execute(
+                _insert_select("group_personal_policies", _POLICY_COLUMNS)
+                + " WHERE b.scope_id NOT IN (SELECT id FROM restore_excluded_scopes)",
+            )
+            tx.execute(
+                _insert_select("memory_sensitivity", _SENSITIVITY_COLUMNS)
+                + " WHERE b.memory_id NOT IN (SELECT id FROM restore_excluded_memories)",
+            )
         tx.execute(
             _insert_select("memory_operations", _OPERATION_COLUMNS)
             + " WHERE b.scope_id NOT IN (SELECT id FROM restore_excluded_scopes)",

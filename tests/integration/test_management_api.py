@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 
 from data.plugins.astrbot_plugin_weave_memory.adapters.astrbot.web_api import (
     AstrBotManagementApi,
 )
+from data.plugins.astrbot_plugin_weave_memory.app.webui_security import WebUiSecurity
 from data.plugins.astrbot_plugin_weave_memory.core.errors import (
     NotFound,
     StorageError,
     ValidationError,
 )
+
+
+class FakeClock:
+    def now(self) -> datetime:
+        return datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
 
 
 class FakeRequest:
@@ -84,6 +91,10 @@ class FakeService:
         self.calls.append(("import_group_payload", kwargs))
         return {"imported": 0, "total": 0}
 
+    def list_backups(self):
+        self.calls.append(("list_backups", {}))
+        return {"items": [{"backup_id": "b1"}]}
+
     def create_backup(self):
         self.calls.append(("create_backup", {}))
         return {"backup_id": "b1"}
@@ -97,12 +108,30 @@ class FakeService:
         return {"rebuilt": True, "documents": 1}
 
 
+class FakeGroupPersonal:
+    def group_enabled(self, identity):
+        return identity.scope_external_id == "g-enabled"
+
+
 def make_api(*, username="admin", query=None, body=None,
-             admin_usernames=()):
-    request = FakeRequest(username=username, query=query, body=body)
+             admin_usernames=(), group_personal_service=None,
+             nonce_for=None, csrf=True):
+    request_body = dict(body or {})
+    security = WebUiSecurity(FakeClock())
+    if csrf:
+        token = security.issue_token(username or "")["csrf_token"]
+        request_body.setdefault("csrf_token", token)
+    if nonce_for is not None:
+        action, target = nonce_for
+        request_body["nonce"] = security.issue_nonce(
+            username or "", action=action, target=target,
+        )["nonce"]
+    request = FakeRequest(username=username, query=query, body=request_body)
     service = FakeService()
     api = AstrBotManagementApi(
         service, admin_usernames=admin_usernames,
+        group_personal_service=group_personal_service,
+        security=security,
         request_provider=lambda: request,
     )
     return api, service
@@ -112,7 +141,7 @@ def test_register_all_management_routes():
     api, _ = make_api()
     context = FakeContext()
     assert api.register(context) is True
-    assert len(context.routes) == 14
+    assert len(context.routes) == 39
     routes = {route: methods for route, _, methods, _ in context.routes}
     assert routes["/astrbot_plugin_weave_memory/v1/overview"] == ["GET"]
     assert routes["/astrbot_plugin_weave_memory/v1/retrieval/debug"] == ["POST"]
@@ -156,7 +185,7 @@ def test_admin_export_and_import_reach_service():
 
     api, service = make_api(
         username="admin", query=query, admin_usernames=("admin",),
-        body={"memories": []},
+        body={"memories": []}, csrf=False,
     )
     result = asyncio.run(api.h_import())
     assert result["status"] == "ok"
@@ -296,6 +325,7 @@ def test_maintenance_restore_dry_run_and_confirm():
     api, service = make_api(
         username="admin", admin_usernames=("admin",),
         body={"backup_id": "b1", "mode": "revert", "confirm": True},
+        nonce_for=("restore", "b1"),
     )
     assert asyncio.run(api.h_maintenance_restore())["status"] == "ok"
     assert service.calls[-1][1]["mode"] == "revert"
@@ -314,3 +344,36 @@ def test_maintenance_reindex_requires_confirm():
     assert asyncio.run(api.h_maintenance_reindex())["data"] == {
         "rebuilt": True, "documents": 1,
     }
+
+
+def test_group_personal_status_only_exposes_group_switch():
+    api, service = make_api(
+        query={"platform": "astrbot", "tenant_id": "t1", "group_id": "g-enabled"},
+        group_personal_service=FakeGroupPersonal(),
+    )
+    result = asyncio.run(api.h_group_personal_status())
+    assert result["status"] == "ok"
+    assert result["data"]["group_enabled"] is True
+    assert result["data"]["member_opt_in_required"] is True
+    assert "user_opted_in" not in result["data"]
+
+    api, _ = make_api(
+        query={"scope": "PERSONAL", "platform": "astrbot", "tenant_id": "t1", "group_id": "g-enabled"},
+        group_personal_service=FakeGroupPersonal(),
+    )
+    payload, status = asyncio.run(api.h_group_personal_status())
+    assert status == 403
+    assert payload["error"] == "AuthorizationDenied"
+
+
+def test_backup_list_requires_explicit_admin_whitelist():
+    api, service = make_api(username="admin")
+    payload, status = asyncio.run(api.h_maintenance_backups())
+    assert status == 403
+    assert service.calls == []
+
+    api, service = make_api(username="admin", admin_usernames=("admin",))
+    result = asyncio.run(api.h_maintenance_backups())
+    assert result["status"] == "ok"
+    assert result["data"]["items"][0]["backup_id"] == "b1"
+    assert service.calls == [("list_backups", {})]

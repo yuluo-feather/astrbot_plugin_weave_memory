@@ -589,7 +589,7 @@ def test_export_and_import_share_schema_version(personal_stack):
 def test_v8_migration_creates_import_jobs_and_rolls_back(tmp_path):
     db = SQLiteDatabase(tmp_path / "v8.db")
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     tables = {
         row[0] for row in db.connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table'",
@@ -612,7 +612,7 @@ def test_v8_migration_creates_import_jobs_and_rolls_back(tmp_path):
     }
     assert "import_jobs" not in tables
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     db.close()
 
 
@@ -635,5 +635,5 @@ def test_v8_rollback_is_refused_while_jobs_exist(tmp_path):
     )
     with pytest.raises(StorageError):
         db.rollback_to_v7()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     db.close()

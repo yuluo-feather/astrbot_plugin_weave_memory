@@ -216,14 +216,14 @@ def test_group_backup_destroy_and_rollback_path(tmp_path):
     db.rollback_v1_to_v05()
     assert db.schema_version() == 4
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     db.close()
 
 
 def test_migration_is_idempotent_and_creates_required_tables(sqlite_stack):
     db, _, _, _ = sqlite_stack
     assert db.connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     db.migrate()
     tables = {row[0] for row in db.connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
@@ -340,7 +340,7 @@ def test_schema_can_roll_back_to_empty_and_reapply(tmp_path):
     db.rollback_to_zero()
     assert db.connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='memories'").fetchone()[0] == 0
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     db.close()
 
 
@@ -355,7 +355,7 @@ def test_backup_to_leaves_a_single_self_contained_file(tmp_path):
         assert not Path(f"{target}-shm").exists()
         check = sqlite3.connect(str(target))
         try:
-            assert check.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 10
+            assert check.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 12
             assert check.execute("PRAGMA journal_mode").fetchone()[0].lower() == "delete"
         finally:
             check.close()
@@ -514,7 +514,7 @@ def test_v3_database_upgrades_to_v5_group_scopes(tmp_path):
     db.rollback_to_v05()
     assert db.schema_version() == 3
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     assert db.connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_relations'",
     ).fetchone() is not None
@@ -541,7 +541,7 @@ def test_v4_to_v5_migration_creates_pre_upgrade_backup(tmp_path):
     assert backup_path is not None
     assert backup_path.exists()
     assert backup_path.parent.name == "migration_backups"
-    assert upgraded.schema_version() == 10
+    assert upgraded.schema_version() == 13
     assert upgraded.connection.execute(
         "SELECT content FROM memories WHERE id='mem-backup'",
     ).fetchone()[0] == "迁移前必须保留"
@@ -624,7 +624,7 @@ def test_v1_schema_rolls_back_to_v05_only_when_reserved_relations_empty(tmp_path
         "SELECT content FROM memories WHERE id=?", (existing.id,),
     ).fetchone()[0] == "回滚后保留"
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     assert store.get(existing.id, scope_id=scope.id, subject_id="u1") == existing
     db.rollback_to_v5()
     db.rollback_v1_to_v05()

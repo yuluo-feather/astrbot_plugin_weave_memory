@@ -30,7 +30,11 @@ class ExtractionConsentType(StrEnum):
     SENSITIVE_CATEGORIES = "extraction_sensitive_categories"
 
 
-ConsentType = PersonalConsentType | GroupConsentType | ExtractionConsentType
+ConsentType = PersonalConsentType | GroupConsentType | ExtractionConsentType | str
+
+
+def _consent_type_value(consent_type: ConsentType) -> str:
+    return consent_type.value if isinstance(consent_type, StrEnum) else str(consent_type)
 
 
 class ConsentService:
@@ -45,18 +49,20 @@ class ConsentService:
               operator_id: str, source: str = "explicit_user_command",
               allow_disabled_scope: bool = False,
               metadata: Mapping[str, object] | None = None,
-              ledger_source: str = "user") -> MemoryConsent:
+              ledger_source: str = "user",
+              subject_id: str | None = None) -> MemoryConsent:
         now = self._clock.now()
+        consent_subject_id = subject_id or scope.identity.subject_id
         event_metadata: dict[str, object] = {"operator_id": operator_id}
         if metadata:
             event_metadata.update(metadata)
         consent = MemoryConsent(
-            id=self._ids.new_id("consent"), subject_id=scope.identity.subject_id,
-            scope_id=scope.id, consent_type=consent_type.value,
+            id=self._ids.new_id("consent"), subject_id=consent_subject_id,
+            scope_id=scope.id, consent_type=_consent_type_value(consent_type),
             state=ConsentState.GRANTED, source=source, granted_at=now,
             metadata=event_metadata,
         )
-        previous = self.current(scope, consent_type)
+        previous = self.current(scope, consent_type, subject_id=consent_subject_id)
         self._coordinator.run_metadata_serialized(
             lambda: self._repository.record(
                 consent, allow_disabled_grant=allow_disabled_scope,
@@ -68,7 +74,7 @@ class ConsentService:
                 ),
             ),
             source=ledger_source, occurred_at=now,
-            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            scope_id=scope.id, subject_id=consent_subject_id,
         )
         return consent
 
@@ -82,7 +88,7 @@ class ConsentService:
         now = self._clock.now()
         consent = MemoryConsent(
             id=self._ids.new_id("consent"), subject_id=scope.identity.subject_id,
-            scope_id=scope.id, consent_type=consent_type.value,
+            scope_id=scope.id, consent_type=_consent_type_value(consent_type),
             state=ConsentState.GRANTED, source="auto_enroll", granted_at=now,
             metadata={"operator_id": operator_id, "auto_enrolled": True},
         )
@@ -90,7 +96,7 @@ class ConsentService:
         def operation() -> bool:
             history = self._repository.history(
                 subject_id=scope.identity.subject_id, scope_id=scope.id,
-                consent_type=consent_type.value,
+                consent_type=_consent_type_value(consent_type),
             )
             if history:
                 return False
@@ -110,15 +116,17 @@ class ConsentService:
 
     def revoke(self, scope: Scope, consent_type: ConsentType, *,
                operator_id: str, source: str = "explicit_user_command",
-               ledger_source: str = "user") -> MemoryConsent:
+               ledger_source: str = "user",
+               subject_id: str | None = None) -> MemoryConsent:
         now = self._clock.now()
+        consent_subject_id = subject_id or scope.identity.subject_id
         consent = MemoryConsent(
-            id=self._ids.new_id("consent"), subject_id=scope.identity.subject_id,
-            scope_id=scope.id, consent_type=consent_type.value,
+            id=self._ids.new_id("consent"), subject_id=consent_subject_id,
+            scope_id=scope.id, consent_type=_consent_type_value(consent_type),
             state=ConsentState.REVOKED, source=source, revoked_at=now,
             metadata={"operator_id": operator_id},
         )
-        previous = self.current(scope, consent_type)
+        previous = self.current(scope, consent_type, subject_id=consent_subject_id)
         self._coordinator.run_metadata_serialized(
             lambda: self._repository.record(consent),
             ledger_event_type=LedgerEventType.CONSENT_CHANGE,
@@ -128,7 +136,7 @@ class ConsentService:
                 ),
             ),
             source=ledger_source, occurred_at=now,
-            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            scope_id=scope.id, subject_id=consent_subject_id,
         )
         return consent
 
@@ -148,16 +156,18 @@ class ConsentService:
             "metadata": dict(consent.metadata),
         }
 
-    def is_granted(self, scope: Scope, consent_type: ConsentType) -> bool:
+    def is_granted(self, scope: Scope, consent_type: ConsentType, *,
+                   subject_id: str | None = None) -> bool:
         return self._repository.is_granted(
-            subject_id=scope.identity.subject_id, scope_id=scope.id,
-            consent_type=consent_type.value,
+            subject_id=subject_id or scope.identity.subject_id, scope_id=scope.id,
+            consent_type=_consent_type_value(consent_type),
         )
 
-    def current(self, scope: Scope, consent_type: ConsentType) -> MemoryConsent | None:
+    def current(self, scope: Scope, consent_type: ConsentType, *,
+                subject_id: str | None = None) -> MemoryConsent | None:
         return self._repository.current(
-            subject_id=scope.identity.subject_id, scope_id=scope.id,
-            consent_type=consent_type.value,
+            subject_id=subject_id or scope.identity.subject_id, scope_id=scope.id,
+            consent_type=_consent_type_value(consent_type),
         )
 
     def sensitive_categories(self, scope: Scope) -> tuple[str, ...]:
@@ -169,12 +179,14 @@ class ConsentService:
             return ()
         return tuple(str(item) for item in raw if isinstance(item, str) and item.strip())
 
-    def require(self, scope: Scope, consent_type: ConsentType) -> None:
+    def require(self, scope: Scope, consent_type: ConsentType, *,
+                subject_id: str | None = None) -> None:
+        consent_subject_id = subject_id or scope.identity.subject_id
         events = self._repository.history(
-            subject_id=scope.identity.subject_id, scope_id=scope.id,
-            consent_type=consent_type.value,
+            subject_id=consent_subject_id, scope_id=scope.id,
+            consent_type=_consent_type_value(consent_type),
         )
         ConsentPolicy(events).require(
-            subject_id=scope.identity.subject_id, scope_id=scope.id,
-            consent_type=consent_type.value,
+            subject_id=consent_subject_id, scope_id=scope.id,
+            consent_type=_consent_type_value(consent_type),
         )

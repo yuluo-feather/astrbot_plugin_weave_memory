@@ -444,7 +444,7 @@
       "type": "string"
     },
     "default": [],
-    "hint": "为空表示任意 dashboard 登录用户可读实例级管理端点；非空时只允许名单内用户名。V1.7 的 GET /v1/export 与 POST /v1/import、V1.8 的 maintenance/backup|restore|reindex 要求非空名单且用户名命中（fail-closed）。"
+    "hint": "为空表示任意 Dashboard 登录用户可读实例级只读端点；非空时只允许名单内用户名。V1.7 export/import、V2.1 maintenance/backups 与 V1.8 maintenance/backup|restore|reindex 要求非空名单且用户名命中（fail-closed）。由于 Dashboard 用户名不等于平台群成员，建议配置非空名单。"
   },
   "ledger_first_enabled": {
     "description": "启用 V1.8 ledger-first 删除/清空/consent 协议与备份恢复",
@@ -665,5 +665,35 @@
     "type": "bool",
     "default": false,
     "hint": "默认关闭。启用后会写入经常见邮箱、手机号和长数字串脱敏的查询文本；脱敏不能保证识别所有个人信息，请仅在受控环境临时启用。保留期由 recall_diagnostics_retention_days 控制。"
+  },
+  "group_personal_max_tokens": {
+    "description": "群内个人记忆注入 Token 预算（估算值）",
+    "type": "int",
+    "default": 128,
+    "hint": "仅对群总开关开启且当前发言者逐群 opt-in 的 Personal 记忆生效；默认 128，建议不超过 256。"
+  },
+  "group_personal_max_memories": {
+    "description": "群内个人记忆注入最大条数",
+    "type": "int",
+    "default": 2,
+    "hint": "每轮群聊最多注入当前发言者的个人记忆条数；设为 0 表示关闭该注入通道。"
+  },
+  "group_personal_candidate_limit": {
+    "description": "群内个人记忆检索候选上限",
+    "type": "int",
+    "default": 8,
+    "hint": "每轮群聊最多参与敏感过滤与预算选择的个人候选数；范围 1–50。"
+  },
+  "webui_enabled": {
+    "description": "启用 WebUI 写操作（V2.1）",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后退回 V2.0 行为：管理 API 只保留只读端点，所有写端点返回 403；已保存数据不受影响。"
+  },
+  "group_personal_enabled": {
+    "description": "群内个人记忆全局开关（V2.4 kill switch）",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后所有群的 Group personal 注入立即为 0，即使群管理员已开启总开关；重新开启不会恢复旧的成员 opt-in（epoch 已递增）。"
   }
 }

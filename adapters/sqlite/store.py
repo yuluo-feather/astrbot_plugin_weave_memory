@@ -768,6 +768,56 @@ class SQLiteMemoryStore:
             raise StorageError("could not list active memory page") from exc
         return tuple(self._row_to_memory(row) for row in rows), int(total_row["total"])
 
+    def list_archived_page(
+        self, *, scope_id: str, subject_id: str, limit: int, offset: int,
+    ) -> tuple[tuple[MemoryEntity, ...], int]:
+        """Read one bounded page of ARCHIVED memory for the WebUI recycle bin."""
+        try:
+            with self.db.transaction(immediate=False) as conn:
+                total_row = conn.execute(
+                    """SELECT count(*) AS total FROM memories m
+                    JOIN memory_scopes s ON s.id=m.scope_id
+                    WHERE m.scope_id=? AND m.subject_id=? AND m.status='ARCHIVED'
+                      AND s.is_enabled=1""",
+                    (scope_id, subject_id),
+                ).fetchone()
+                rows = conn.execute(
+                    """SELECT m.* FROM memories m
+                    JOIN memory_scopes s ON s.id=m.scope_id
+                    WHERE m.scope_id=? AND m.subject_id=? AND m.status='ARCHIVED'
+                      AND s.is_enabled=1
+                    ORDER BY m.archived_at DESC, m.id LIMIT ? OFFSET ?""",
+                    (scope_id, subject_id, limit, offset),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not list archived memory page") from exc
+        return tuple(self._row_to_memory(row) for row in rows), int(total_row["total"])
+
+    def list_operations_for_memory(
+        self, memory_id: str, *, scope_id: str, limit: int = 20,
+    ) -> tuple[dict[str, object], ...]:
+        """Read the audit trail of one memory; bodies are never stored here."""
+        try:
+            rows = self.db.connection.execute(
+                """SELECT id, memory_id, operation_type, operator_type, operator_id,
+                occurred_at, metadata_json
+                FROM memory_operations
+                WHERE scope_id=? AND memory_id=?
+                ORDER BY rowid DESC LIMIT ?""",
+                (scope_id, memory_id, limit),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError("could not read memory operations") from exc
+        return tuple({
+            "audit_id": row["id"],
+            "memory_id": row["memory_id"],
+            "operation_type": row["operation_type"],
+            "operator_type": row["operator_type"],
+            "operator_id": row["operator_id"],
+            "occurred_at": row["occurred_at"],
+            "metadata": _json_load(row["metadata_json"]),
+        } for row in rows)
+
     def list_revisions(
         self, memory_id: str, *, scope_id: str, subject_id: str,
     ) -> tuple[MemoryRevision, ...]:

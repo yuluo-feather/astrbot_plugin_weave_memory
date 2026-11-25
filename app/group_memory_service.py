@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
+from datetime import datetime
 
-from ..core.errors import AuthorizationDenied, ValidationError
+from ..core.errors import AuthorizationDenied, Conflict, StorageError, ValidationError
 from ..core.model import (
     AdminDecision,
     MemoryEntity,
+    MemoryOperation,
     MemoryRevision,
     MemorySource,
     MemoryStatus,
@@ -21,7 +24,8 @@ from ..core.normalization import normalize_content
 from ..core.ports import Clock, IdGenerator, MemoryStore, ScopeStore
 from .consent_service import ConsentService, GroupConsentType
 from .export import EXPORTED_STATUSES, build_export
-from .write_coordinator import WriteCoordinator, WriteReceipt
+from .lifecycle_service import LifecycleService
+from .write_coordinator import OperationReceipt, WriteCoordinator, WriteReceipt
 
 _GROUP_TYPES: dict[str, MemoryType] = {
     "topic": MemoryType.FACT,
@@ -57,7 +61,8 @@ class GroupMemoryService:
     def __init__(self, store: MemoryStore, scopes: ScopeStore,
                  coordinator: WriteCoordinator, consent: ConsentService,
                  clock: Clock, ids: IdGenerator, *,
-                 max_active: int = 200) -> None:
+                 max_active: int = 200,
+                 lifecycle: LifecycleService | None = None) -> None:
         self._store = store
         self._scopes = scopes
         self._coordinator = coordinator
@@ -65,6 +70,7 @@ class GroupMemoryService:
         self._clock = clock
         self._ids = ids
         self._max_active = max_active
+        self._lifecycle = lifecycle
 
     @staticmethod
     def _require_group(scope: Scope) -> None:
@@ -169,3 +175,191 @@ class GroupMemoryService:
         return len(self._store.list_active(
             scope_id=scope.id, subject_id=scope.identity.subject_id,
         )) >= self._max_active
+
+    # ---- V2.1 writable console (GROUP scope only, ADR-0031) ----
+
+    def _require_writable(self, scope: Scope, decision: AdminDecision) -> None:
+        self._require_group(scope)
+        if not decision.allowed:
+            raise AuthorizationDenied("group write requires an administrator")
+        self._consent.require(scope, GroupConsentType.GROUP_MEMORY)
+        if not self._scopes.is_scope_enabled(scope.id):
+            raise AuthorizationDenied("group memory is disabled")
+
+    def _write_guard(self, scope: Scope) -> Callable[[], None]:
+        def guard() -> None:
+            self._consent.require(scope, GroupConsentType.GROUP_MEMORY)
+            if not self._scopes.is_scope_enabled(scope.id):
+                raise AuthorizationDenied("group memory is disabled")
+        return guard
+
+    def _require_lifecycle(self) -> LifecycleService:
+        if self._lifecycle is None:
+            raise StorageError("group lifecycle service is unavailable")
+        return self._lifecycle
+
+    async def create_group(self, scope: Scope, content: str, *,
+                           group_label: str, operator_id: str,
+                           decision: AdminDecision,
+                           ) -> tuple[MemoryEntity, WriteReceipt, str]:
+        """Create one group memory and record a WebUI audit row."""
+        saved, receipt = await self.save_group(
+            scope, content, group_label=group_label,
+            operator_id=operator_id, decision=decision,
+        )
+        audit_id = self._record_audit(
+            scope, saved.id, "CREATE_MEMORY", operator_id,
+            {"surface": "webui", "group_label": group_label}, self._clock.now(),
+        )
+        return saved, receipt, audit_id
+
+    async def update_group(self, scope: Scope, memory_id: str, content: str, *,
+                           expected_revision: int, operator_id: str,
+                           decision: AdminDecision,
+                           ) -> tuple[MemoryEntity, WriteReceipt, str]:
+        self._require_writable(scope, decision)
+        if expected_revision < 1:
+            raise ValidationError("expected_revision must be >= 1")
+        current = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        if current.status is not MemoryStatus.ACTIVE:
+            raise Conflict("only ACTIVE memory can be edited")
+        if current.current_revision != expected_revision:
+            raise Conflict("revision conflict")
+        normalized = normalize_content(content)
+        now = self._clock.now()
+        updated = replace(
+            current, content=content, normalized_content=normalized,
+            current_revision=current.current_revision + 1, updated_at=now,
+        )
+        revision = MemoryRevision(
+            id=self._ids.new_id("revision"), memory_id=memory_id,
+            revision=updated.current_revision, content=content,
+            status=updated.status, changed_at=now,
+            change_reason="group admin edit (webui)",
+            snapshot={"scope_id": scope.id, "subject_id": scope.identity.subject_id,
+                      "memory_type": updated.memory_type.value,
+                      "source_type": updated.source_type.value,
+                      "normalized_content": normalized},
+        )
+        source = MemorySource(
+            id=self._ids.new_id("source"), memory_id=memory_id,
+            source_type=SourceType.MANUAL, operator_type=OperatorType.ADMIN,
+            operator_id=operator_id, captured_at=now,
+        )
+        receipt = await self._coordinator.update(
+            updated, expected_revision=expected_revision,
+            revision=revision, source=source, guard=self._write_guard(scope),
+        )
+        audit_id = self._record_audit(
+            scope, memory_id, "UPDATE_MEMORY", operator_id,
+            {"surface": "webui", "revision": updated.current_revision}, now,
+        )
+        return updated, receipt, audit_id
+
+    async def archive_group(self, scope: Scope, memory_id: str, *,
+                            operator_id: str, decision: AdminDecision,
+                            ) -> tuple[MemoryEntity, str]:
+        self._require_writable(scope, decision)
+        lifecycle = self._require_lifecycle()
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        if memory.status is not MemoryStatus.ACTIVE:
+            raise Conflict("only ACTIVE memory can be archived")
+        now = self._clock.now()
+        operation = MemoryOperation(
+            id=self._ids.new_id("operation"), scope_id=scope.id, memory_id=memory_id,
+            operation_type="ARCHIVE_MEMORY", operator_type=OperatorType.ADMIN,
+            operator_id=operator_id, occurred_at=now,
+            metadata={"archive_reason": "USER_ARCHIVE", "surface": "webui"},
+        )
+        await lifecycle.archive_memory(
+            memory, revision_id=self._ids.new_id("revision"), at=now,
+            reason="group admin archived memory", operator_type=OperatorType.ADMIN,
+            operation=operation,
+        )
+        return memory, operation.id
+
+    async def restore_group(self, scope: Scope, memory_id: str, *,
+                            operator_id: str, decision: AdminDecision,
+                            ) -> tuple[MemoryEntity, str]:
+        self._require_writable(scope, decision)
+        lifecycle = self._require_lifecycle()
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        now = self._clock.now()
+        operation = MemoryOperation(
+            id=self._ids.new_id("operation"), scope_id=scope.id, memory_id=memory_id,
+            operation_type="RESTORE_MEMORY", operator_type=OperatorType.ADMIN,
+            operator_id=operator_id, occurred_at=now,
+            metadata={
+                "archive_reason": (
+                    memory.archive_reason.value
+                    if memory.archive_reason is not None else None
+                ),
+                "surface": "webui",
+            },
+        )
+        await lifecycle.restore_memory(
+            memory, revision_id=self._ids.new_id("revision"), at=now,
+            reason="group admin restored memory", operator_type=OperatorType.ADMIN,
+            operation=operation,
+        )
+        return memory, operation.id
+
+    async def purge_group(self, scope: Scope, memory_id: str, *,
+                          operator_id: str, decision: AdminDecision,
+                          ) -> tuple[str, int]:
+        """Physical purge of one ARCHIVED memory; returns (audit_id, purged)."""
+        self._require_writable(scope, decision)
+        lifecycle = self._require_lifecycle()
+        memory = self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+        if memory.status is not MemoryStatus.ARCHIVED:
+            raise Conflict("only ARCHIVED memory can be purged")
+        now = self._clock.now()
+        operation_id = self._ids.new_id("operation")
+        receipt: OperationReceipt = await lifecycle.purge_memory(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+            operation_id=operation_id, operator_type=OperatorType.ADMIN,
+            operator_id=operator_id, at=now,
+        )
+        return operation_id, receipt.affected_count
+
+    def get_group(self, scope: Scope, memory_id: str) -> MemoryEntity:
+        self._require_readable(scope)
+        return self._store.get(
+            memory_id, scope_id=scope.id, subject_id=scope.identity.subject_id,
+        )
+
+    def list_archived_page(self, scope: Scope, *, limit: int = 20,
+                           offset: int = 0,
+                           ) -> tuple[tuple[MemoryEntity, ...], int]:
+        self._require_readable(scope)
+        return self._store.list_archived_page(
+            scope_id=scope.id, subject_id=scope.identity.subject_id,
+            limit=limit, offset=offset,
+        )
+
+    def list_operations(self, scope: Scope, memory_id: str, *,
+                        limit: int = 20) -> tuple[dict[str, object], ...]:
+        self._require_readable(scope)
+        return self._store.list_operations_for_memory(
+            memory_id, scope_id=scope.id, limit=limit,
+        )
+
+    def _record_audit(self, scope: Scope, memory_id: str | None,
+                      operation_type: str, operator_id: str,
+                      metadata: dict[str, object],
+                      occurred_at: datetime) -> str:
+        audit_id = self._ids.new_id("operation")
+        self._store.record_operation(
+            operation_id=audit_id, scope_id=scope.id, memory_id=memory_id,
+            operation_type=operation_type, operator_type=OperatorType.ADMIN,
+            operator_id=operator_id, occurred_at=occurred_at, metadata=metadata,
+        )
+        return audit_id
