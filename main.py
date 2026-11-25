@@ -640,9 +640,9 @@ class WeaveMemoryPlugin(Star):
             self._group_injector = AstrBotGroupMemoryInjector(
                 group_scopes, consent, group_composer,
             )
-            group_personal_policies = SQLiteGroupPersonalPolicyStore(store, clock)
-            sensitivity_store = SQLiteSensitivityStore(store, clock)
-            identity_bindings = SQLiteIdentityBindingStore(store, clock)
+            group_personal_policies = SQLiteGroupPersonalPolicyStore(self._database, clock)
+            sensitivity_store = SQLiteSensitivityStore(self._database, clock)
+            identity_bindings = SQLiteIdentityBindingStore(self._database, clock)
             group_personal = GroupPersonalService(
                 group_scopes, scopes, consent, group_personal_policies,
                 global_enabled=lambda: self._config_bool(

@@ -77,7 +77,7 @@ export const api = {
   memories: (params: Record<string, unknown>) =>
     apiGet("v1/memories", params) as Promise<{ items: MemoryItem[]; total: number; next_cursor: string | null }>,
   archived: (params: Record<string, unknown>) =>
-    apiGet("v1/memories/archived", params) as Promise<{ items: MemoryItem[]; total: number }>,
+    apiGet("v1/archived-memories", params) as Promise<{ items: MemoryItem[]; total: number }>,
   memory: (id: string, params: Record<string, unknown>) =>
     apiGet(`v1/memories/${encodeURIComponent(id)}`, params) as Promise<MemoryItem>,
   history: (id: string, params: Record<string, unknown>) =>

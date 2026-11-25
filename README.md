@@ -160,7 +160,7 @@ AstrBot 4.29.4 插件详情页新增「织忆控制台」：总览、记忆浏�
 | `GET /v1/webui/capabilities` | 控制台能力：是否管理员、是否可写、是否已绑定 |
 | `GET /v1/ui/csrf`、`POST /v1/ui/nonce` | V2.1 写保护：5 分钟 CSRF token；危险操作一次性 nonce（2 分钟） |
 | `POST /v1/memories`、`/<id>/update\|archive\|restore\|purge` | V2.1 群作用域写端点；写响应 `{item, revision, audit_id}` |
-| `GET /v1/memories/archived`、`/<id>/operations` | 回收站与单条记忆审计 |
+| `GET /v1/archived-memories`、`/<id>/operations` | 回收站与单条记忆审计 |
 | `POST /v1/settings` | 经白名单校验的设置写入；密钥类拒绝，重要项需 nonce |
 | `GET/POST /v1/webui/binding`、`/binding/unbind` | V2.4 Dashboard 账号与平台身份绑定 |
 | `/v1/personal/memories*`、`/v1/personal/candidates*` | V2.4 个人 scope 读写与候选确认；仅限已绑定本人 |

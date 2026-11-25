@@ -233,6 +233,16 @@ def test_plugin_registers_without_management_api_support(monkeypatch, tmp_path):
     asyncio.run(plugin.terminate())
 
 
+def test_plugin_wires_webui_state_stores_to_the_database(monkeypatch, tmp_path):
+    """Regression: webui stores take SQLiteDatabase, not SQLiteMemoryStore."""
+    import asyncio
+
+    plugin, _ = load_plugin(monkeypatch, tmp_path)
+    assert plugin._identity_binding is not None
+    assert plugin._identity_binding.status("admin") == {"bound": False}
+    asyncio.run(plugin.terminate())
+
+
 def bind_plugin_tool(plugin, event, *, name, handler_name, args):
     import asyncio
     handler = getattr(type(plugin), handler_name)

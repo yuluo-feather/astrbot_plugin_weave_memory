@@ -249,7 +249,7 @@ class AstrBotManagementApi:
         register(f"{prefix}/overview", self.h_overview, ["GET"], "Weave memory overview")
         register(f"{prefix}/candidates", self.h_candidates, ["GET"], "Weave candidates")
         register(f"{prefix}/memories", self.h_memories, ["GET"], "Weave memories")
-        register(f"{prefix}/memories/archived", self.h_memories_archived, ["GET"],
+        register(f"{prefix}/archived-memories", self.h_memories_archived, ["GET"],
                  "Weave archived memories")
         register(f"{prefix}/memories/<id>", self.h_memory, ["GET"], "Weave memory detail")
         register(f"{prefix}/memories/<id>/history", self.h_memory_history, ["GET"],
