@@ -88,3 +88,12 @@ class AstrBotIdentityAdapter:
 
     def resolve_group_operator_id(self, event: Any) -> str:
         return self._group_identity_fields(event)[2]
+    def resolve_personal_identity_for_group(self, event: Any) -> Identity:
+        """Resolve the current speaker's Personal identity from a group event."""
+        platform, tenant_id, subject_id, _group_id = self._group_identity_fields(event)
+        return Identity(
+            platform=platform, tenant_id=tenant_id,
+            scope_type=ScopeType.PERSONAL,
+            scope_external_id=subject_id,
+            subject_type=SubjectType.USER, subject_id=subject_id,
+        )

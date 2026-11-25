@@ -2,8 +2,8 @@
 # SQLite >= 3.35.0 且编译启用 FTS5（备份/恢复使用 UPDATE ... FROM 与 ALTER TABLE DROP COLUMN）
 name: astrbot_plugin_weave_memory
 display_name: 织忆
-desc: 本地优先的 AstrBot 记忆引擎：默认登记、可随时关闭，支持 Personal Agent 读写工具、命令管理、SQLite+FTS5 检索、私聊与群聊上下文注入
-short_desc: 默认登记、可关闭的本地记忆引擎
+desc: 本地优先的 AstrBot 记忆引擎：支持混合检索、管理 WebUI、个人与群共享记忆，以及显式授权的群内个人记忆注入
+short_desc: 本地优先的长期记忆引擎，支持 WebUI 与逐群授权的个人记忆共享
 help: |
   [默认] 个人记忆默认开启；首次私聊自动登记并给一次告知
   [织忆 帮助] 查看个人记忆命令
@@ -28,9 +28,12 @@ help: |
   [织忆 关闭 确认] 永久关闭个人记忆空间（数据保留，当前版本不支持重新开启）
   [Agent 工具] weave_memory_search/get/list/history 仅访问当前用户 Personal Scope；weave_memory_remember/update 已启用写入，来源记录插件侧 evidence_ref（message/session + 内容哈希），不冒充宿主 tool_call_id
   [群命令] 群聊内发送 /织忆 群帮助 查看；群开启/群关闭/群清空/群销毁/群保存仅群管理员，成员可读 群列表/群查询/群状态
+  [群内个人记忆 V2.4] /织忆 群个人 开启|关闭（群管理员）；/织忆 群个人 授权|撤销|状态（成员本人）；必须同时满足全局开关、群总开关、成员逐群授权与个人主授权；管理员重开会递增 epoch
+  [控制台 V2.1/V2.4] 插件详情页「织忆控制台」：群记忆增改/软删/恢复/彻底删除、设置与维护、绑定后个人 scope 读写；写端点需 api_admin_usernames + CSRF token，危险操作需一次性 nonce
+  [绑定 V2.4] 私聊 /织忆 绑定 生成 6 位一次性绑定码（10 分钟），用于 Dashboard 账号绑定到当前平台身份
   [提取命令 V1.5] 默认关闭；/织忆 提取 开启 <capture|auto_extract|external_model|store_candidate|全部>；/织忆 提取 状态；/织忆 候选 列表/确认/拒绝
   [候选 V1.6] 候选默认 7 天有效（candidate_ttl_days）；过期在读取列表时转归档；拒绝默认清除正文，只保留审计
-  [管理 API V1.6/V1.7/V1.8] 插件路由 /astrbot_plugin_weave_memory/v1/{overview|candidates|memories|groups|retrieval/debug|settings|maintenance/status|export|import|maintenance/backup|maintenance/restore|maintenance/reindex}；只读端点需 dashboard 登录，export/import 与 maintenance/* 需非空 api_admin_usernames 白名单
+  [管理 API V1.6/V1.7/V1.8/V2.1/V2.4] 插件路由 /astrbot_plugin_weave_memory/v1/{overview|candidates|memories|groups|retrieval/debug|settings|maintenance/status|group-personal/status|export|import|maintenance/backups|maintenance/backup|maintenance/restore|maintenance/reindex|webui/capabilities|ui/csrf|ui/nonce|webui/binding|personal/*}；只读端点需 dashboard 登录，写端点与 maintenance/* 需非空 api_admin_usernames 白名单 + CSRF token，危险操作另需一次性 nonce
   [备份 V1.8] /织忆 备份 [列表] 创建/查看主库快照；账本独立保存，备份不含账本
   [备份恢复 V1.8] /织忆 备份恢复 <备份ID> [merge|revert|disaster-rebuild] 确认（默认 merge）；不带确认即 dry-run，旧备份按 ledger 排除删除/清空/撤销授权
   触发：个人命令仅私聊生效，群命令仅群聊生效；统一前缀 /织忆

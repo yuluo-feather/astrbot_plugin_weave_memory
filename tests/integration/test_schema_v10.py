@@ -59,7 +59,7 @@ def _seed_v9_archived(db: SQLiteDatabase) -> None:
 def test_fresh_database_is_v10_with_archive_and_index_tables(tmp_path):
     db = SQLiteDatabase(tmp_path / "fresh.db")
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     assert {"archived_at", "purge_after", "archive_reason"} <= _columns(db, "memories")
     assert {
         "memory_embeddings", "index_jobs", "index_state", "provider_call_audit",
@@ -76,7 +76,7 @@ def test_v9_archived_rows_are_backfilled_not_restorable(tmp_path):
     _seed_scope(db)
     _seed_v9_archived(db)
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     row = db.connection.execute(
         "SELECT archived_at, purge_after, archive_reason FROM memories WHERE id='mem-v9'",
     ).fetchone()
@@ -98,7 +98,7 @@ def test_rollback_to_v9_refuses_archived_rows_and_pending_jobs(tmp_path):
     )
     with pytest.raises(StorageError):
         db.rollback_to_v9()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
 
     db.connection.execute("DELETE FROM memories WHERE id='mem-v9'")
     db.connection.execute(
@@ -111,7 +111,7 @@ def test_rollback_to_v9_refuses_archived_rows_and_pending_jobs(tmp_path):
     )
     with pytest.raises(StorageError):
         db.rollback_to_v9()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     db.close()
 
 
@@ -130,7 +130,7 @@ def test_rollback_to_v9_preserves_audit_and_can_migrate_back(tmp_path):
     assert "provider_call_audit" in _tables(db)
     assert {"memory_embeddings", "index_jobs", "index_state"}.isdisjoint(_tables(db))
     db.migrate()
-    assert db.schema_version() == 10
+    assert db.schema_version() == 13
     assert db.connection.execute(
         "SELECT count(*) FROM provider_call_audit",
     ).fetchone()[0] == 1

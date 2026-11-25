@@ -94,7 +94,7 @@ class SQLiteDatabase:
     multi-process write coordination.
     """
 
-    CURRENT_SCHEMA_VERSION = 10
+    CURRENT_SCHEMA_VERSION = 13
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -322,6 +322,24 @@ class SQLiteDatabase:
                         "INSERT INTO schema_migrations(version, name, applied_at) VALUES (10, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
                         ("hybrid_retrieval",),
                     )
+                    version = 10
+                if version < 11:
+                    migration_v11 = (Path(__file__).parent / "migrations" / "011_webui_indexes.sql").read_text(encoding="utf-8")
+                    _apply_script(conn, migration_v11)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, name, applied_at) VALUES (11, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        ("webui_indexes",),
+                    )
+                    version = 11
+                if version < 13:
+                    # v12 stays unassigned until V2.3 is scheduled (ADR-0032).
+                    migration_v13 = (Path(__file__).parent / "migrations" / "013_group_personal.sql").read_text(encoding="utf-8")
+                    _apply_script(conn, migration_v13)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, name, applied_at) VALUES (13, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        ("group_personal",),
+                    )
+                    version = 13
                 # Auxiliary operational table: read-side access audit. It is not
                 # part of the user-data schema and is excluded from backups.
                 conn.execute("""
@@ -382,12 +400,56 @@ class SQLiteDatabase:
             if int(self.connection.execute(f"SELECT count(*) FROM {target}").fetchone()[0]):
                 raise StorageError(message)
 
-    def rollback_to_v9(self) -> None:
-        """Roll v10 back to v9 only when no archive or pending vector job remains."""
+    def _ensure_v24_empty(self) -> None:
+        for table in ("group_personal_policies", "memory_sensitivity",
+                      "webui_identity_bindings", "webui_binding_codes"):
+            count = int(self.connection.execute(
+                f"SELECT count(*) FROM {table}",
+            ).fetchone()[0])
+            if count:
+                raise StorageError(f"cannot roll back while {table} contains data")
+
+    def rollback_to_v11(self) -> None:
+        """Drop V2.4 tables (v13), leaving the v11 index set in place."""
         self._ensure_open()
-        if self.schema_version() != 10:
+        if self.schema_version() != 13:
+            raise StorageError("v13 rollback requires schema version 13")
+        self._ensure_v24_empty()
+        with self.transaction() as conn:
+            conn.execute("DROP TABLE IF EXISTS memory_sensitivity")
+            conn.execute("DROP TABLE IF EXISTS group_personal_policies")
+            conn.execute("DROP TABLE IF EXISTS webui_identity_bindings")
+            conn.execute("DROP TABLE IF EXISTS webui_binding_codes")
+            conn.execute("DELETE FROM schema_migrations WHERE version=13")
+
+    def rollback_v11_indexes(self) -> None:
+        """Drop the v11 WebUI indexes and its registry row (index-only step)."""
+        self._ensure_open()
+        if self.schema_version() != 11:
+            raise StorageError("v11 rollback requires schema version 11")
+        with self.transaction() as conn:
+            conn.execute("DROP INDEX IF EXISTS ix_memories_scope_status_archived")
+            conn.execute("DROP INDEX IF EXISTS ix_memory_operations_scope_time")
+            conn.execute("DROP INDEX IF EXISTS ix_memory_operations_memory_time")
+            conn.execute("DELETE FROM schema_migrations WHERE version=11")
+
+    def rollback_to_v9(self) -> None:
+        """Roll back to v9, chaining v13 -> v11 -> v10 when needed."""
+        self._ensure_open()
+        version = self.schema_version()
+        if version not in (10, 11, 13):
             raise StorageError("v10 rollback requires schema version 10")
+        # Refuse before mutating anything so a refused rollback changes nothing.
         self._ensure_rollback_guards()
+        if version == 13:
+            self._ensure_v24_empty()
+            self.rollback_to_v11()
+            version = 11
+        if version == 11:
+            self.rollback_v11_indexes()
+            version = 10
+        if version != 10:
+            raise StorageError("v10 rollback requires schema version 10")
         self.connection.execute("PRAGMA foreign_keys = OFF")
         try:
             with self.transaction() as conn:

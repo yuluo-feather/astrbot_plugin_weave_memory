@@ -67,3 +67,15 @@ def test_missing_identity_method_fails_closed():
     event = types.SimpleNamespace(message_obj=types.SimpleNamespace(group_id=""))
     with pytest.raises(AuthorizationDenied):
         AstrBotIdentityAdapter().resolve_identity(event)
+
+
+def test_group_personal_identity_resolves_current_speaker_personal_scope():
+    adapter = AstrBotIdentityAdapter()
+    event = Event(group_id="group-7", platform_id="instance-2", sender_id="member-9")
+    identity = adapter.resolve_personal_identity_for_group(event)
+    assert identity.platform == "telegram"
+    assert identity.tenant_id == "instance-2"
+    assert identity.scope_type is ScopeType.PERSONAL
+    assert identity.scope_external_id == "member-9"
+    assert identity.subject_type is SubjectType.USER
+    assert identity.subject_id == "member-9"

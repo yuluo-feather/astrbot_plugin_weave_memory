@@ -19,13 +19,18 @@ class SQLiteConsentStore:
         try:
             with self.db.transaction() as conn:
                 scope = conn.execute(
-                    "SELECT subject_id, is_enabled FROM memory_scopes WHERE id=?",
+                    "SELECT subject_id, scope_type, is_enabled FROM memory_scopes WHERE id=?",
                     (consent.scope_id,),
                 ).fetchone()
                 if scope is None:
                     raise NotFound("consent scope not found")
-                if scope["subject_id"] != consent.subject_id:
+                if scope["subject_id"] != consent.subject_id and not (
+                    scope["scope_type"] == "GROUP"
+                    and consent.consent_type == "group_personal_member"
+                ):
                     raise Conflict("consent subject does not match scope identity")
+                if consent.consent_type == "group_personal_member" and scope["scope_type"] != "GROUP":
+                    raise Conflict("group personal member consent requires a GROUP scope")
                 if (
                     consent.state is ConsentState.GRANTED
                     and scope["is_enabled"] != 1
